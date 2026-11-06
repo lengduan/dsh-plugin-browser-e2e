@@ -78,7 +78,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 - **刷新按钮**：静态页面不会产生新帧，点刷新由宿主直接截一帧 JPEG，保证「按一下就有画面」。
 - **设置卡片**：`quality`(10-100)、`maxWidth`(100-4096)、`maxHeight`(100-4096)、`everyNthFrame`(1-10)，输入后客户端按区间取整 clamp，再经 socket `configure` 推给宿主（宿主 `mergeConfig` 再校验一次，非整数或越界报错）；只改宿主进程内的 `PanelHub` 配置，不写回 profile，插件重载后回到插件 Config 的值（未配置则用默认 70 / 1280 / 800 / 1）。
 - **动作提示**：每次 `browser_e2e_*` 工具调用后，面板收到一条 `action` 事件（工具名 + 一句话摘要），面板保留最近 5 条，新的在前。
-- **设置页与插件卡片**：Plugins 页的插件行提供「配置」入口（`plugins.row.config`），表单含 6 项：`defaultMode`（isolated / cdp）、`cdpEndpoint`、`quality`、`maxWidth`、`maxHeight`、`everyNthFrame`；保存经宿主 `form.mutate` 写 profile，不重载插件。插件卡片显示当前默认模式与 CDP 端点。家族分组宿主（有 `webUiSettings` 服务）进 `web-ui.plugin.item`，否则进 `plugins.bundle.config` 键控座位。
+- **设置页**：Plugins 页的插件行由宿主按本插件导出的 `Config`（6 项：`defaultMode`、`cdpEndpoint`、`quality`、`maxWidth`、`maxHeight`、`everyNthFrame`）自动渲染「配置」入口，保存经宿主 `form.mutate` 写 profile，不重载插件；客户端不注册 `plugins.row.config` 座位。插件卡片座位（`web-ui.plugin.item` / `plugins.bundle.config`）也暂不注册：在当前桌面宿主上注册它会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），属已知限制。
 
 面板只是视图：它不启动浏览器、不操作页面，所有行为仍然只能由 `browser_e2e_*` 工具发起。
 

@@ -153,7 +153,7 @@ check('生成物带“勿手改”头注释', () => {
 
 check('模块导出 apply 与 inject', () => {
   assert.equal(typeof api.apply, 'function')
-  assert.equal(JSON.stringify(api.inject), JSON.stringify(['slots', 'sidebarRightTabs', 'configForms']))
+  assert.equal(JSON.stringify(api.inject), JSON.stringify(['slots', 'sidebarRightTabs']))
 })
 
 // ── 注册面 ───────────────────────────────────────────────────────────────
@@ -203,17 +203,15 @@ check('tab guide 有一条 order 50 的 open 条目', () => {
   assert.ok(guide[0].description().length > 0)
 })
 
-check('apply 向面板两个 slot 与设置面注入回调', () => {
-  assert.equal(injected.length, 4)
+check('apply 只向面板两个 slot 注入回调（设置页与插件卡片座位已移除）', () => {
+  assert.equal(injected.length, 2)
   assert.equal(injected[0].name, 'sidebar.right.pane.tab')
   assert.equal(injected[1].name, 'sidebar.right.pane.tab.title')
-  assert.equal(injected[2].name, 'plugins.row.config')
-  assert.equal(injected[3].name, 'plugins.bundle.config')
 })
 
-check('座位注册：面板两个 slot 同 key 不同组件，设置页与插件卡片各就位', () => {
+check('座位注册：面板两个 slot 同 key 不同组件', () => {
   for (const item of injected) item.callback()
-  assert.equal(registered.length, 4)
+  assert.equal(registered.length, 2)
   assert.equal(registered[0].spec.name, 'sidebar.right.pane.tab')
   assert.equal(registered[1].spec.name, 'sidebar.right.pane.tab.title')
   assert.equal(registered[0].spec.key, 'dsh-browser-e2e')
@@ -221,15 +219,6 @@ check('座位注册：面板两个 slot 同 key 不同组件，设置页与插�
   assert.equal(typeof registered[0].component, 'function')
   assert.equal(typeof registered[1].component, 'function')
   assert.notEqual(registered[0].component, registered[1].component)
-  // 设置页按 `<包名>#<行 id>` 分发；插件卡片进 plugins.bundle.config 键控座位。
-  assert.equal(registered[2].spec.name, 'plugins.row.config')
-  assert.equal(registered[2].spec.key, 'dsh-browser-e2e#browser-e2e')
-  assert.equal(typeof registered[2].component, 'function')
-  assert.equal(registered[3].spec.name, 'plugins.bundle.config')
-  assert.equal(registered[3].spec.key, 'dsh-browser-e2e')
-  assert.equal(typeof registered[3].component, 'function')
-  assert.equal(typeof registered[3].spec.inject, 'function')
-  assert.equal(JSON.stringify(registered[3].spec.inject()), '{}')
 })
 
 check('slot 的 inject 回传 {sessionId, liveTitle}，两个 slot 共用一个标题通道', () => {
