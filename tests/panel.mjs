@@ -4,7 +4,7 @@
  * 分四段：
  *   A. loopback 围栏的判定（纯函数）；
  *   B. 设置合并与越界拒绝（纯函数）；
- *   C. 插件注册面：12 个工具的参数契约没变；
+ *   C. 插件注册面：15 个工具的参数契约；
  *   D. 端到端：用真实 http 服务模拟宿主 webServer，注册插件自己的路由与 socket，
  *      真起无头 Edge，走完整协议（attach / hello / 帧 / 动作 / configure /
  *      request-frame / 未知命令 / 协议版本不符 / 关闭后状态清空），并校验围栏
@@ -18,7 +18,7 @@ import { WebSocket } from 'ws'
 // 测试期间不让空闲回收介入（browser.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
-const { mergeConfig, PANEL_STATE_PATH, PANEL_SOCKET_PATH, PANEL_PROTOCOL_VERSION } =
+const { mergeConfig, PanelHub, PANEL_STATE_PATH, PANEL_SOCKET_PATH, PANEL_PROTOCOL_VERSION } =
   await import('../lib/panel.js')
 const { isLoopbackRequest, isLoopbackAddress, isLoopbackHostname } = await import('../lib/fence.js')
 const { activeSessionKeys, closeAll } = await import('../lib/browser.js')
@@ -85,7 +85,7 @@ console.log('== 用例 B：设置合并 ==')
   check('config 非对象报错', typeof error === 'string', String(error))
 }
 
-console.log('== 用例 C：插件注册面（12 个工具的参数未变）==')
+console.log('== 用例 C：插件注册面（15 个工具的参数契约）==')
 const KEY = 'panel-test-key'
 // 生产环境里 agent.id 就是 SessionId，两者同源；这里保持同一取值。
 const SID = KEY
@@ -127,9 +127,12 @@ let upgradeHandler = null
       })
     },
   }
-  apply(ctx)
-  check('注册 14 个工具', toolNames.length === 14, JSON.stringify(toolNames))
+  apply(ctx, { quality: 30, maxWidth: 640 })
+  check('注册 15 个工具', toolNames.length === 15, JSON.stringify(toolNames))
+  check('工具名统一带 browser_e2e_ 前缀', toolNames.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(toolNames))
+  check('新增 scroll 工具已注册', tools.has('browser_e2e_scroll'))
   check('browser_e2e_click 参数仍为 ref/selector/x/y + tab_id', JSON.stringify(Object.keys(tools.get('browser_e2e_click').parameters.properties)) === JSON.stringify(['ref', 'selector', 'x', 'y', 'tab_id']))
+  check('browser_e2e_fill 参数为 ref/selector/x/y/value/tab_id', JSON.stringify(Object.keys(tools.get('browser_e2e_fill').parameters.properties)) === JSON.stringify(['ref', 'selector', 'x', 'y', 'value', 'tab_id']))
   check('browser_e2e_screenshot 参数仍含 clip/format/quality/scale', ['name', 'fullPage', 'clip', 'format', 'quality', 'scale'].every((k) => k in tools.get('browser_e2e_screenshot').parameters.properties))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
@@ -188,14 +191,19 @@ const hello = await waitFor(() => panel.events.find((event) => event.kind === 'h
 check('attach 后收到 hello', Boolean(hello), JSON.stringify(panel.events.slice(0, 3)))
 check('没有浏览器时 running=false', hello?.state?.running === false, JSON.stringify(hello?.state))
 check('没有浏览器时 activeTabId=null', hello?.state?.activeTabId === null, JSON.stringify(hello?.state))
+check('状态含 mode / endpoint 字段', hello?.state?.mode === 'isolated' && hello?.state?.endpoint === '', JSON.stringify({ mode: hello?.state?.mode, endpoint: hello?.state?.endpoint }))
+check('apply 的 Config 投屏参数进入面板初始配置', hello?.state?.config?.quality === 30 && hello?.state?.config?.maxWidth === 640 && hello?.state?.config?.maxHeight === 800 && hello?.state?.config?.everyNthFrame === 1, JSON.stringify(hello?.state?.config))
 
-await tools.get('browser_start').execute({ headless: true }, exec)
+await tools.get('browser_e2e_start').execute({ headless: true }, exec)
 check('浏览器已启动', activeSessionKeys().includes(KEY), JSON.stringify(activeSessionKeys()))
 const stateWithTab = await waitFor(() => panel.events.filter((event) => event.kind === 'state').find((event) => event.state.tabs.length > 0))
 check('启动后推送含 tab 的状态', Boolean(stateWithTab), JSON.stringify(panel.events.map((e) => e.kind)))
 check('tab id 是「会话 key#页面 tab_id」组合', stateWithTab?.state?.tabs?.[0]?.id === PANEL_TAB, JSON.stringify(stateWithTab?.state?.tabs))
 check('tab 带 sessionId', stateWithTab?.state?.tabs?.[0]?.sessionId === SID, JSON.stringify(stateWithTab?.state?.tabs))
+check('tab 带 loading / origin 字段', typeof stateWithTab?.state?.tabs?.[0]?.loading === 'boolean' && stateWithTab?.state?.tabs?.[0]?.origin === 'created', JSON.stringify(stateWithTab?.state?.tabs?.[0]))
+check('tab 带 mode / endpoint 字段（isolated 时 endpoint 为空串）', stateWithTab?.state?.tabs?.[0]?.mode === 'isolated' && stateWithTab?.state?.tabs?.[0]?.endpoint === '', JSON.stringify(stateWithTab?.state?.tabs?.[0]))
 check('默认选中该 tab', stateWithTab?.state?.activeTabId === PANEL_TAB, String(stateWithTab?.state?.activeTabId))
+check('有浏览器时 mode=isolated / endpoint 为空串', stateWithTab?.state?.mode === 'isolated' && stateWithTab?.state?.endpoint === '', JSON.stringify({ mode: stateWithTab?.state?.mode, endpoint: stateWithTab?.state?.endpoint }))
 
 await tools.get('browser_e2e_navigate').execute({ url: 'data:text/html,<title>panel</title><h1>hello panel</h1>' }, exec)
 const frame = await waitFor(() => panel.events.find((event) => event.kind === 'frame' && event.tabId === PANEL_TAB && event.seq > 0))
@@ -213,6 +221,37 @@ await tools.get('browser_e2e_snapshot').execute({}, exec)
 const action = await waitFor(() => panel.events.filter((event) => event.kind === 'action')[actionsBefore])
 check('工具动作被广播', action?.trace?.tool === 'browser_e2e_snapshot', JSON.stringify(action))
 check('动作带摘要与时间', typeof action?.trace?.summary === 'string' && action.trace.summary.length > 0 && typeof action?.trace?.at === 'number', JSON.stringify(action?.trace))
+
+// tab 标题透传：state 里的 title 取页面真实标题。
+const titledState = await waitFor(() => panel.events.filter((event) => event.kind === 'state')
+  .find((event) => event.state.tabs.some((tab) => tab.title === 'panel')))
+check('tab 标题透传', Boolean(titledState), JSON.stringify(panel.events.filter((e) => e.kind === 'state').slice(-3)))
+
+// 再开一个 tab，然后用面板命令关掉它。
+// 断言只看本次操作之后的事件，避免命中较早遗留的 state（历史事件会让「已关闭」误判成立）。
+const eventsBeforeNewTab = panel.events.length
+await tools.get('browser_e2e_navigate').execute({ url: 'data:text/html,<title>second</title><h1>second</h1>', new_tab: true }, exec)
+const twoTabsState = await waitFor(() => panel.events.slice(eventsBeforeNewTab)
+  .filter((event) => event.kind === 'state').find((event) => event.state.tabs.length === 2))
+check('新开 tab 后推送 2 个 tab 的状态', Boolean(twoTabsState), JSON.stringify(panel.events.filter((e) => e.kind === 'state').slice(-2)))
+const titledSecond = await waitFor(() => panel.events.slice(eventsBeforeNewTab)
+  .filter((event) => event.kind === 'state')
+  .find((event) => event.state.tabs.some((tab) => tab.title === 'second')))
+check('新 tab 标题透传', Boolean(titledSecond), JSON.stringify(titledSecond?.state?.tabs))
+
+const secondPanelTab = `${KEY}#t2`
+const eventsBeforeClose = panel.events.length
+panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'close-tab', tabId: secondPanelTab }))
+const closedState = await waitFor(() => panel.events.slice(eventsBeforeClose).filter((event) => event.kind === 'state')
+  .find((event) => event.state.tabs.length === 1 && !event.state.tabs.some((tab) => tab.id === secondPanelTab)))
+check('close-tab 关闭 tab 并推送新 state', Boolean(closedState), JSON.stringify(panel.events.filter((e) => e.kind === 'state').slice(-2)))
+check('close-tab 后 active tab 回到剩余页', closedState?.state?.activeTabId === PANEL_TAB, String(closedState?.state?.activeTabId))
+
+const eventsBeforeLastClose = panel.events.length
+panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'close-tab', tabId: PANEL_TAB }))
+const lastTabError = await waitFor(() => panel.events.slice(eventsBeforeLastClose)
+  .find((event) => event.kind === 'error' && event.code === 'last-tab'))
+check('最后一个 tab 关闭回 error（last-tab）', Boolean(lastTabError), JSON.stringify(panel.events.filter((e) => e.kind === 'error')))
 
 panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'configure', config: { quality: 55, maxWidth: 900 } }))
 const configured = await waitFor(() => panel.events.filter((event) => event.kind === 'state').find((event) => event.state.config.quality === 55))
@@ -265,6 +304,101 @@ await tools.get('browser_e2e_close').execute({}, WATCH)
 const emptyState = await waitFor(() => panel.events.filter((event) => event.kind === 'state').find((event) => event.state.tabs.length === 0))
 check('关闭浏览器后推送空状态', Boolean(emptyState), JSON.stringify(panel.events.filter((e) => e.kind === 'state').slice(-2)))
 check('关闭后 running=false', emptyState?.state?.running === false, JSON.stringify(emptyState?.state))
+
+console.log('== 用例 E：插件 Config 默认值（launch 缺省值）==')
+{
+  /** 独立的注册表，按需要以不同配置调 apply。 */
+  const makeToolCtx = (defs) => ({
+    tools: { register: (definition) => { defs.set(definition.name, definition); return () => {} } },
+    on: () => () => {},
+    effect: (factory) => { factory(); return () => {} },
+  })
+
+  // 配置 defaultMode=cdp 时首次启动要走 CDP 分支：非法 loopback 端点被拒绝，证明配置被消费。
+  const cdpDefs = new Map()
+  apply(makeToolCtx(cdpDefs), { defaultMode: 'cdp', cdpEndpoint: 'http://10.0.0.5:9222' })
+  let cdpConfigError = null
+  try {
+    await cdpDefs.get('browser_e2e_start').execute({ headless: true }, { agent: { id: 'panel-config-cdp' } })
+  } catch (error) {
+    cdpConfigError = error instanceof Error ? error.message : String(error)
+  }
+  check('配置 defaultMode=cdp 被首次启动消费', typeof cdpConfigError === 'string' && cdpConfigError.includes('loopback'), String(cdpConfigError))
+
+  // 无配置时保持 isolated。
+  const plainDefs = new Map()
+  apply(makeToolCtx(plainDefs))
+  const started = await plainDefs.get('browser_e2e_start').execute({ headless: true }, { agent: { id: 'panel-config-reuse' } })
+  check('未提供配置时默认 isolated', typeof started === 'string' && started.includes('产物目录'), String(started).split('\n')[0])
+
+  // 配置默认值不得让已启动的 isolated 会话在下次 start 时报 mode 不一致。
+  const reuseDefs = new Map()
+  apply(makeToolCtx(reuseDefs), { defaultMode: 'cdp', cdpEndpoint: 'http://127.0.0.1:9222' })
+  let reuseError = null
+  let reused = null
+  try {
+    reused = await reuseDefs.get('browser_e2e_start').execute({ headless: true }, { agent: { id: 'panel-config-reuse' } })
+  } catch (error) {
+    reuseError = error instanceof Error ? error.message : String(error)
+  }
+  check('配置默认值不让已启动会话报 mode 不一致', reuseError === null && typeof reused === 'string' && reused.includes('已启动'), `${reuseError} / ${String(reused).split('\n')[0]}`)
+  await reuseDefs.get('browser_e2e_close').execute({}, { agent: { id: 'panel-config-reuse' } })
+}
+
+console.log('== 用例 F：投屏参数接线（Config → PanelHub）==')
+{
+  // 构造时与 DEFAULT_SCREENCAST_CONFIG 合并：提供的合法字段生效，其余保持默认。
+  const merged = new PanelHub({ config: { quality: 30, maxWidth: 640 } })
+  check('PanelHub 构造时合并 Config 投屏参数', merged.config.quality === 30 && merged.config.maxWidth === 640
+    && merged.config.maxHeight === 800 && merged.config.everyNthFrame === 1, JSON.stringify(merged.config))
+  merged.dispose()
+
+  // 非法字段逐字段回退默认，不影响同批合法字段。
+  const fallback = new PanelHub({ config: { quality: 5, maxWidth: 640.5, maxHeight: 'wide', everyNthFrame: 99 } })
+  check('非法投屏参数逐字段回退默认', JSON.stringify(fallback.config)
+    === JSON.stringify({ quality: 70, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 }), JSON.stringify(fallback.config))
+
+  // 已连接客户端在 applyConfig 后收到含新 config 的 state。
+  const events = []
+  fallback.clients.add({ send: (event) => events.push(event) })
+  await fallback.applyConfig({ quality: 42, maxHeight: 720 })
+  const pushed = events.filter((event) => event.kind === 'state').at(-1)
+  check('applyConfig 回推含新 config 的 state', pushed?.state?.config?.quality === 42
+    && pushed?.state?.config?.maxHeight === 720 && pushed?.state?.config?.maxWidth === 1280, JSON.stringify(pushed?.state?.config))
+
+  // 非法值回退默认而不是抛错（宿主配置里的脏值不能让面板起不来）。
+  await fallback.applyConfig({ quality: 5 })
+  check('applyConfig 非法值回退默认', fallback.config.quality === 70 && fallback.config.maxHeight === 800, JSON.stringify(fallback.config))
+  fallback.dispose()
+
+  // 宿主保存即时字段时 apply 收到的是 volatile 引用（{get()}）；这里模拟该形态，
+  // 经面板状态路由取回 config，验证 apply 确实读到了引用里的快照。
+  const panelRoutes = new Map()
+  const cleanups = []
+  const configCtx = {
+    tools: { register: () => () => {} },
+    on: () => () => {},
+    effect: (fn) => { cleanups.push(fn()); return () => {} },
+    get: (name) => (name === 'webServer' ? {
+      register(route) { panelRoutes.set(route.path, route.handler); return () => {} },
+      registerUpgrade() { return () => {} },
+    } : undefined),
+  }
+  apply(configCtx, { quality: { get: () => 33 }, maxWidth: { get: () => 720 } })
+  const response = { status: 0, text: '' }
+  await panelRoutes.get(PANEL_STATE_PATH)({
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:1' },
+    method: 'GET',
+  }, {
+    writeHead(status) { response.status = status },
+    end(text) { response.text = String(text) },
+  })
+  const body = JSON.parse(response.text === '' ? '{}' : response.text)
+  check('apply 读取 volatile 配置引用', response.status === 200 && body?.state?.config?.quality === 33
+    && body?.state?.config?.maxWidth === 720, `${response.status} ${response.text.slice(0, 160)}`)
+  for (const dispose of cleanups.reverse()) await dispose?.()
+}
 
 panel.ws.close()
 server.close()

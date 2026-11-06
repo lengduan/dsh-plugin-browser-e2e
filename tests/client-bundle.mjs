@@ -153,7 +153,7 @@ check('生成物带“勿手改”头注释', () => {
 
 check('模块导出 apply 与 inject', () => {
   assert.equal(typeof api.apply, 'function')
-  assert.equal(JSON.stringify(api.inject), JSON.stringify(['slots', 'sidebarRightTabs']))
+  assert.equal(JSON.stringify(api.inject), JSON.stringify(['slots', 'sidebarRightTabs', 'configForms']))
 })
 
 // ── 注册面 ───────────────────────────────────────────────────────────────
@@ -203,16 +203,17 @@ check('tab guide 有一条 order 50 的 open 条目', () => {
   assert.ok(guide[0].description().length > 0)
 })
 
-check('apply 向两个 slot 注入回调', () => {
-  assert.equal(injected.length, 2)
+check('apply 向面板两个 slot 与设置面注入回调', () => {
+  assert.equal(injected.length, 4)
   assert.equal(injected[0].name, 'sidebar.right.pane.tab')
   assert.equal(injected[1].name, 'sidebar.right.pane.tab.title')
+  assert.equal(injected[2].name, 'plugins.row.config')
+  assert.equal(injected[3].name, 'plugins.bundle.config')
 })
 
-check('两个 slot 注册同一个 key，pane body 与 title 用不同组件', () => {
-  injected[0].callback()
-  injected[1].callback()
-  assert.equal(registered.length, 2)
+check('座位注册：面板两个 slot 同 key 不同组件，设置页与插件卡片各就位', () => {
+  for (const item of injected) item.callback()
+  assert.equal(registered.length, 4)
   assert.equal(registered[0].spec.name, 'sidebar.right.pane.tab')
   assert.equal(registered[1].spec.name, 'sidebar.right.pane.tab.title')
   assert.equal(registered[0].spec.key, 'dsh-browser-e2e')
@@ -220,11 +221,26 @@ check('两个 slot 注册同一个 key，pane body 与 title 用不同组件', (
   assert.equal(typeof registered[0].component, 'function')
   assert.equal(typeof registered[1].component, 'function')
   assert.notEqual(registered[0].component, registered[1].component)
+  // 设置页按 `<包名>#<行 id>` 分发；插件卡片进 plugins.bundle.config 键控座位。
+  assert.equal(registered[2].spec.name, 'plugins.row.config')
+  assert.equal(registered[2].spec.key, 'dsh-browser-e2e#browser-e2e')
+  assert.equal(typeof registered[2].component, 'function')
+  assert.equal(registered[3].spec.name, 'plugins.bundle.config')
+  assert.equal(registered[3].spec.key, 'dsh-browser-e2e')
+  assert.equal(typeof registered[3].component, 'function')
+  assert.equal(typeof registered[3].spec.inject, 'function')
+  assert.equal(JSON.stringify(registered[3].spec.inject()), '{}')
 })
 
-check('slot 的 inject 回传 {sessionId}', () => {
-  const props = registered[0].spec.inject('session-abc')
-  assert.equal(JSON.stringify(props), JSON.stringify({ sessionId: 'session-abc' }))
+check('slot 的 inject 回传 {sessionId, liveTitle}，两个 slot 共用一个标题通道', () => {
+  const panelFace = registered[0].spec.inject('session-abc')
+  const titleFace = registered[1].spec.inject('session-abc')
+  assert.equal(panelFace.sessionId, 'session-abc')
+  assert.equal(titleFace.sessionId, 'session-abc')
+  assert.equal(panelFace.liveTitle, titleFace.liveTitle)
+  assert.equal(typeof panelFace.liveTitle.get, 'function')
+  assert.equal(typeof panelFace.liveTitle.set, 'function')
+  assert.equal(typeof panelFace.liveTitle.subscribe, 'function')
 })
 
 // ── 最小 React 运行时（脚手架上的 render / useEffect / setState） ────────
@@ -252,6 +268,23 @@ reactStub.useEffect = function (fn, deps) {
   const index = hooks.cursor
   hooks.cursor += 1
   hooks.pending.push({ index, fn, deps })
+}
+
+/**
+ * useSyncExternalStore 桩：读快照同步返回，订阅在一次渲染后装好；
+ * store 通知时标记需要重渲染，由 renderPanel 的循环消费。
+ */
+reactStub.useSyncExternalStore = function (subscribe, getSnapshot) {
+  const index = hooks.cursor
+  hooks.cursor += 1
+  hooks.pending.push({
+    index,
+    deps: [subscribe, getSnapshot],
+    fn() {
+      return subscribe(function () { hooks.dirty = true })
+    },
+  })
+  return getSnapshot()
 }
 
 function sameDeps(previous, next) {
@@ -327,10 +360,42 @@ function findButtonByText(root, text) {
 const panelComponent = registered[0].component
 const titleComponent = registered[1].component
 const panelProps = registered[0].spec.inject('session-abc')
+const titleProps = registered[1].spec.inject('session-abc')
 
 /** 驱动一次渲染。 */
 function render() {
   return renderPanel(panelComponent, panelProps)
+}
+
+/**
+ * 渲染 chip：它与面板是两个不同的 slot 组件，假运行时的 hook 槽按组件隔离，
+ * 否则 chip 的 hook 槽会读到面板遗留的状态。
+ */
+function renderChip(props) {
+  const saved = {
+    cursor: hooks.cursor,
+    states: hooks.states,
+    refs: hooks.refs,
+    effects: hooks.effects,
+    pending: hooks.pending,
+    dirty: hooks.dirty,
+  }
+  hooks.cursor = 0
+  hooks.states = []
+  hooks.refs = []
+  hooks.effects = {}
+  hooks.pending = []
+  hooks.dirty = false
+  try {
+    return renderPanel(titleComponent, props)
+  } finally {
+    hooks.cursor = saved.cursor
+    hooks.states = saved.states
+    hooks.refs = saved.refs
+    hooks.effects = saved.effects
+    hooks.pending = saved.pending
+    hooks.dirty = saved.dirty
+  }
 }
 
 /** 打开最近创建的 WebSocket（模拟 onopen 前的 readyState）。 */
@@ -393,12 +458,20 @@ check('hello/state 后渲染 tab 条与当前 URL', () => {
   const tabBar = findByPart(panelTree, 'tabs')
   const tabButtons = findAll(tabBar, (node) => node.type === 'button')
   assert.equal(tabButtons.length, 2)
-  assert.equal(textOf(tabButtons[0]), '首页')
-  // 无标题时退回 url
-  assert.equal(textOf(tabButtons[1]), 'http://127.0.0.1:19388/加载中')
+  // tab 标题透传；无标题时退回固定文案。每个 tab 末尾还有关闭按钮的 ×。
+  assert.ok(textOf(tabButtons[0]).startsWith('首页'))
+  assert.ok(textOf(tabButtons[1]).startsWith('浏览器画面'))
+  assert.ok(textOf(tabButtons[1]).includes('加载中'))
   assert.equal(tabButtons[0].props['data-dsh-active'], 'true')
   assert.equal(tabButtons[1].props['data-dsh-active'], 'false')
-  assert.ok(textOf(findByPart(panelTree, 'toolbar')).includes('http://127.0.0.1:19387/'))
+  // 地址栏改成只读输入框：值即当前 URL，聚焦时全选便于复制。
+  const urlInput = findAll(findByPart(panelTree, 'toolbar'), (node) => node.type === 'input')[0]
+  assert.ok(urlInput)
+  assert.equal(urlInput.props.value, 'http://127.0.0.1:19387/')
+  assert.equal(urlInput.props.readOnly, true)
+  assert.equal(typeof urlInput.props.onFocus, 'function')
+  // 工具条带模式 chip（隔离 / CDP 接管）。
+  assert.equal(findByPart(panelTree, 'mode').props['data-dsh-mode'], 'isolated')
 })
 
 check('frame 事件渲染成 data:image/jpeg;base64 图片', () => {
@@ -432,12 +505,23 @@ check('点 tab 发 select-tab，点刷新发 request-frame', () => {
   assert.equal(frameCommand.kind, 'request-frame')
 })
 
+check('点 tab 上的关闭按钮发 close-tab', () => {
+  const tabBar = findByPart(panelTree, 'tabs')
+  const closes = findAll(tabBar, (node) => node.props && node.props['data-dsh-part'] === 'tab-close')
+  assert.equal(closes.length, 2)
+  closes[1].props.onClick({ stopPropagation() {} })
+  const closeCommand = JSON.parse(socket.sent[socket.sent.length - 1])
+  assert.equal(closeCommand.kind, 'close-tab')
+  assert.equal(closeCommand.tabId, 'tab-2')
+})
+
 check('设置卡片可展开，改 quality 发 configure', () => {
   const head = findButtonByText(panelTree, '画面设置')
   assert.ok(head)
   head.props.onClick()
   panelTree = render()
-  const inputs = findAll(panelTree, (node) => node.type === 'input')
+  // 工具条也有一个只读地址栏，这里只取设置卡片里的 4 个数值输入。
+  const inputs = findAll(findByPart(panelTree, 'settings'), (node) => node.type === 'input')
   assert.equal(inputs.length, 4)
   assert.equal(inputs[0].props.value, '70')
   assert.equal(inputs[0].props.min, 10)
@@ -451,7 +535,7 @@ check('设置卡片可展开，改 quality 发 configure', () => {
   assert.equal(configure.config.everyNthFrame, 1)
 
   panelTree = render()
-  const updated = findAll(panelTree, (node) => node.type === 'input')
+  const updated = findAll(findByPart(panelTree, 'settings'), (node) => node.type === 'input')
   assert.equal(updated[0].props.value, '40')
 })
 
@@ -473,16 +557,49 @@ check('action 事件渲染最近动作', () => {
   assert.ok(textOf(action).includes('点击 @1'))
 })
 
-check('tab chip 渲染字形与名称', () => {
-  const chip = renderPanel(titleComponent, { sessionId: 'session-abc' })
+check('动作提示只保留最近 5 条，新的在前', () => {
+  for (let i = 0; i < 6; i += 1) {
+    pushEvent(socket, { v: 1, kind: 'action', trace: { tool: 'browser_e2e_click', summary: `动作${i}`, at: 1000 + i } })
+  }
+  panelTree = render()
+  const lines = findAll(findByPart(panelTree, 'actions'), (node) => node.props && node.props['data-dsh-part'] === 'action')
+  assert.equal(lines.length, 5)
+  assert.ok(textOf(lines[0]).includes('动作5'))
+  assert.ok(!textOf(findByPart(panelTree, 'actions')).includes('动作0'))
+})
+
+check('tab chip 显示 active tab 的页面标题', () => {
+  const chip = renderChip(titleProps)
   assert.equal(chip.props['data-dsh-plugin'], 'browser-e2e')
   assert.equal(chip.props['data-dsh-part'], 'tab-title')
-  assert.ok(textOf(chip).includes('浏览器画面'))
+  assert.ok(textOf(chip).includes('首页'))
+  assert.ok(!textOf(chip).includes('浏览器画面'))
   // 字形是独立组件，执行一次确认它返回 svg。
   const marks = findAll(chip, (node) => typeof node.type === 'function')
   assert.equal(marks.length, 1)
   const glyph = marks[0].type({})
   assert.equal(glyph.type, 'svg')
+})
+
+check('没有页面标题时 tab chip 回退「浏览器画面」', () => {
+  const noState = renderChip(registered[1].spec.inject('session-unknown'))
+  assert.ok(textOf(noState).includes('浏览器画面'))
+})
+
+check('标题变化后 tab chip 更新', () => {
+  const nextState = {
+    tabs: [
+      { id: 'tab-1', url: 'http://127.0.0.1:19387/', title: '结算页', loading: false },
+      { id: 'tab-2', url: 'http://127.0.0.1:19388/', title: '', loading: true },
+    ],
+    activeTabId: 'tab-1',
+    running: true,
+  }
+  pushEvent(socket, { v: 1, kind: 'state', state: nextState })
+  panelTree = render()
+  const chip = renderChip(titleProps)
+  assert.ok(textOf(chip).includes('结算页'))
+  assert.ok(!textOf(chip).includes('首页'))
 })
 
 check('断线后按 500ms 起、每次翻倍、上限 15s 退避重连', () => {
@@ -580,6 +697,29 @@ check('reduceEvent: hello/state 收敛成新 state', () => {
 
   const hello = reduceEvent(emptyView, { v: 1, kind: 'hello', state: event.state })
   assert.equal(hello.state.activeTabId, 'tab-1')
+})
+
+check('reduceEvent: state 的 mode / endpoint 归一', () => {
+  const cdp = reduceEvent(emptyView, {
+    v: 1,
+    kind: 'state',
+    state: {
+      tabs: [{ id: 't', url: 'http://127.0.0.1:1/', title: '', loading: false, origin: 'adopted' }],
+      activeTabId: 't',
+      running: true,
+      mode: 'cdp',
+      endpoint: 'http://127.0.0.1:9222',
+      config: {},
+    },
+  })
+  assert.equal(cdp.state.mode, 'cdp')
+  assert.equal(cdp.state.endpoint, 'http://127.0.0.1:9222')
+  assert.equal(cdp.state.tabs[0].origin, 'adopted')
+  const isolated = reduceEvent(emptyView, {
+    v: 1, kind: 'state', state: { tabs: [], activeTabId: null, running: false, mode: 'isolated', endpoint: 'x', config: {} },
+  })
+  assert.equal(isolated.state.mode, 'isolated')
+  assert.equal(isolated.state.endpoint, '')
 })
 
 check('reduceEvent: 按 seq 丢弃旧帧、接受新帧', () => {
