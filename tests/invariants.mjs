@@ -14,6 +14,7 @@ import {
   assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled, assertModeNotHotSwitched,
   assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated, assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
+import { nextSessionState, SESSION_STATES } from '../lib/session.js'
 
 let pass = 0
 let fail = 0
@@ -127,6 +128,48 @@ check('assertRefRevalidated：未命中与零尺寸是两种文案', () => {
 check('assertSingleScreencast：已有 CDP 会话时报串台', () => {
   assert.doesNotThrow(() => assertSingleScreencast(null))
   assert.throws(() => assertSingleScreencast({}), /只能有一个投屏会话/)
+})
+
+console.log('== 用例 D：会话状态机（纯转移函数）==')
+check('状态全集为 idle / launching / ready / closing / closed', () => {
+  assert.equal(JSON.stringify(SESSION_STATES), JSON.stringify(['idle', 'launching', 'ready', 'closing', 'closed']))
+})
+check('合法转移逐条命中', () => {
+  const legal = [
+    ['idle', 'launch', 'launching'],
+    ['idle', 'close', 'closed'],
+    ['launching', 'launchSettled', 'ready'],
+    ['launching', 'launchFailed', 'idle'],
+    ['launching', 'close', 'closing'],
+    ['ready', 'close', 'closing'],
+    ['closing', 'closeSettled', 'closed'],
+  ]
+  for (const [from, event, to] of legal) {
+    assert.equal(nextSessionState(from, event), to, `${from} --${event}--> ${to}`)
+  }
+})
+check('非法转移抛错（含终态 closed）', () => {
+  const illegal = [
+    ['idle', 'launchSettled'],
+    ['idle', 'launchFailed'],
+    ['idle', 'closeSettled'],
+    ['launching', 'launch'],
+    ['launching', 'closeSettled'],
+    ['ready', 'launch'],
+    ['ready', 'launchSettled'],
+    ['ready', 'closeSettled'],
+    ['closing', 'close'],
+    ['closing', 'launch'],
+    ['closed', 'launch'],
+    ['closed', 'close'],
+    ['closed', 'closeSettled'],
+  ]
+  for (const [from, event] of illegal) {
+    assert.throws(() => nextSessionState(from, event), /非法会话状态转移/, `${from} --${event} 应非法`)
+  }
+})
+check('未知状态报错', () => {
+  assert.throws(() => nextSessionState('booting', 'launch'), /未知会话状态 booting/)
 })
 
 console.log('')
