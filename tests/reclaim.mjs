@@ -8,9 +8,14 @@
  * 运行：node tests/reclaim.mjs
  */
 import { spawnSync } from 'node:child_process'
-import {
+
+// 用例 A 依赖 8 秒空闲回收；browser.js 在模块加载时读取该环境变量，
+// 所以必须在动态 import 之前设置（ESM 的静态 import 会先于模块体执行）。
+process.env.DSH_BROWSER_IDLE_MS ??= '8000'
+
+const {
   activeSessionKeys, close, closeBySessionId, launch, navigate,
-} from '../lib/browser.js'
+} = await import('../lib/browser.js')
 
 const EDGE_MIN_IDLE = 30
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
