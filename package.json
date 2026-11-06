@@ -1,7 +1,7 @@
 {
   "name": "dsh-browser-e2e",
-  "version": "0.1.0",
-  "description": "浏览器端到端验证工具集（browser_*）：用系统 Edge 驱动 Playwright，不触发 360 进程防护弹窗；装进 profile 后对所有会话与工作区可用",
+  "version": "0.2.0",
+  "description": "浏览器端到端验证工具集（browser_*）+ 右侧实时浏览器面板：用系统 Edge 驱动 Playwright，不触发 360 进程防护弹窗；装进 profile 后对所有会话与工作区可用",
   "type": "module",
   "main": "lib/index.js",
   "license": "MIT",
@@ -17,10 +17,18 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
     }
   },
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -28,7 +36,11 @@
     "lib",
     "cordis.patch.yml"
   ],
+  "scripts": {
+    "build:client": "node scripts/build-client.mjs"
+  },
   "dependencies": {
-    "playwright-core": "1.63.0"
+    "playwright-core": "1.63.0",
+    "ws": "^8.22.1"
   }
 }
