@@ -8,9 +8,11 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 
 | 工具 | 作用 |
 |---|---|
-| `browser_start` | 启动浏览器（headless 默认开启），同一会话内复用同一实例 |
-| `browser_e2e_navigate` | 导航到 URL，`waitUntil` 支持 load / domcontentloaded / networkidle；导航时清空控制台与网络缓冲 |
-| `browser_e2e_snapshot` | 扫描可交互元素并分配 ref（`@N`），带 `box` 坐标、`depth`、`role`，上限 400 条并标记 `truncated` |
+| `browser_start` | 启动浏览器（headless 默认开启），同一会话内复用同一实例；`mode: 'isolated' \| 'cdp'` 选择自己拉起 Edge 还是接管已有浏览器 |
+| `browser_e2e_navigate` | 导航到 URL，`waitUntil` 支持 load / domcontentloaded / networkidle；`new_tab: true` 新建标签页，`tab_id` 指定目标页；导航时清空该页的控制台与网络缓冲 |
+| `browser_e2e_tabs` | 列出本会话的标签页：`tab_id` / url / title / active |
+| `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭 |
+| `browser_e2e_snapshot` | 扫描可交互元素并分配 ref（`@N`），带 `box` 坐标、`depth`、`role`，上限 400 条并标记 `truncated`；ref 按标签页隔离 |
 | `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一 |
 | `browser_fill` | 向 ref 对应的输入框填入文本 |
 | `browser_e2e_press` | 按下键盘按键 |
@@ -19,9 +21,39 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），环形 500 条，`limit` 取尾部 |
 | `browser_e2e_wait` | 等待条件：`selector`（配合 `state`）或 `expression` 二选一，`timeoutMs` 默认 10000，超时报实际等待时长 |
 | `browser_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果 |
-| `browser_e2e_close` | 关闭本会话的浏览器实例 |
+| `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接 |
+
+作用于页面的工具都可带可选的 `tab_id`；不给时作用于当前 active tab。
 
 工具名统一带 `browser_e2e_` 前缀（`browser_fill` 除外），可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。
+
+## 多标签页
+
+一个会话仍只起一个浏览器，但可以有多个标签页：
+
+- 每个页面分配稳定 `tab_id`（`t1`、`t2` …），`browser_e2e_tabs` 列出，`browser_e2e_close_tab` 关闭，最后一个不允许关。
+- `browser_e2e_navigate` 传 `new_tab: true` 新建页面并设为 active；传 `tab_id` 指定目标页。
+- ref 表、控制台与网络记录都按页隔离：切 tab 后旧 ref 失效，不会串到另一个页面。
+- 面板的 tab 条按页展示，tab id 是 `会话key#tab_id` 的组合 id。
+
+## 鉴权补票（本机 DSH GUI）
+
+导航后如果页面落在登录挑战（标题或正文含 `authentication required`）且目标为 loopback http(s)，插件会向宿主的 `connection` 服务要一条 `authenticatedUrl(url)`（带 launch-token 的地址）并重试一次；每个 tab 每次导航只重试一次。
+
+- `connection` 服务不存在、拿不到地址、重试失败或返回同一地址时静默跳过，保持原导航结果，不抛错。
+- 非 loopback 目标（`data:`、外部站点）不补票，token 不会交给其它服务。
+- 该服务不写进插件 `inject`，因此没有它的宿主照常加载。
+
+## 接管真实浏览器（CDP）
+
+`browser_start` 的 `mode: 'cdp'` 经 `chromium.connectOverCDP` 接管已用远程调试端口启动的浏览器：
+
+- 只接受 loopback 的 http 端点（默认 `http://127.0.0.1:9222`），其它主机/协议直接报错。
+- 不启动新进程、不新建页面、不设置视口；tab 列表取 `context.pages()`，用户新开的页面也会纳入。
+- `browser_e2e_close` 只断开连接，不结束你的浏览器进程，也不关闭标签页。
+- 需要先自己启动浏览器：`msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\edge-cdp-profile"`（Chrome 136+ 对默认数据目录忽略该开关，必须用非默认 `--user-data-dir`）。
+
+隔离模式（默认）行为不变：自己拉起无头 Edge，一次性 profile，用完关闭。
 
 ## 右侧实时浏览器面板
 
@@ -84,6 +116,15 @@ node tests/client-bundle.mjs
 
 # 面板宿主半区：围栏 / 设置 / 工具参数未变 / 真实 Edge + WebSocket 端到端协议
 node tests/panel.mjs
+
+# 多标签页：new_tab / tabs / close_tab / ref 按页隔离
+node tests/multitab.mjs
+
+# 鉴权补票：挑战页识别、loopback 限制、失败静默跳过
+node tests/auth.mjs
+
+# CDP 接管：真起带远程调试端口的 Edge，接管后 close 只断开连接
+node tests/cdp.mjs
 
 # 回收行为验证：真起无头 Edge，断言会话状态清空且进程退出（脚本自设 8 秒空闲）
 node tests/reclaim.mjs
