@@ -86,6 +86,10 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 
 ### 协议与路由
 
+协议契约的单一来源是 `lib/protocol.js`：路由路径、版本、关闭码、命令表、事件表、投屏设置区间与
+默认值、`panelTabId` 组合规则都在那里；host 与 client 的校验从表派生，客户端所需常量由
+`scripts/build-client.mjs` 在构建时注入到 `lib/client.js`（详见 `specs/项目规格/0002-panel-protocol-v1.md`）。
+
 | 路径 | 作用 |
 |---|---|
 | `GET /api/dsh-browser-e2e/state` | 只读状态快照（socket 连不上时的兜底探测） |
@@ -114,7 +118,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 | `everyNthFrame` | 整数 1-10，默认 1 | 面板投屏初始参数 |
 
 - **首次启动默认值**：`apply` 把 `defaultMode` / `cdpEndpoint` 整理成 `launchDefaults` 交给 `launch`。工具显式传参优先；已启动会话的一致性校验只看工具显式参数，配置默认值不会让运行中的会话报「mode 不一致」。`mode` 只认 `isolated` / `cdp`，端点必须非空，非法值当作未配置。
-- **面板投屏初始参数**：插件加载时 `new PanelHub({ config: screencastConfigOf(config) })`，`PanelHub` 构造里用 `initialConfigOf` 按 `PANEL_CONFIG_LIMITS` 逐字段校验，缺失或越界回退 `DEFAULT_SCREENCAST_CONFIG`（70 / 1280 / 800 / 1），一处脏值不会把面板整个卡死。投屏四项在 Config schema 里不设默认值，区间与默认值只在 `PANEL_CONFIG_LIMITS` / `DEFAULT_SCREENCAST_CONFIG` 一处定义。
+- **面板投屏初始参数**：插件加载时 `new PanelHub({ config: screencastConfigOf(config) })`，`PanelHub` 构造里用 `initialConfigOf` 按 `PANEL_CONFIG_LIMITS` 逐字段校验，缺失或越界回退 `DEFAULT_SCREENCAST_CONFIG`（70 / 1280 / 800 / 1），一处脏值不会把面板整个卡死。投屏四项在 Config schema 里不设默认值，区间与默认值只在 `lib/protocol.js` 的 `PANEL_CONFIG_LIMITS` / `DEFAULT_SCREENCAST_CONFIG` 一处定义，客户端构建时从同一份注入。
 - **运行中保存**：设置页保存触发 `loader/volatile-update` 后，`lib/index.js` 重读配置并调用 `hub.applyConfig`；与当前设置比较后，有变化先按新参数重开投屏再广播 `state`，无变化直接返回。
 
 ## 截图
@@ -157,11 +161,31 @@ dsh plugin --profile desktop add 'github:lengduan/dsh-plugin-browser-e2e&<sha>'
 
 git 依赖是快照，锁在指定 commit：改完源码要 commit + push，再在 profile 目录重新解析（`pnpm update dsh-browser-e2e`，或重新 add 新 sha），否则 profile 里跑的仍是旧提交。
 
+## 代码结构（lib/ 分层）
+
+按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
+
+```
+接口层   tools.js（15 个工具的表）        protocol.js（面板协议表）
+编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
+实现层   session.js  page.js  capture.js  auth.js  screencast.js
+公共     invariants.js（跨调用不变量）    fence.js（安全围栏）
+```
+
+- `invariants.js` 只放「违反=跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收。
+- `page.js` 持标签页、事件环与 ref 表；`capture.js` 持截图与产物目录；`auth.js` 可整体删除。
+- 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。
+- 不变量、状态机与协议契约的完整清单见 `specs/项目规格/0001-architecture-invariants.md`。
+
 ## 开发
 
 ```sh
-# 客户端 bundle：client/index.js -> lib/client.js（先 node --check 校验语法）
+# 客户端 bundle：client/index.js -> lib/client.js（node --check 校验 + 协议常量注入）
 node scripts/build-client.mjs
+
+# 跨调用不变量、会话状态机、协议常量与 client 注入一致性（纯函数，不启动浏览器）
+node tests/invariants.mjs
 
 # 客户端注册面与协议纯函数冒烟（Node VM 桩，不启动浏览器）
 node tests/client-bundle.mjs

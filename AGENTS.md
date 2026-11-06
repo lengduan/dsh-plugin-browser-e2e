@@ -19,8 +19,9 @@
 
 ## 开发约定
 
-- 纯 JS + ESM，无打包器。宿主半区 `lib/`，客户端 `client/index.js`，测试 `tests/*.mjs`；每个测试都直接用 `node tests/<name>.mjs` 跑，没有测试框架、没有 `npm test`。
-- 改了 `client/index.js` 必须跑 `node scripts/build-client.mjs` 重新生成并提交 `lib/client.js`；该脚本只做 `node --check` 语法校验后落盘。
+- 纯 JS + ESM，无打包器。宿主半区 `lib/`（工具表 `tools.js`、协议表 `protocol.js`、不变量 `invariants.js`、会话 `session.js`、页面 `page.js`、截图 `capture.js`、补票 `auth.js`），客户端 `client/index.js`，测试 `tests/*.mjs`；每个测试都直接用 `node tests/<name>.mjs` 跑，没有测试框架、没有 `npm test`。
+- 改了 `client/index.js` 必须跑 `node scripts/build-client.mjs` 重新生成并提交 `lib/client.js`；该脚本做 `node --check` 语法校验，并从 `lib/protocol.js` 注入协议常量。
+- 工具定义、协议契约、跨调用不变量分别只在 `lib/tools.js` / `lib/protocol.js` / `lib/invariants.js` 维护，不要在别处复制一份。
 - 测试会真起无头 Edge：进程数断言以「回落到运行前基线」为准，不看绝对值；跑前避免本机其它自动化同时操作 Edge。
 - 改协议或工具参数时，同时看 `tests/panel.mjs`（协议与参数契约）与 `tests/tools.mjs`（工具能力）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不进 profile。

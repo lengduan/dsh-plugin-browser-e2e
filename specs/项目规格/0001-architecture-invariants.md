@@ -1,6 +1,6 @@
 # 架构不变量与会话状态机
 
-状态: 已确认（实现待按本文落地）
+状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
 代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/panel.js / lib/index.js / tests/invariants.mjs
 
@@ -34,7 +34,7 @@
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
 | `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`）、事件环（console/network 环形缓冲、ref 表）、`snapshot/click/fill/scroll/press/waitFor/evaluate/consoleEntries/networkEntries` | 落盘、协议、面板连接 |
-| `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg`） | 面板连接、会话注册表 |
+| `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
 | `lib/tools.js` | 15 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
@@ -51,7 +51,7 @@ panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js
 page.js → auth.js / invariants.js
 screencast.js → protocol.js / invariants.js
-capture.js → invariants.js
+capture.js → （无内部依赖）
 protocol.js / invariants.js / fence.js → （无内部依赖）
 ```
 
@@ -177,7 +177,9 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `assertLaunchSettled(session)` | 并发启动落定后会话有浏览器 | 浏览器启动失败（同一会话的并发启动未成功），请重试 browser_e2e_start |
 | `assertModeNotHotSwitched(session, requestedMode)` | 请求 mode 与已运行会话一致 | 浏览器已启动（{当前} 模式）；如需切换为 {请求} 模式请先 browser_e2e_close |
 | `assertEndpointNotHotSwitched(session, requestedEndpoint)` | 请求端点与已运行会话一致 | 浏览器已启动（CDP 端点 {当前}）；如需切换为 {请求} 请先 browser_e2e_close |
-| `assertCdpUsable(subject)` | CDP 连接/context/标签页可用 | CDP 浏览器连接已失效，请重新 browser_e2e_start（接管前置另有两条原文案） |
+| `assertCdpConnected(session)` | 会话仍持有 CDP context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
+| `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
+| `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |
 | `assertRefBelongsToTab(tab, ref)` | ref 在该 tab 的 ref 表 | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |
 | `assertRefRevalidated(ref, check)` | 元素仍命中且宽高 > 0 | ref {ref} 已失效…（两条原文案） |
 | `assertSingleScreencast(active, next)` | 安装新 CDP 会话前旧的已置空 | 同一时刻只能有一个投屏会话（违反后果：画面串台） |
