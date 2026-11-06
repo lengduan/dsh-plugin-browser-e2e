@@ -16,7 +16,8 @@ import { existsSync, readFileSync } from 'node:fs'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const {
-  closeAll, click, consoleEntries, evaluate, launch, navigate, networkEntries, screenshot, snapshot, waitFor,
+  closeAll, click, consoleEntries, evaluate, fill, launch, navigate, networkEntries, screenshot, scroll,
+  snapshot, waitFor,
 } = await import('../lib/browser.js')
 
 const KEY = 'test-tools-key'
@@ -67,6 +68,16 @@ async function expectThrow(fn) {
   }
 }
 
+/** 轮询直到条件成立；进程退出是异步的，固定 sleep 会偶发失败。 */
+async function waitUntil(fn, timeoutMs = 10000, stepMs = 250) {
+  const started = Date.now()
+  for (;;) {
+    if (await fn()) return true
+    if (Date.now() - started >= timeoutMs) return false
+    await sleep(stepMs)
+  }
+}
+
 const baseline = edgeRootCount()
 // 运行前可能已有别的进程用 Playwright 起过 Edge（例如其他工具），只断言本测试没有新增残留。
 const playwrightBaseline = playwrightEdgeRootCount()
@@ -74,6 +85,24 @@ const server = createServer((req, res) => {
   if (req.url === '/page') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end('<!doctype html><html><head><title>tools</title></head><body><h1 id="title">ok</h1></body></html>')
+    return
+  }
+  if (req.url.startsWith('/reload-sub')) {
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('sub')
+    return
+  }
+  if (req.url === '/reload') {
+    // 同 URL reload 用例：每次文档加载用 sessionStorage 计数，控制台与子请求都带上序号，
+    // 以便区分「旧文档记录」与「新文档自己的记录」。
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html><head><title>reload</title></head><body><button id="marker">marker</button>'
+      + '<script>'
+      + 'var n = Number(sessionStorage.getItem("docLoads") || "0") + 1;'
+      + 'sessionStorage.setItem("docLoads", String(n));'
+      + 'console.log("doc-load-" + n);'
+      + 'fetch("/reload-sub?n=" + n).catch(function () {});'
+      + '</script></body></html>')
     return
   }
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
@@ -118,12 +147,44 @@ try {
     check('导航清空旧记录（不含用例 2 的页面）', !info.entries.some((e) => e.url.startsWith('data:')), JSON.stringify(info.entries.map((e) => e.url)))
   }
 
+  console.log('== 用例 3B：事件环按新文档重置（同 URL reload）==')
+  {
+    await navigate(KEY, `${base}/reload`, 'load', SID)
+    await waitUntil(async () => (await consoleEntries(KEY, 100)).text.includes('doc-load-1'))
+    await sleep(300)
+    const beforeConsole = await consoleEntries(KEY, 100)
+    const beforeNetwork = await networkEntries(KEY, 100)
+    check('预置：旧文档 console 已记录', beforeConsole.text.includes('doc-load-1'), beforeConsole.text)
+    check('预置：旧文档网络已记录', beforeNetwork.entries.some((e) => e.url === `${base}/reload-sub?n=1`),
+      JSON.stringify(beforeNetwork.entries.map((e) => e.url)))
+    // 页面内触发同 URL reload：不经过 navigate() 的预清空，能否重置完全看新文档判据。
+    await evaluate(KEY, 'setTimeout(function () { location.reload() }, 0); "scheduled"', SID)
+    const reached = await waitUntil(async () => (await consoleEntries(KEY, 100)).text.includes('doc-load-2'))
+    check('reload 后新文档 console 记录到达', reached, (await consoleEntries(KEY, 100)).text)
+    await sleep(300)
+    const afterConsole = await consoleEntries(KEY, 100)
+    const afterNetwork = await networkEntries(KEY, 100)
+    check('reload 后旧 console 记录不再出现', !afterConsole.text.includes('doc-load-1'), afterConsole.text)
+    check('reload 后新文档 console 记录保留', afterConsole.text.includes('doc-load-2'), afterConsole.text)
+    check('reload 后旧网络记录不再出现', !afterNetwork.entries.some((e) => e.url.endsWith('/reload-sub?n=1')),
+      JSON.stringify(afterNetwork.entries.map((e) => e.url)))
+    const docRecord = afterNetwork.entries.find((e) => e.url === `${base}/reload`)
+    const subRecord = afterNetwork.entries.find((e) => e.url === `${base}/reload-sub?n=2`)
+    check('reload 后新文档自身请求保留（document + 子请求）', docRecord?.status === 200 && subRecord?.status === 200,
+      JSON.stringify(afterNetwork.entries.map((e) => ({ url: e.url, status: e.status }))))
+  }
+
   console.log('== 用例 4：snapshot 的 box / role / depth ==')
   {
     await navigate(KEY, 'data:text/html,<body><div style="padding:20px"><button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button></div><input id="chk" type="checkbox" style="position:fixed;left:10px;top:10px"></body>', 'load', SID)
     const info = await snapshot(KEY, SID)
     const text = info.text
     check('snapshot 返回 summary 与 truncated 字段', typeof info.summary === 'string' && info.truncated === false, JSON.stringify({ summary: info.summary, truncated: info.truncated }))
+    // 全 DOM 快照的节点结构：id / classes / name / depth 四个字段都在且类型正确。
+    const structureOk = info.nodes.length > 0 && info.nodes.every((node) => typeof node.id === 'string'
+      && Array.isArray(node.classes) && node.classes.every((name) => typeof name === 'string')
+      && typeof node.name === 'string' && Number.isInteger(node.depth) && node.depth >= 1)
+    check('节点结构含 id / classes / name / depth', structureOk, JSON.stringify(info.nodes.slice(0, 3)))
     // 文本行里带 box(...) 且按钮标签正确。
     check('文本含 box(...)', /box\(100,100,100,40\)/.test(text), text)
     check('文本含按钮标签与缩进', text.includes('"Click Me"'), text)
@@ -155,6 +216,78 @@ try {
     check('三种目标都不给时报错', Boolean(noneMessage) && /ref|selector|x \+ y/.test(noneMessage ?? ''), String(noneMessage))
   }
 
+  console.log('== 用例 5B：fill 三种目标（ref / selector / 坐标）==')
+  {
+    await navigate(KEY, 'data:text/html,<body style="margin:0">'
+      + '<input id="a" placeholder="first" style="position:fixed;left:20px;top:20px;width:200px;height:30px">'
+      + '<input id="b" placeholder="second" style="position:fixed;left:20px;top:80px;width:200px;height:30px">'
+      + '<input id="c" placeholder="third" style="position:fixed;left:20px;top:140px;width:200px;height:30px">'
+      + '</body>', 'load', SID)
+    const info = await snapshot(KEY, SID)
+    const first = info.nodes.find((node) => node.id === 'a')
+    const third = info.nodes.find((node) => node.id === 'c')
+    check('快照能定位到三个输入框', Boolean(first) && Boolean(third) && Boolean(info.nodes.find((node) => node.id === 'b')), JSON.stringify(info.nodes.slice(0, 6)))
+    const byRef = await fill(KEY, { ref: first?.ref }, 'ref-value', SID)
+    const bySelector = await fill(KEY, { selector: '#b' }, 'selector-value', SID)
+    // 坐标取 #c 的 box 中心；fill 的坐标分支是真实鼠标点击后键入。
+    const pointX = third ? third.box.x + Math.round(third.box.width / 2) : 0
+    const pointY = third ? third.box.y + Math.round(third.box.height / 2) : 0
+    const byPoint = await fill(KEY, { x: pointX, y: pointY }, 'point-value', SID)
+    const values = await evaluate(KEY, "['a','b','c'].map(function (id) { return document.getElementById(id).value })", SID)
+    check('ref 写入生效', values.value?.[0] === 'ref-value' && byRef.mode === 'ref', JSON.stringify({ values: values.value, byRef }))
+    check('selector 写入生效', values.value?.[1] === 'selector-value' && bySelector.mode === 'selector', JSON.stringify({ values: values.value, bySelector }))
+    check('坐标写入生效', values.value?.[2] === 'point-value' && byPoint.mode === 'point', JSON.stringify({ values: values.value, byPoint }))
+    const fillNone = await expectThrow(() => fill(KEY, {}, 'x', SID))
+    check('三种目标都不给时报错', Boolean(fillNone) && fillNone.includes('ref / selector / x + y'), String(fillNone))
+  }
+
+  console.log('== 用例 5D：fill 不误切换 checkbox / radio ==')
+  {
+    await navigate(KEY, 'data:text/html,<body style="margin:0">'
+      + '<input id="chk" type="checkbox" style="position:fixed;left:20px;top:20px;width:24px;height:24px">'
+      + '<input id="rad" type="radio" name="g" style="position:fixed;left:20px;top:80px;width:24px;height:24px">'
+      + '<input id="txt" placeholder="text" style="position:fixed;left:20px;top:140px;width:200px;height:30px">'
+      + '</body>', 'load', SID)
+    const info = await snapshot(KEY, SID)
+    const chk = info.nodes.find((node) => node.id === 'chk')
+    const rad = info.nodes.find((node) => node.id === 'rad')
+    const txt = info.nodes.find((node) => node.id === 'txt')
+    check('快照能定位到 checkbox / radio / 文本框', Boolean(chk) && Boolean(rad) && Boolean(txt), JSON.stringify(info.nodes.slice(0, 8)))
+    const chkFill = await expectThrow(() => fill(KEY, { ref: chk?.ref }, 'on', SID))
+    check('checkbox 用 ref 填写报「可切换控件」并提示改用 click', Boolean(chkFill) && chkFill.includes('可切换控件') && chkFill.includes('browser_e2e_click'), String(chkFill))
+    const radFill = await expectThrow(() => fill(KEY, { ref: rad?.ref }, 'on', SID))
+    check('radio 用 ref 填写报「可切换控件」', Boolean(radFill) && radFill.includes('可切换控件'), String(radFill))
+    const states = await evaluate(KEY, "({ chk: document.getElementById('chk').checked, rad: document.getElementById('rad').checked })", SID)
+    check('fill 后 checkbox / radio 勾选状态未变', states.value?.chk === false && states.value?.rad === false, JSON.stringify(states.value))
+    // 仍可交互：用 click 明确切换，再用 fill 写文本框。
+    await click(KEY, { ref: chk?.ref }, SID)
+    const afterClick = await evaluate(KEY, "document.getElementById('chk').checked", SID)
+    check('随后用 click 能正常切换 checkbox', afterClick.value === true, JSON.stringify(afterClick.value))
+    const txtFill = await fill(KEY, { ref: txt?.ref }, 'still-works', SID)
+    const txtValue = await evaluate(KEY, "document.getElementById('txt').value", SID)
+    check('同页文本框 fill 仍生效', txtFill.mode === 'ref' && txtValue.value === 'still-works', JSON.stringify({ txtFill, txtValue: txtValue.value }))
+  }
+
+  console.log('== 用例 5C：scroll（滚动 / 坐标 / 非法 delta）==')
+  {
+    await navigate(KEY, 'data:text/html,<body style="margin:0"><div style="height:3000px;background-color:gray"></div></body>', 'load', SID)
+    const before = await evaluate(KEY, 'window.scrollY', SID)
+    const info = await scroll(KEY, { delta_y: 600 }, SID)
+    await sleep(200)
+    const after = await evaluate(KEY, 'window.scrollY', SID)
+    check('滚动后 window.scrollY 增加', before.value === 0 && after.value > 0, `${before.value} -> ${after.value}`)
+    check('返回 deltaX / deltaY 与摘要', info.mode === 'scroll' && info.deltaX === 0 && info.deltaY === 600, JSON.stringify(info))
+    // 坐标滚动：先把鼠标移到视口内再滚，scrollY 继续增加。
+    const moved = await scroll(KEY, { x: 200, y: 200, delta_y: 400 }, SID)
+    await sleep(200)
+    const afterPoint = await evaluate(KEY, 'window.scrollY', SID)
+    check('坐标滚动继续增加 scrollY', afterPoint.value > after.value && moved.deltaY === 400, `${after.value} -> ${afterPoint.value}`)
+    const zero = await expectThrow(() => scroll(KEY, { delta_x: 0, delta_y: 0 }, SID))
+    check('delta 全 0 报错', Boolean(zero) && zero.includes('非 0'), String(zero))
+    const badDelta = await expectThrow(() => scroll(KEY, { delta_y: 'not-a-number' }, SID))
+    check('非数字 delta 报错', Boolean(badDelta) && badDelta.includes('必须是数字'), String(badDelta))
+  }
+
   console.log('== 用例 6：ref 失效检测 ==')
   {
     await navigate(KEY, 'data:text/html,<button id="btn" onclick="window.__clicked=true">Click Me</button>', 'load', SID)
@@ -175,6 +308,21 @@ try {
     check('clip 截图尺寸为 100x50', size.width === 100 && size.height === 50, JSON.stringify(size))
     check('meta 尺寸与文件一致', info.meta.width === 100 && info.meta.height === 50, JSON.stringify(info.meta))
     check('首行为 summary', info.summary.includes('截图') && info.summary.includes('100x50'), info.summary)
+
+    // 数值倍率 1 / 2 / 3：输出尺寸应是 clip 基准尺寸的整数倍。
+    for (const factor of [1, 2, 3]) {
+      const scaled = await screenshot(KEY, { name: `scale-${factor}`, clip: { x: 10, y: 10, width: 100, height: 50 }, scale: factor }, SID)
+      const scaledSize = existsSync(scaled.file) ? pngSize(scaled.file) : { width: 0, height: 0 }
+      const expectedWidth = 100 * factor
+      const expectedHeight = 50 * factor
+      check(`scale ${factor} 输出 ${expectedWidth}x${expectedHeight}`, scaledSize.width === expectedWidth
+        && scaledSize.height === expectedHeight && scaled.meta.width === expectedWidth
+        && scaled.meta.height === expectedHeight, `${JSON.stringify(scaledSize)} meta=${JSON.stringify(scaled.meta)}`)
+    }
+    const badScale = await expectThrow(() => screenshot(KEY, { scale: 4 }, SID))
+    check('非法 scale 数字报错', Boolean(badScale) && badScale.includes('scale'), String(badScale))
+    const badScaleText = await expectThrow(() => screenshot(KEY, { scale: 'zoom' }, SID))
+    check('非法 scale 字符串报错', Boolean(badScaleText) && badScaleText.includes('scale'), String(badScaleText))
 
     const jpegInfo = await screenshot(KEY, { name: 'jpeg-shot', format: 'jpeg', quality: 80 }, SID)
     check('jpeg 截图落盘且扩展名正确', existsSync(jpegInfo.file) && jpegInfo.file.endsWith('.jpeg'), jpegInfo.file)
@@ -211,13 +359,24 @@ try {
     check('selector 与 expression 同时给时报错', Boolean(bothMessage) && bothMessage.includes('二选一'), String(bothMessage))
   }
 
-  console.log('== 用例 9：snapshot 400 条截断 ==')
+  console.log('== 用例 9：snapshot 全 DOM 的 4000 条截断 ==')
   {
-    await navigate(KEY, 'data:text/html,<body><script>for (let i = 0; i < 450; i++) { const b = document.createElement("button"); b.textContent = "b" + i; document.body.appendChild(b) }</script></body>', 'load', SID)
+    await navigate(KEY, 'data:text/html,<body><script>'
+      + 'for (let i = 0; i < 4100; i++) { const b = document.createElement("button"); b.id = "b" + i; b.textContent = "b" + i; '
+      + 'b.onclick = function () { window.__lastClick = this.id }; document.body.appendChild(b) }'
+      + '</script></body>', 'load', SID)
     const info = await snapshot(KEY, SID)
     check('truncated 为 true', info.truncated === true, JSON.stringify({ truncated: info.truncated, count: info.count }))
-    check('只返回 400 条', info.count === 400, String(info.count))
-    check('文本尾部有截断提示', info.text.includes('已截断') && info.text.includes('450'), info.text.slice(-120))
+    check('只返回 4000 条', info.count === 4000, String(info.count))
+    check('total 记录实际可见节点数', info.total === 4100, String(info.total))
+    check('文本尾部有截断提示', info.text.includes('已截断') && info.text.includes('4100'), info.text.slice(-160))
+    // 截断只影响返回条数，ref 表仍然可用。
+    const refLine = info.text.split('\n').find((line) => line.includes('"b0"'))
+    const ref = refLine && /\[(\d+)\]/.exec(refLine) ? `@${/\[(\d+)\]/.exec(refLine)[1]}` : null
+    const clicked = await click(KEY, { ref }, SID)
+    await sleep(100)
+    const flag = await evaluate(KEY, 'window.__lastClick === "b0"', SID)
+    check('截断后的 ref 点击仍生效', Boolean(ref) && flag.value === true, `${JSON.stringify(clicked)} ref=${ref}`)
   }
   console.log('== 用例 10：index.js 工具注册与截图的文本 + 图片输出 ==')
   {
@@ -238,9 +397,22 @@ try {
     })
     apply(makeCtx(fakeAttachments))
     const names = definitions.map((definition) => definition.name)
-    check('注册工具数量为 14', definitions.length === 14, JSON.stringify(names))
-    check('新增工具均已注册', ['browser_e2e_console', 'browser_e2e_network', 'browser_e2e_wait', 'browser_e2e_tabs', 'browser_e2e_close_tab'].every((name) => names.includes(name)), JSON.stringify(names))
-    check('原有 9 个工具仍在', ['browser_start', 'browser_e2e_navigate', 'browser_e2e_snapshot', 'browser_e2e_click', 'browser_fill', 'browser_e2e_press', 'browser_e2e_screenshot', 'browser_evaluate', 'browser_e2e_close'].every((name) => names.includes(name)), JSON.stringify(names))
+    // 工具名统一 browser_e2e_ 前缀，共 15 个。
+    const expectedNames = [
+      'browser_e2e_start', 'browser_e2e_navigate', 'browser_e2e_tabs', 'browser_e2e_close_tab',
+      'browser_e2e_snapshot', 'browser_e2e_click', 'browser_e2e_fill', 'browser_e2e_scroll',
+      'browser_e2e_press', 'browser_e2e_screenshot', 'browser_e2e_console', 'browser_e2e_network',
+      'browser_e2e_wait', 'browser_e2e_evaluate', 'browser_e2e_close',
+    ]
+    check('注册工具数量为 15', definitions.length === 15, JSON.stringify(names))
+    check('15 个工具名齐全', expectedNames.every((name) => names.includes(name)), JSON.stringify(names))
+    check('工具名统一带 browser_e2e_ 前缀', names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
+    const fillTool = definitions.find((definition) => definition.name === 'browser_e2e_fill')
+    check('fill 参数为 ref / selector / x / y / value / tab_id', JSON.stringify(Object.keys(fillTool.parameters.properties)) === JSON.stringify(['ref', 'selector', 'x', 'y', 'value', 'tab_id']),
+      JSON.stringify(Object.keys(fillTool.parameters.properties)))
+    const scrollTool = definitions.find((definition) => definition.name === 'browser_e2e_scroll')
+    check('scroll 参数为 delta_x / delta_y / x / y / tab_id', JSON.stringify(Object.keys(scrollTool.parameters.properties)) === JSON.stringify(['delta_x', 'delta_y', 'x', 'y', 'tab_id']),
+      JSON.stringify(Object.keys(scrollTool.parameters.properties)))
 
     const screenshotTool = definitions.find((definition) => definition.name === 'browser_e2e_screenshot')
     const exec = { agent: { id: KEY } }
@@ -269,11 +441,13 @@ try {
 }
 
 console.log('')
-await sleep(1500)
+// 进程退出是异步的：每 250ms 轮询一次，最多等 10s，条件满足即通过。
+const edgeSettled = await waitUntil(() => edgeRootCount() <= baseline)
+const playwrightSettled = await waitUntil(() => playwrightEdgeRootCount() <= playwrightBaseline)
 const remaining = edgeRootCount()
 const remainingPlaywright = playwrightEdgeRootCount()
-check('msedge 主进程回落到运行前基线', remaining <= baseline, `baseline=${baseline} remaining=${remaining}`)
-check('本测试未遗留 Playwright Edge 主进程', remainingPlaywright <= playwrightBaseline, `playwright 基线=${playwrightBaseline} 残留=${remainingPlaywright}`)
+check('msedge 主进程回落到运行前基线', edgeSettled && remaining <= baseline, `baseline=${baseline} remaining=${remaining}`)
+check('本测试未遗留 Playwright Edge 主进程', playwrightSettled && remainingPlaywright <= playwrightBaseline, `playwright 基线=${playwrightBaseline} 残留=${remainingPlaywright}`)
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
 console.log(`收尾检查：剩余 msedge 主进程 ${remaining} 个（基线 ${baseline} 个，运行前已存在）；Playwright 主进程 ${remainingPlaywright} 个（基线 ${playwrightBaseline} 个）`)

@@ -34,6 +34,16 @@ function check(label, ok, detail) {
   if (ok) { pass += 1; console.log(`  PASS  ${label}`) } else { fail += 1; console.log(`  FAIL  ${label}${detail ? ` —— ${detail}` : ''}`) }
 }
 
+/** 轮询直到条件成立：进程退出与空闲回收都是异步的，固定 sleep 会偶发失败。 */
+async function waitUntil(fn, timeoutMs = 15000, stepMs = 250) {
+  const started = Date.now()
+  for (;;) {
+    if (await fn()) return true
+    if (Date.now() - started >= timeoutMs) return false
+    await sleep(stepMs)
+  }
+}
+
 console.log('== 用例 A：空闲超时自动回收（DSH_BROWSER_IDLE_MS=8000）==')
 {
   const before = edgeRootCount()
@@ -42,10 +52,11 @@ console.log('== 用例 A：空闲超时自动回收（DSH_BROWSER_IDLE_MS=8000�
   await navigate('test-key-idle', 'about:blank', 'load', id)
   check('启动后 sessions 持有该会话', activeSessionKeys().includes('test-key-idle'), JSON.stringify(activeSessionKeys()))
   check('启动后 Edge 主进程增加', edgeRootCount() > before, `before=${before} now=${edgeRootCount()}`)
-  console.log('  等待 8s 空闲超时 + 2s 收敛…')
-  await sleep(10000)
-  check('超时后 sessions 已清空', !activeSessionKeys().includes('test-key-idle'), JSON.stringify(activeSessionKeys()))
-  check('超时后 Edge 主进程已回落', edgeRootCount() <= before, `before=${before} now=${edgeRootCount()}`)
+  console.log('  等待 8s 空闲超时 + 轮询进程回落（每 250ms，最多 15s）…')
+  const cleared = await waitUntil(() => !activeSessionKeys().includes('test-key-idle'), 15000)
+  check('超时后 sessions 已清空', cleared, JSON.stringify(activeSessionKeys()))
+  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
+  check('超时后 Edge 主进程已回落', gone, `before=${before} now=${edgeRootCount()}`)
 }
 
 console.log('== 用例 B：session/disposed 钩子回收（同一条 closeBySessionId 路径）==')
@@ -58,8 +69,8 @@ console.log('== 用例 B：session/disposed 钩子回收（同一条 closeBySess
   const r = await closeBySessionId(id)
   check('disposed 路径返回 closed=true', r.closed === true, JSON.stringify(r))
   check('disposed 后 sessions 已清空', !activeSessionKeys().includes('test-key-disposed'), JSON.stringify(activeSessionKeys()))
-  await sleep(1500)
-  check('disposed 后 Edge 主进程已回落', edgeRootCount() <= before, `before=${before} now=${edgeRootCount()}`)
+  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
+  check('disposed 后 Edge 主进程已回落', gone, `before=${before} now=${edgeRootCount()}`)
 }
 
 console.log('== 用例 C：不显式传 sessionId 时，用 agent.id（= key）仍能被 disposed 命中 ==')
@@ -84,8 +95,68 @@ console.log('== 用例 E：显式 close 仍然生效 ==')
   await launch('test-key-explicit', { headless: true }, id)
   const r = await close('test-key-explicit')
   check('显式 close 返回 closed=true', r.closed === true, JSON.stringify(r))
-  await sleep(1500)
-  check('显式 close 后 Edge 主进程已回落', edgeRootCount() <= before, `before=${before} now=${edgeRootCount()}`)
+  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
+  check('显式 close 后 Edge 主进程已回落', gone, `before=${before} now=${edgeRootCount()}`)
+}
+
+console.log('== 用例 F：小空闲时限不打断 launch（launch 与空闲回收竞态）==')
+{
+  const before = edgeRootCount()
+  // browser.js 在模块加载时读取 DSH_BROWSER_IDLE_MS，只能用子进程模拟「空闲时限小于启动耗时」。
+  const moduleUrl = new URL('../lib/browser.js', import.meta.url).href
+  const childScript = `
+const { activeSessionKeys, close, launch } = await import(${JSON.stringify(moduleUrl)})
+const started = Date.now()
+const info = await launch('test-key-tiny-idle', { headless: true }, 'test-session-tiny-idle')
+const elapsed = Date.now() - started
+const keysAfterLaunch = activeSessionKeys()
+const deadline = Date.now() + 8000
+while (activeSessionKeys().includes('test-key-tiny-idle') && Date.now() < deadline) {
+  await new Promise((resolve) => setTimeout(resolve, 20))
+}
+const reclaimed = !activeSessionKeys().includes('test-key-tiny-idle')
+await close('test-key-tiny-idle').catch(() => {})
+console.log(JSON.stringify({ elapsed, keysAfterLaunch, reclaimed, version: info.version }))
+`
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', childScript], {
+    env: { ...process.env, DSH_BROWSER_IDLE_MS: '100' },
+    encoding: 'utf8',
+    timeout: 60000,
+  })
+  const output = (run.stdout ?? '').trim()
+  let child = null
+  try {
+    child = JSON.parse(output.split('\n').filter(Boolean).pop() ?? '')
+  } catch {
+    child = null
+  }
+  const detail = `status=${run.status} stdout=${output} stderr=${(run.stderr ?? '').trim()}`
+  check('IDLE_MS=100 时 launch 正常返回（未被空闲回收打断）',
+    run.status === 0 && Array.isArray(child?.keysAfterLaunch) && child.keysAfterLaunch.includes('test-key-tiny-idle'), detail)
+  check('启动耗时超过空闲时限（竞态场景确实被覆盖）', typeof child?.elapsed === 'number' && child.elapsed >= 100, detail)
+  check('launch 落定后空闲回收仍然生效', child?.reclaimed === true, detail)
+  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
+  check('子进程结束后 Edge 主进程回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
+}
+
+console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
+{
+  const before = edgeRootCount()
+  const first = launch('test-key-concurrent', { headless: true }, 'test-session-concurrent')
+  const second = launch('test-key-concurrent', { headless: true }, 'test-session-concurrent')
+  const [a, b] = await Promise.all([first, second])
+  check('两次并发 launch 都成功返回', Boolean(a) && Boolean(b) && typeof a.version === 'string' && typeof b.version === 'string',
+    JSON.stringify({ a, b }))
+  check('后到的一次按复用返回同一实例', a.reused === false && b.reused === true,
+    JSON.stringify({ aReused: a.reused, bReused: b.reused }))
+  check('会话只有一个标签页', a.tabs === 1 && b.tabs === 1, JSON.stringify({ aTabs: a.tabs, bTabs: b.tabs }))
+  const single = await waitUntil(() => edgeRootCount() <= before + 1, 10000)
+  check('只新增一个 Edge 主进程', single && edgeRootCount() === before + 1, `before=${before} now=${edgeRootCount()}`)
+  const blank = await navigate('test-key-concurrent', 'about:blank', 'load', 'test-session-concurrent')
+  check('并发启动后浏览器可正常导航', blank.url === 'about:blank', JSON.stringify(blank))
+  await close('test-key-concurrent')
+  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
+  check('关闭后 Edge 主进程回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
 }
 
 console.log('')
