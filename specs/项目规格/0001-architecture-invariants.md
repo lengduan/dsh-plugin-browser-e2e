@@ -186,7 +186,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 
 - 组合：`panelTabId(key, tabId) = key + "#" + tabId`；分隔符常量 `PANEL_TAB_SEPARATOR = '#'`。
 - 拆分：`parsePanelTabId(panelId)` 取**最后一个** `#`；`#` 不在首字符之后或位于末尾时返回 `null`。
-  因此 key 或 tabId 自身含 `#` 时仍能正确拆分（以最后一个 `#` 为界）。
+  因此会话 key 自身含 `#` 时仍能正确拆分（以最后一个 `#` 为界）；tab_id 固定为 `t<N>`，不含分隔符。
 - 不合规输入（非字符串、无 `#`、`#` 在开头/结尾）一律返回 `null`，由调用方转成 `unknown-tab` 错误。
 - host 与 client 都不再各写一份：`session.js` 用 `panelTabId/parsePanelTabId`，`panel.js` 用
   `parsePanelTabId`，`protocol.js` 是唯一实现。

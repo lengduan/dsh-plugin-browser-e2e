@@ -8,6 +8,7 @@
  * 运行：node tests/invariants.mjs
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   assertBrowserRunning, assertCanCloseLastTab, assertCdpConnected, assertCdpContext, assertCdpHasPages,
@@ -15,6 +16,10 @@ import {
   assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated, assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
 import { nextSessionState, SESSION_STATES } from '../lib/session.js'
+import {
+  DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
+  PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
+} from '../lib/protocol.js'
 
 let pass = 0
 let fail = 0
@@ -170,6 +175,69 @@ check('非法转移抛错（含终态 closed）', () => {
 })
 check('未知状态报错', () => {
   assert.throws(() => nextSessionState('booting', 'launch'), /未知会话状态 booting/)
+})
+
+console.log('== 用例 E：面板协议契约（protocol.js 单一来源）==')
+check('panelTabId 组合与拆分可往返', () => {
+  assert.equal(panelTabId('session-a', 't1'), 'session-a#t1')
+  assert.deepEqual(parsePanelTabId('session-a#t1'), { key: 'session-a', tabId: 't1' })
+  // 以最后一个分隔符为界：key 自身含分隔符也能正确拆分（tabId 不含分隔符）。
+  assert.deepEqual(parsePanelTabId('a#b#t1'), { key: 'a#b', tabId: 't1' })
+  assert.deepEqual(parsePanelTabId(panelTabId('k#x', 't1')), { key: 'k#x', tabId: 't1' })
+})
+check('panelTabId 非法格式返回 null', () => {
+  assert.equal(parsePanelTabId('#t1'), null)
+  assert.equal(parsePanelTabId('session-a#'), null)
+  assert.equal(parsePanelTabId('no-separator'), null)
+  assert.equal(parsePanelTabId(''), null)
+  assert.equal(parsePanelTabId(undefined), null)
+  assert.equal(parsePanelTabId(123), null)
+})
+check('命令表与事件表是协议的唯一来源', () => {
+  assert.deepEqual(Object.values(PANEL_COMMANDS).sort(), ['attach', 'close-tab', 'configure', 'request-frame', 'select-tab'])
+  assert.deepEqual(Object.values(PANEL_EVENTS).sort(), ['action', 'error', 'frame', 'hello', 'state'])
+  assert.equal(isPanelCommand('attach'), true)
+  assert.equal(isPanelCommand('select-tab'), true)
+  assert.equal(isPanelCommand('no-such-command'), false)
+  assert.equal(isPanelEvent('frame'), true)
+  assert.equal(isPanelEvent('no-such-event'), false)
+})
+check('协议版本与路径', () => {
+  assert.equal(isSupportedProtocol(PANEL_PROTOCOL_VERSION), true)
+  assert.equal(isSupportedProtocol(PANEL_PROTOCOL_VERSION + 1), false)
+  assert.equal(isSupportedProtocol('1'), false)
+  assert.equal(PANEL_SOCKET_PATH, '/api/dsh-browser-e2e/socket')
+  assert.equal(PANEL_STATE_PATH, '/api/dsh-browser-e2e/state')
+})
+check('投屏区间与默认值自洽（默认值逐项落在区间内）', () => {
+  for (const [field, [min, max]] of Object.entries(PANEL_CONFIG_LIMITS)) {
+    const value = DEFAULT_SCREENCAST_CONFIG[field]
+    assert.ok(Number.isInteger(value) && value >= min && value <= max, `${field}=${value} 不在 [${min}, ${max}]`)
+  }
+  assert.deepEqual(DEFAULT_SCREENCAST_CONFIG, { quality: 70, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 })
+})
+
+console.log('== 用例 F：client bundle 的协议常量由 protocol.js 注入 ==')
+const clientSource = readFileSync(new URL('../client/index.js', import.meta.url), 'utf8')
+const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+check('client 源文件只留注入标记，不手写区间与默认值', () => {
+  assert.ok(clientSource.includes('/* @inject:panel-protocol:start */'))
+  assert.ok(clientSource.includes('/* @inject:panel-protocol:end */'))
+  assert.ok(!clientSource.includes('/api/dsh-browser-e2e/socket'), 'client 源文件不应手写 socket 路径')
+  assert.ok(!/const PROTOCOL_VERSION = \d+;/.test(clientSource), 'client 源文件不应手写协议版本')
+  assert.ok(!/const DEFAULT_CONFIG = \{/.test(clientSource), 'client 源文件不应手写投屏默认值')
+})
+check('生成的 bundle 常量与 protocol.js 逐字段一致', () => {
+  const readBlock = (pattern) => {
+    const match = pattern.exec(bundle)
+    assert.ok(match, 'bundle 缺少常量：' + pattern)
+    return match[1]
+  }
+  assert.equal(Number(readBlock(/const PROTOCOL_VERSION = (\d+);/)), PANEL_PROTOCOL_VERSION)
+  assert.equal(JSON.parse(readBlock(/const WS_PATH = ("[^"]*");/)), PANEL_SOCKET_PATH)
+  assert.deepEqual(JSON.parse(readBlock(/const PANEL_CONFIG_LIMITS = (\{.*?\});/)), PANEL_CONFIG_LIMITS)
+  assert.deepEqual(JSON.parse(readBlock(/const DEFAULT_CONFIG = (\{.*?\});/)), DEFAULT_SCREENCAST_CONFIG)
+  assert.ok(bundle.startsWith('/* 由 scripts/build-client.mjs 生成，勿手改'))
 })
 
 console.log('')

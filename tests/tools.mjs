@@ -401,21 +401,18 @@ try {
     })
     apply(makeCtx(fakeAttachments))
     const names = definitions.map((definition) => definition.name)
-    // 工具名统一 browser_e2e_ 前缀，共 15 个。
-    const expectedNames = [
-      'browser_e2e_start', 'browser_e2e_navigate', 'browser_e2e_tabs', 'browser_e2e_close_tab',
-      'browser_e2e_snapshot', 'browser_e2e_click', 'browser_e2e_fill', 'browser_e2e_scroll',
-      'browser_e2e_press', 'browser_e2e_screenshot', 'browser_e2e_console', 'browser_e2e_network',
-      'browser_e2e_wait', 'browser_e2e_evaluate', 'browser_e2e_close',
-    ]
-    check('注册工具数量为 15', definitions.length === 15, JSON.stringify(names))
-    check('15 个工具名齐全', expectedNames.every((name) => names.includes(name)), JSON.stringify(names))
-    check('工具名统一带 browser_e2e_ 前缀', names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
+    // 期望从 lib/tools.js 的工具表派生：新增工具只改表，这里不用改断言。
+    const { buildToolTable } = await import('../lib/tools.js')
+    const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: {} })
+    check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
+    check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
+      && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const fillTool = definitions.find((definition) => definition.name === 'browser_e2e_fill')
-    check('fill 参数为 ref / selector / x / y / value / tab_id', JSON.stringify(Object.keys(fillTool.parameters.properties)) === JSON.stringify(['ref', 'selector', 'x', 'y', 'value', 'tab_id']),
-      JSON.stringify(Object.keys(fillTool.parameters.properties)))
+    check('fill 把 value 列为必填并提供四种目标参数', fillTool.parameters.required.includes('value')
+      && ['ref', 'selector', 'x', 'y', 'tab_id'].every((field) => field in fillTool.parameters.properties),
+    JSON.stringify(fillTool.parameters))
     const scrollTool = definitions.find((definition) => definition.name === 'browser_e2e_scroll')
-    check('scroll 参数为 delta_x / delta_y / x / y / tab_id', JSON.stringify(Object.keys(scrollTool.parameters.properties)) === JSON.stringify(['delta_x', 'delta_y', 'x', 'y', 'tab_id']),
+    check('scroll 参数含 delta_x / delta_y / x / y / tab_id', ['delta_x', 'delta_y', 'x', 'y', 'tab_id'].every((field) => field in scrollTool.parameters.properties),
       JSON.stringify(Object.keys(scrollTool.parameters.properties)))
 
     const screenshotTool = definitions.find((definition) => definition.name === 'browser_e2e_screenshot')

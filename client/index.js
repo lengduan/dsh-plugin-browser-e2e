@@ -4,7 +4,10 @@
  * 入口是右侧栏的 tab 类型 "dsh-browser-e2e"（kind "browser-e2e"）：agent 调用
  * browser_* 工具时，host 半区把当前页面推成 JPEG 帧，这里在右侧栏里实时显示。
  *
- * 协议 v1（与 host 半区严格一致）：
+ * 协议 v1（契约单一来源 lib/protocol.js；本文件所需的常量由 scripts/build-client.mjs
+ * 在构建时注入，不要手写区间与默认值）：
+ *
+ * 在线协议：
  *   客户端命令：attach{sessionId?} / select-tab{tabId} / close-tab{tabId} /
  *              request-frame /
  *              configure{config:{quality?,maxWidth?,maxHeight?,everyNthFrame?}}
@@ -25,6 +28,10 @@ window.__ModuleLoader__.load({
 
     const React = require("react");
     const el = React.createElement;
+
+    // ── 协议常量（构建时由 lib/protocol.js 注入） ────────────────────────
+    /* @inject:panel-protocol:start */
+    /* @inject:panel-protocol:end */
 
     /** 插件标识：同时是 tab 类型 id 与两个 keyed slot 的 key。 */
     const PLUGIN_ID = "dsh-browser-e2e";
@@ -47,17 +54,11 @@ window.__ModuleLoader__.load({
     };
     /** tab 类型 kind，供 openTabIn/openTab 按类型点名。 */
     const TAB_KIND = "browser-e2e";
-    /** host 半区挂载的 WebSocket 路径。 */
-    const WS_PATH = "/api/dsh-browser-e2e/socket";
-    /** 协议版本。 */
-    const PROTOCOL_VERSION = 1;
     /** 重连退避起点与上限（毫秒）。 */
     const RECONNECT_MIN_MS = 500;
     const RECONNECT_MAX_MS = 15000;
-    /** 配置缺省值；host 的 state 到达后以 host 下发的为准。 */
-    // 与 host 半区 lib/screencast.js 的 DEFAULT_SCREENCAST_CONFIG 保持一致：
-    // 首次 state 到达前设置卡片会先显示这组值。
-    const DEFAULT_CONFIG = { quality: 70, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 };
+    // DEFAULT_CONFIG / PANEL_CONFIG_LIMITS / PROTOCOL_VERSION / WS_PATH 由构建注入：
+    // host 半区 lib/protocol.js 是唯一来源，client 不再手写一份。
 
     // ── 文案（中文为键，英文为值；跟随浏览器语言） ────────────────────────
     const EN = {
@@ -175,10 +176,10 @@ window.__ModuleLoader__.load({
     function normalizeConfig(input) {
       const raw = input && typeof input === "object" ? input : {};
       return {
-        quality: clampNumber(raw.quality, 10, 100, DEFAULT_CONFIG.quality),
-        maxWidth: clampNumber(raw.maxWidth, 100, 4096, DEFAULT_CONFIG.maxWidth),
-        maxHeight: clampNumber(raw.maxHeight, 100, 4096, DEFAULT_CONFIG.maxHeight),
-        everyNthFrame: clampNumber(raw.everyNthFrame, 1, 10, DEFAULT_CONFIG.everyNthFrame),
+        quality: clampNumber(raw.quality, PANEL_CONFIG_LIMITS.quality[0], PANEL_CONFIG_LIMITS.quality[1], DEFAULT_CONFIG.quality),
+        maxWidth: clampNumber(raw.maxWidth, PANEL_CONFIG_LIMITS.maxWidth[0], PANEL_CONFIG_LIMITS.maxWidth[1], DEFAULT_CONFIG.maxWidth),
+        maxHeight: clampNumber(raw.maxHeight, PANEL_CONFIG_LIMITS.maxHeight[0], PANEL_CONFIG_LIMITS.maxHeight[1], DEFAULT_CONFIG.maxHeight),
+        everyNthFrame: clampNumber(raw.everyNthFrame, PANEL_CONFIG_LIMITS.everyNthFrame[0], PANEL_CONFIG_LIMITS.everyNthFrame[1], DEFAULT_CONFIG.everyNthFrame),
       };
     }
 
@@ -439,10 +440,10 @@ window.__ModuleLoader__.load({
 
     // ── 画面设置字段 ──────────────────────────────────────────────────────
     const CONFIG_FIELDS = [
-      { key: "quality", label: "画面质量", min: 10, max: 100 },
-      { key: "maxWidth", label: "最大宽度", min: 100, max: 4096 },
-      { key: "maxHeight", label: "最大高度", min: 100, max: 4096 },
-      { key: "everyNthFrame", label: "取帧间隔", min: 1, max: 10 },
+      { key: "quality", label: "画面质量", min: PANEL_CONFIG_LIMITS.quality[0], max: PANEL_CONFIG_LIMITS.quality[1] },
+      { key: "maxWidth", label: "最大宽度", min: PANEL_CONFIG_LIMITS.maxWidth[0], max: PANEL_CONFIG_LIMITS.maxWidth[1] },
+      { key: "maxHeight", label: "最大高度", min: PANEL_CONFIG_LIMITS.maxHeight[0], max: PANEL_CONFIG_LIMITS.maxHeight[1] },
+      { key: "everyNthFrame", label: "取帧间隔", min: PANEL_CONFIG_LIMITS.everyNthFrame[0], max: PANEL_CONFIG_LIMITS.everyNthFrame[1] },
     ];
 
     // ── 插件级设置字段（Host Config 表单用） ─────────────────────────────
@@ -450,10 +451,10 @@ window.__ModuleLoader__.load({
     const PLUGIN_CONFIG_FIELDS = [
       { key: "defaultMode", label: "默认模式", kind: "choice", choices: ["isolated", "cdp"] },
       { key: "cdpEndpoint", label: "CDP 端点", kind: "text" },
-      { key: "quality", label: "画面质量", kind: "number", min: 10, max: 100 },
-      { key: "maxWidth", label: "最大宽度", kind: "number", min: 100, max: 4096 },
-      { key: "maxHeight", label: "最大高度", kind: "number", min: 100, max: 4096 },
-      { key: "everyNthFrame", label: "取帧间隔", kind: "number", min: 1, max: 10 },
+      { key: "quality", label: "画面质量", kind: "number", min: PANEL_CONFIG_LIMITS.quality[0], max: PANEL_CONFIG_LIMITS.quality[1] },
+      { key: "maxWidth", label: "最大宽度", kind: "number", min: PANEL_CONFIG_LIMITS.maxWidth[0], max: PANEL_CONFIG_LIMITS.maxWidth[1] },
+      { key: "maxHeight", label: "最大高度", kind: "number", min: PANEL_CONFIG_LIMITS.maxHeight[0], max: PANEL_CONFIG_LIMITS.maxHeight[1] },
+      { key: "everyNthFrame", label: "取帧间隔", kind: "number", min: PANEL_CONFIG_LIMITS.everyNthFrame[0], max: PANEL_CONFIG_LIMITS.everyNthFrame[1] },
     ];
 
     /** 时间戳 → 本地 HH:MM:SS，供动作提示使用；非法值返回空串。 */
