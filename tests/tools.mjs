@@ -2,7 +2,7 @@
  * dsh-browser-e2e 工具能力验证：console / network 捕获、snapshot 增强、
  * 点击三种方式、clip 截图、wait 与超时。
  *
- * 直接调用 browser.js 的真实实现（不 mock），真起无头 Edge；
+ * 直接调用 page.js / capture.js 的真实实现（不 mock），真起无头 Edge；
  * 网络请求用 node:http 在 127.0.0.1 随机端口起本地服务制造。
  *
  * 运行：node tests/tools.mjs
@@ -12,15 +12,18 @@ import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
 
-// 测试期间不让空闲回收介入（browser.js 在导入时读取该环境变量）。
+// 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
+const { closeAll, launch, requireSession } = await import('../lib/session.js')
 const {
-  closeAll, click, consoleEntries, evaluate, fill, launch, navigate, networkEntries, screenshot, scroll,
-  snapshot, waitFor,
-} = await import('../lib/browser.js')
+  click, consoleEntries, evaluate, fill, navigate, networkEntries, scroll, snapshot, waitFor,
+} = await import('../lib/page.js')
+const { currentTab } = await import('../lib/page.js')
+const { screenshot } = await import('../lib/capture.js')
 
 const KEY = 'test-tools-key'
+let session = null
 const SID = 'test-tools-session'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -115,15 +118,16 @@ try {
   console.log('== 用例 1：启动浏览器（视口 800x600）==')
   {
     const info = await launch(KEY, { headless: true, viewportWidth: 800, viewportHeight: 600 }, SID)
+    session = requireSession(KEY)
     check('启动成功且有 summary', info.reused === false && typeof info.summary === 'string', JSON.stringify(info))
     check('Edge 主进程比基线多', edgeRootCount() > baseline, `baseline=${baseline} now=${edgeRootCount()}`)
   }
 
   console.log('== 用例 2：console 捕获（log / warn / pageerror）==')
   {
-    await navigate(KEY, 'data:text/html,<script>console.log("hello-console");console.warn("warn-msg");setTimeout(function(){throw new Error("boom-pageerror")},50)</script>', 'load', SID)
+    await navigate(session, 'data:text/html,<script>console.log("hello-console");console.warn("warn-msg");setTimeout(function(){throw new Error("boom-pageerror")},50)</script>', 'load')
     await sleep(300)
-    const info = await consoleEntries(KEY, 100)
+    const info = await consoleEntries(session, 100)
     const text = info.text
     check('捕获到 console.log', text.includes('hello-console'), text)
     check('捕获到 console.warn', /warn-msg/.test(text), text)
@@ -133,12 +137,12 @@ try {
 
   console.log('== 用例 3：network 捕获（含 status）==')
   {
-    await navigate(KEY, `${base}/page`, 'load', SID)
+    await navigate(session, `${base}/page`, 'load')
     // 再发一个必定 404 的请求。
-    const fetched = await evaluate(KEY, "fetch('/missing').then(r => r.status)", SID)
+    const fetched = await evaluate(session, "fetch('/missing').then(r => r.status)")
     check('页面内 fetch 返回 404', fetched.value === 404, JSON.stringify(fetched.value))
     await sleep(300)
-    const info = await networkEntries(KEY, 100)
+    const info = await networkEntries(session, 100)
     const pageRecord = info.entries.find((e) => e.url === `${base}/page`)
     const missingRecord = info.entries.find((e) => e.url === `${base}/missing`)
     check('记录到页面请求且 status=200', pageRecord?.status === 200, JSON.stringify(pageRecord))
@@ -149,21 +153,21 @@ try {
 
   console.log('== 用例 3B：事件环按新文档重置（同 URL reload）==')
   {
-    await navigate(KEY, `${base}/reload`, 'load', SID)
-    await waitUntil(async () => (await consoleEntries(KEY, 100)).text.includes('doc-load-1'))
+    await navigate(session, `${base}/reload`, 'load')
+    await waitUntil(async () => (await consoleEntries(session, 100)).text.includes('doc-load-1'))
     await sleep(300)
-    const beforeConsole = await consoleEntries(KEY, 100)
-    const beforeNetwork = await networkEntries(KEY, 100)
+    const beforeConsole = await consoleEntries(session, 100)
+    const beforeNetwork = await networkEntries(session, 100)
     check('预置：旧文档 console 已记录', beforeConsole.text.includes('doc-load-1'), beforeConsole.text)
     check('预置：旧文档网络已记录', beforeNetwork.entries.some((e) => e.url === `${base}/reload-sub?n=1`),
       JSON.stringify(beforeNetwork.entries.map((e) => e.url)))
     // 页面内触发同 URL reload：不经过 navigate() 的预清空，能否重置完全看新文档判据。
-    await evaluate(KEY, 'setTimeout(function () { location.reload() }, 0); "scheduled"', SID)
-    const reached = await waitUntil(async () => (await consoleEntries(KEY, 100)).text.includes('doc-load-2'))
-    check('reload 后新文档 console 记录到达', reached, (await consoleEntries(KEY, 100)).text)
+    await evaluate(session, 'setTimeout(function () { location.reload() }, 0); "scheduled"')
+    const reached = await waitUntil(async () => (await consoleEntries(session, 100)).text.includes('doc-load-2'))
+    check('reload 后新文档 console 记录到达', reached, (await consoleEntries(session, 100)).text)
     await sleep(300)
-    const afterConsole = await consoleEntries(KEY, 100)
-    const afterNetwork = await networkEntries(KEY, 100)
+    const afterConsole = await consoleEntries(session, 100)
+    const afterNetwork = await networkEntries(session, 100)
     check('reload 后旧 console 记录不再出现', !afterConsole.text.includes('doc-load-1'), afterConsole.text)
     check('reload 后新文档 console 记录保留', afterConsole.text.includes('doc-load-2'), afterConsole.text)
     check('reload 后旧网络记录不再出现', !afterNetwork.entries.some((e) => e.url.endsWith('/reload-sub?n=1')),
@@ -176,8 +180,8 @@ try {
 
   console.log('== 用例 4：snapshot 的 box / role / depth ==')
   {
-    await navigate(KEY, 'data:text/html,<body><div style="padding:20px"><button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button></div><input id="chk" type="checkbox" style="position:fixed;left:10px;top:10px"></body>', 'load', SID)
-    const info = await snapshot(KEY, SID)
+    await navigate(session, 'data:text/html,<body><div style="padding:20px"><button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button></div><input id="chk" type="checkbox" style="position:fixed;left:10px;top:10px"></body>', 'load')
+    const info = await snapshot(session)
     const text = info.text
     check('snapshot 返回 summary 与 truncated 字段', typeof info.summary === 'string' && info.truncated === false, JSON.stringify({ summary: info.summary, truncated: info.truncated }))
     // 全 DOM 快照的节点结构：id / classes / name / depth 四个字段都在且类型正确。
@@ -193,116 +197,116 @@ try {
     const refLine = text.split('\n').find((line) => line.includes('"Click Me"'))
     const ref = refLine && /\[(\d+)\]/.exec(refLine) ? `@${/\[(\d+)\]/.exec(refLine)[1]}` : null
     check('能从文本解析出 ref', Boolean(ref), String(refLine))
-    const clicked = await click(KEY, { ref }, SID)
+    const clicked = await click(session, { ref })
     await sleep(100)
-    const flag = await evaluate(KEY, 'window.__clicked === true', SID)
+    const flag = await evaluate(session, 'window.__clicked === true')
     check('ref 点击生效', flag.value === true, JSON.stringify(clicked))
   }
 
   console.log('== 用例 5：selector 点击 / 坐标点击 ==')
   {
-    await navigate(KEY, 'data:text/html,<button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button>', 'load', SID)
-    const bySelector = await click(KEY, { selector: '#btn' }, SID)
+    await navigate(session, 'data:text/html,<button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button>', 'load')
+    const bySelector = await click(session, { selector: '#btn' })
     await sleep(100)
-    const afterSelector = await evaluate(KEY, 'window.__clicked === true', SID)
+    const afterSelector = await evaluate(session, 'window.__clicked === true')
     check('selector 点击生效', afterSelector.value === true && bySelector.mode === 'selector', JSON.stringify(bySelector))
     // 重置标记，用视口坐标点按钮中心 (150, 120)。
-    await evaluate(KEY, 'window.__clicked = false', SID)
-    const byPoint = await click(KEY, { x: 150, y: 120 }, SID)
+    await evaluate(session, 'window.__clicked = false')
+    const byPoint = await click(session, { x: 150, y: 120 })
     await sleep(100)
-    const afterPoint = await evaluate(KEY, 'window.__clicked === true', SID)
+    const afterPoint = await evaluate(session, 'window.__clicked === true')
     check('坐标点击生效（真实鼠标事件）', afterPoint.value === true && byPoint.mode === 'point', JSON.stringify(byPoint))
-    const noneMessage = await expectThrow(() => click(KEY, {}, SID))
+    const noneMessage = await expectThrow(() => click(session, {}))
     check('三种目标都不给时报错', Boolean(noneMessage) && /ref|selector|x \+ y/.test(noneMessage ?? ''), String(noneMessage))
   }
 
   console.log('== 用例 5B：fill 三种目标（ref / selector / 坐标）==')
   {
-    await navigate(KEY, 'data:text/html,<body style="margin:0">'
+    await navigate(session, 'data:text/html,<body style="margin:0">'
       + '<input id="a" placeholder="first" style="position:fixed;left:20px;top:20px;width:200px;height:30px">'
       + '<input id="b" placeholder="second" style="position:fixed;left:20px;top:80px;width:200px;height:30px">'
       + '<input id="c" placeholder="third" style="position:fixed;left:20px;top:140px;width:200px;height:30px">'
-      + '</body>', 'load', SID)
-    const info = await snapshot(KEY, SID)
+      + '</body>', 'load')
+    const info = await snapshot(session)
     const first = info.nodes.find((node) => node.id === 'a')
     const third = info.nodes.find((node) => node.id === 'c')
     check('快照能定位到三个输入框', Boolean(first) && Boolean(third) && Boolean(info.nodes.find((node) => node.id === 'b')), JSON.stringify(info.nodes.slice(0, 6)))
-    const byRef = await fill(KEY, { ref: first?.ref }, 'ref-value', SID)
-    const bySelector = await fill(KEY, { selector: '#b' }, 'selector-value', SID)
+    const byRef = await fill(session, { ref: first?.ref }, 'ref-value')
+    const bySelector = await fill(session, { selector: '#b' }, 'selector-value')
     // 坐标取 #c 的 box 中心；fill 的坐标分支是真实鼠标点击后键入。
     const pointX = third ? third.box.x + Math.round(third.box.width / 2) : 0
     const pointY = third ? third.box.y + Math.round(third.box.height / 2) : 0
-    const byPoint = await fill(KEY, { x: pointX, y: pointY }, 'point-value', SID)
-    const values = await evaluate(KEY, "['a','b','c'].map(function (id) { return document.getElementById(id).value })", SID)
+    const byPoint = await fill(session, { x: pointX, y: pointY }, 'point-value')
+    const values = await evaluate(session, "['a','b','c'].map(function (id) { return document.getElementById(id).value })")
     check('ref 写入生效', values.value?.[0] === 'ref-value' && byRef.mode === 'ref', JSON.stringify({ values: values.value, byRef }))
     check('selector 写入生效', values.value?.[1] === 'selector-value' && bySelector.mode === 'selector', JSON.stringify({ values: values.value, bySelector }))
     check('坐标写入生效', values.value?.[2] === 'point-value' && byPoint.mode === 'point', JSON.stringify({ values: values.value, byPoint }))
-    const fillNone = await expectThrow(() => fill(KEY, {}, 'x', SID))
+    const fillNone = await expectThrow(() => fill(session, {}, 'x'))
     check('三种目标都不给时报错', Boolean(fillNone) && fillNone.includes('ref / selector / x + y'), String(fillNone))
   }
 
   console.log('== 用例 5D：fill 不误切换 checkbox / radio ==')
   {
-    await navigate(KEY, 'data:text/html,<body style="margin:0">'
+    await navigate(session, 'data:text/html,<body style="margin:0">'
       + '<input id="chk" type="checkbox" style="position:fixed;left:20px;top:20px;width:24px;height:24px">'
       + '<input id="rad" type="radio" name="g" style="position:fixed;left:20px;top:80px;width:24px;height:24px">'
       + '<input id="txt" placeholder="text" style="position:fixed;left:20px;top:140px;width:200px;height:30px">'
-      + '</body>', 'load', SID)
-    const info = await snapshot(KEY, SID)
+      + '</body>', 'load')
+    const info = await snapshot(session)
     const chk = info.nodes.find((node) => node.id === 'chk')
     const rad = info.nodes.find((node) => node.id === 'rad')
     const txt = info.nodes.find((node) => node.id === 'txt')
     check('快照能定位到 checkbox / radio / 文本框', Boolean(chk) && Boolean(rad) && Boolean(txt), JSON.stringify(info.nodes.slice(0, 8)))
-    const chkFill = await expectThrow(() => fill(KEY, { ref: chk?.ref }, 'on', SID))
+    const chkFill = await expectThrow(() => fill(session, { ref: chk?.ref }, 'on'))
     check('checkbox 用 ref 填写报「可切换控件」并提示改用 click', Boolean(chkFill) && chkFill.includes('可切换控件') && chkFill.includes('browser_e2e_click'), String(chkFill))
-    const radFill = await expectThrow(() => fill(KEY, { ref: rad?.ref }, 'on', SID))
+    const radFill = await expectThrow(() => fill(session, { ref: rad?.ref }, 'on'))
     check('radio 用 ref 填写报「可切换控件」', Boolean(radFill) && radFill.includes('可切换控件'), String(radFill))
-    const states = await evaluate(KEY, "({ chk: document.getElementById('chk').checked, rad: document.getElementById('rad').checked })", SID)
+    const states = await evaluate(session, "({ chk: document.getElementById('chk').checked, rad: document.getElementById('rad').checked })")
     check('fill 后 checkbox / radio 勾选状态未变', states.value?.chk === false && states.value?.rad === false, JSON.stringify(states.value))
     // 仍可交互：用 click 明确切换，再用 fill 写文本框。
-    await click(KEY, { ref: chk?.ref }, SID)
-    const afterClick = await evaluate(KEY, "document.getElementById('chk').checked", SID)
+    await click(session, { ref: chk?.ref })
+    const afterClick = await evaluate(session, "document.getElementById('chk').checked")
     check('随后用 click 能正常切换 checkbox', afterClick.value === true, JSON.stringify(afterClick.value))
-    const txtFill = await fill(KEY, { ref: txt?.ref }, 'still-works', SID)
-    const txtValue = await evaluate(KEY, "document.getElementById('txt').value", SID)
+    const txtFill = await fill(session, { ref: txt?.ref }, 'still-works')
+    const txtValue = await evaluate(session, "document.getElementById('txt').value")
     check('同页文本框 fill 仍生效', txtFill.mode === 'ref' && txtValue.value === 'still-works', JSON.stringify({ txtFill, txtValue: txtValue.value }))
   }
 
   console.log('== 用例 5C：scroll（滚动 / 坐标 / 非法 delta）==')
   {
-    await navigate(KEY, 'data:text/html,<body style="margin:0"><div style="height:3000px;background-color:gray"></div></body>', 'load', SID)
-    const before = await evaluate(KEY, 'window.scrollY', SID)
-    const info = await scroll(KEY, { delta_y: 600 }, SID)
+    await navigate(session, 'data:text/html,<body style="margin:0"><div style="height:3000px;background-color:gray"></div></body>', 'load')
+    const before = await evaluate(session, 'window.scrollY')
+    const info = await scroll(session, { delta_y: 600 })
     await sleep(200)
-    const after = await evaluate(KEY, 'window.scrollY', SID)
+    const after = await evaluate(session, 'window.scrollY')
     check('滚动后 window.scrollY 增加', before.value === 0 && after.value > 0, `${before.value} -> ${after.value}`)
     check('返回 deltaX / deltaY 与摘要', info.mode === 'scroll' && info.deltaX === 0 && info.deltaY === 600, JSON.stringify(info))
     // 坐标滚动：先把鼠标移到视口内再滚，scrollY 继续增加。
-    const moved = await scroll(KEY, { x: 200, y: 200, delta_y: 400 }, SID)
+    const moved = await scroll(session, { x: 200, y: 200, delta_y: 400 })
     await sleep(200)
-    const afterPoint = await evaluate(KEY, 'window.scrollY', SID)
+    const afterPoint = await evaluate(session, 'window.scrollY')
     check('坐标滚动继续增加 scrollY', afterPoint.value > after.value && moved.deltaY === 400, `${after.value} -> ${afterPoint.value}`)
-    const zero = await expectThrow(() => scroll(KEY, { delta_x: 0, delta_y: 0 }, SID))
+    const zero = await expectThrow(() => scroll(session, { delta_x: 0, delta_y: 0 }))
     check('delta 全 0 报错', Boolean(zero) && zero.includes('非 0'), String(zero))
-    const badDelta = await expectThrow(() => scroll(KEY, { delta_y: 'not-a-number' }, SID))
+    const badDelta = await expectThrow(() => scroll(session, { delta_y: 'not-a-number' }))
     check('非数字 delta 报错', Boolean(badDelta) && badDelta.includes('必须是数字'), String(badDelta))
   }
 
   console.log('== 用例 6：ref 失效检测 ==')
   {
-    await navigate(KEY, 'data:text/html,<button id="btn" onclick="window.__clicked=true">Click Me</button>', 'load', SID)
-    const info = await snapshot(KEY, SID)
+    await navigate(session, 'data:text/html,<button id="btn" onclick="window.__clicked=true">Click Me</button>', 'load')
+    const info = await snapshot(session)
     const refLine = info.text.split('\n').find((line) => line.includes('"Click Me"'))
     const ref = refLine && /\[(\d+)\]/.exec(refLine) ? `@${/\[(\d+)\]/.exec(refLine)[1]}` : null
-    await evaluate(KEY, "document.getElementById('btn').remove()", SID)
-    const message = await expectThrow(() => click(KEY, { ref }, SID))
+    await evaluate(session, "document.getElementById('btn').remove()")
+    const message = await expectThrow(() => click(session, { ref }))
     check('失效 ref 报「已失效，请重新 snapshot」', Boolean(message) && message.includes('已失效'), String(message))
   }
 
   console.log('== 用例 7：截图增强（clip / jpeg / 校验链）==')
   {
-    await navigate(KEY, 'data:text/html,<body style="margin:0"><div style="width:200px;height:120px;background:#3a7"></div></body>', 'load', SID)
-    const info = await screenshot(KEY, { name: 'clip-shot', clip: { x: 10, y: 10, width: 100, height: 50 } }, SID)
+    await navigate(session, 'data:text/html,<body style="margin:0"><div style="width:200px;height:120px;background:#3a7"></div></body>', 'load')
+    const info = await screenshot(session, currentTab(session), { name: 'clip-shot', clip: { x: 10, y: 10, width: 100, height: 50 } })
     check('clip 截图落盘', existsSync(info.file), info.file)
     const size = existsSync(info.file) ? pngSize(info.file) : { width: 0, height: 0 }
     check('clip 截图尺寸为 100x50', size.width === 100 && size.height === 50, JSON.stringify(size))
@@ -311,7 +315,7 @@ try {
 
     // 数值倍率 1 / 2 / 3：输出尺寸应是 clip 基准尺寸的整数倍。
     for (const factor of [1, 2, 3]) {
-      const scaled = await screenshot(KEY, { name: `scale-${factor}`, clip: { x: 10, y: 10, width: 100, height: 50 }, scale: factor }, SID)
+      const scaled = await screenshot(session, currentTab(session), { name: `scale-${factor}`, clip: { x: 10, y: 10, width: 100, height: 50 }, scale: factor })
       const scaledSize = existsSync(scaled.file) ? pngSize(scaled.file) : { width: 0, height: 0 }
       const expectedWidth = 100 * factor
       const expectedHeight = 50 * factor
@@ -319,53 +323,53 @@ try {
         && scaledSize.height === expectedHeight && scaled.meta.width === expectedWidth
         && scaled.meta.height === expectedHeight, `${JSON.stringify(scaledSize)} meta=${JSON.stringify(scaled.meta)}`)
     }
-    const badScale = await expectThrow(() => screenshot(KEY, { scale: 4 }, SID))
+    const badScale = await expectThrow(() => screenshot(session, currentTab(session), { scale: 4 }))
     check('非法 scale 数字报错', Boolean(badScale) && badScale.includes('scale'), String(badScale))
-    const badScaleText = await expectThrow(() => screenshot(KEY, { scale: 'zoom' }, SID))
+    const badScaleText = await expectThrow(() => screenshot(session, currentTab(session), { scale: 'zoom' }))
     check('非法 scale 字符串报错', Boolean(badScaleText) && badScaleText.includes('scale'), String(badScaleText))
 
-    const jpegInfo = await screenshot(KEY, { name: 'jpeg-shot', format: 'jpeg', quality: 80 }, SID)
+    const jpegInfo = await screenshot(session, currentTab(session), { name: 'jpeg-shot', format: 'jpeg', quality: 80 })
     check('jpeg 截图落盘且扩展名正确', existsSync(jpegInfo.file) && jpegInfo.file.endsWith('.jpeg'), jpegInfo.file)
     check('jpeg 尺寸为视口 800x600', jpegInfo.meta.width === 800 && jpegInfo.meta.height === 600, JSON.stringify(jpegInfo.meta))
 
-    const outOfViewport = await expectThrow(() => screenshot(KEY, { clip: { x: 700, y: 10, width: 200, height: 50 } }, SID))
+    const outOfViewport = await expectThrow(() => screenshot(session, currentTab(session), { clip: { x: 700, y: 10, width: 200, height: 50 } }))
     check('clip 越出视口报错且带数字', Boolean(outOfViewport) && outOfViewport.includes('超出视口') && outOfViewport.includes('900'), String(outOfViewport))
 
-    const badFormat = await expectThrow(() => screenshot(KEY, { format: 'webp' }, SID))
+    const badFormat = await expectThrow(() => screenshot(session, currentTab(session), { format: 'webp' }))
     check('非法 format 报错', Boolean(badFormat) && badFormat.includes('webp'), String(badFormat))
 
-    const badQuality = await expectThrow(() => screenshot(KEY, { quality: 50 }, SID))
+    const badQuality = await expectThrow(() => screenshot(session, currentTab(session), { quality: 50 }))
     check('png 带 quality 报错', Boolean(badQuality) && badQuality.includes('quality'), String(badQuality))
 
-    const badClip = await expectThrow(() => screenshot(KEY, { clip: { x: 1.5, y: 0, width: 10, height: 10 } }, SID))
+    const badClip = await expectThrow(() => screenshot(session, currentTab(session), { clip: { x: 1.5, y: 0, width: 10, height: 10 } }))
     check('非整数 clip 报错', Boolean(badClip) && badClip.includes('整数'), String(badClip))
   }
 
   console.log('== 用例 8：browser_e2e_wait ==')
   {
-    await navigate(KEY, 'data:text/html,<div id="late" style="display:none">late</div><script>setTimeout(function(){document.getElementById("late").style.display="block"},300)</script>', 'load', SID)
-    const visible = await waitFor(KEY, { selector: '#late', state: 'visible', timeoutMs: 5000 }, SID)
+    await navigate(session, 'data:text/html,<div id="late" style="display:none">late</div><script>setTimeout(function(){document.getElementById("late").style.display="block"},300)</script>', 'load')
+    const visible = await waitFor(session, { selector: '#late', state: 'visible', timeoutMs: 5000 })
     check('wait selector 成功并返回耗时', visible.mode === 'selector' && visible.elapsedMs >= 200, JSON.stringify(visible))
     check('wait 的 summary 含 selector 与耗时', visible.summary.includes('#late') && visible.summary.includes('ms'), visible.summary)
 
-    await evaluate(KEY, 'window.__later = false; setTimeout(function(){ window.__later = true }, 200)', SID)
-    const expression = await waitFor(KEY, { expression: 'window.__later === true', timeoutMs: 5000 }, SID)
+    await evaluate(session, 'window.__later = false; setTimeout(function(){ window.__later = true }, 200)')
+    const expression = await waitFor(session, { expression: 'window.__later === true', timeoutMs: 5000 })
     check('wait expression 成功', expression.mode === 'expression' && expression.elapsedMs >= 100, JSON.stringify(expression))
 
-    const timeoutMessage = await expectThrow(() => waitFor(KEY, { selector: '#never-exists', timeoutMs: 600 }, SID))
+    const timeoutMessage = await expectThrow(() => waitFor(session, { selector: '#never-exists', timeoutMs: 600 }))
     check('wait 超时报错且带实际等待时长', Boolean(timeoutMessage) && timeoutMessage.includes('超时') && /实际等待 \d+ms/.test(timeoutMessage ?? ''), String(timeoutMessage))
 
-    const bothMessage = await expectThrow(() => waitFor(KEY, { selector: '#late', expression: 'true' }, SID))
+    const bothMessage = await expectThrow(() => waitFor(session, { selector: '#late', expression: 'true' }))
     check('selector 与 expression 同时给时报错', Boolean(bothMessage) && bothMessage.includes('二选一'), String(bothMessage))
   }
 
   console.log('== 用例 9：snapshot 全 DOM 的 4000 条截断 ==')
   {
-    await navigate(KEY, 'data:text/html,<body><script>'
+    await navigate(session, 'data:text/html,<body><script>'
       + 'for (let i = 0; i < 4100; i++) { const b = document.createElement("button"); b.id = "b" + i; b.textContent = "b" + i; '
       + 'b.onclick = function () { window.__lastClick = this.id }; document.body.appendChild(b) }'
-      + '</script></body>', 'load', SID)
-    const info = await snapshot(KEY, SID)
+      + '</script></body>', 'load')
+    const info = await snapshot(session)
     check('truncated 为 true', info.truncated === true, JSON.stringify({ truncated: info.truncated, count: info.count }))
     check('只返回 4000 条', info.count === 4000, String(info.count))
     check('total 记录实际可见节点数', info.total === 4100, String(info.total))
@@ -373,9 +377,9 @@ try {
     // 截断只影响返回条数，ref 表仍然可用。
     const refLine = info.text.split('\n').find((line) => line.includes('"b0"'))
     const ref = refLine && /\[(\d+)\]/.exec(refLine) ? `@${/\[(\d+)\]/.exec(refLine)[1]}` : null
-    const clicked = await click(KEY, { ref }, SID)
+    const clicked = await click(session, { ref })
     await sleep(100)
-    const flag = await evaluate(KEY, 'window.__lastClick === "b0"', SID)
+    const flag = await evaluate(session, 'window.__lastClick === "b0"')
     check('截断后的 ref 点击仍生效', Boolean(ref) && flag.value === true, `${JSON.stringify(clicked)} ref=${ref}`)
   }
   console.log('== 用例 10：index.js 工具注册与截图的文本 + 图片输出 ==')

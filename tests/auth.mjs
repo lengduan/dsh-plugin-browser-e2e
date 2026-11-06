@@ -14,9 +14,12 @@ import { createServer } from 'node:http'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
-const { closeAll, evaluate, launch, navigate, setConnectionResolver } = await import('../lib/browser.js')
+const { closeAll, launch, requireSession } = await import('../lib/session.js')
+const { evaluate, navigate } = await import('../lib/page.js')
+const { setConnectionResolver } = await import('../lib/auth.js')
 
 const KEY = 'test-auth-key'
+let session = null
 const SID = KEY
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -81,14 +84,15 @@ function goodResolver() {
 
 try {
   await launch(KEY, { headless: true }, SID)
+  session = requireSession(KEY)
 
   console.log('== 用例 1：命中挑战且 loopback 时补票成功 ==')
   {
     topUps = 0
     setConnectionResolver(goodResolver)
-    const info = await navigate(KEY, `${base}/challenge`, 'load', SID)
-    const title = await evaluate(KEY, 'document.title', SID)
-    const heading = await evaluate(KEY, "document.getElementById('ok')?.textContent || ''", SID)
+    const info = await navigate(session, `${base}/challenge`, 'load')
+    const title = await evaluate(session, 'document.title')
+    const heading = await evaluate(session, "document.getElementById('ok')?.textContent || ''")
     check('标记 authRetried', info.authRetried === true, JSON.stringify(info))
     check('页面已进入登录后页面', info.url.includes('/ok') && title.value === 'signed-in', `${info.url} title=${JSON.stringify(title.value)}`)
     check('正文是 welcome', heading.value === 'welcome', JSON.stringify(heading.value))
@@ -99,7 +103,7 @@ try {
   console.log('== 用例 2：Resolver 返回同一地址 → 不补票 ==')
   {
     setConnectionResolver(() => ({ authenticatedUrl: (url) => url }))
-    const info = await navigate(KEY, `${base}/challenge`, 'load', SID)
+    const info = await navigate(session, `${base}/challenge`, 'load')
     check('authRetried 为 false', info.authRetried === false, JSON.stringify(info))
     check('页面停留在挑战页', info.title === 'DSH Web Authentication Required', info.title)
   }
@@ -107,14 +111,14 @@ try {
   console.log('== 用例 3：没有 connection 服务 → 静默跳过 ==')
   {
     setConnectionResolver(null)
-    const info = await navigate(KEY, `${base}/challenge`, 'load', SID)
+    const info = await navigate(session, `${base}/challenge`, 'load')
     check('不抛错且不补票', info.authRetried === false && info.title === 'DSH Web Authentication Required', JSON.stringify(info))
   }
 
   console.log('== 用例 4：Resolver 抛错 → 静默跳过 ==')
   {
     setConnectionResolver(() => { throw new Error('connection down') })
-    const info = await navigate(KEY, `${base}/challenge`, 'load', SID)
+    const info = await navigate(session, `${base}/challenge`, 'load')
     check('不抛错且不补票', info.authRetried === false, JSON.stringify(info))
   }
 
@@ -123,7 +127,7 @@ try {
     topUps = 0
     setConnectionResolver(goodResolver)
     const dataUrl = 'data:text/html,<title>DSH Web Authentication Required</title><body><h1>DSH Web Authentication Required</h1></body>'
-    const info = await navigate(KEY, dataUrl, 'load', SID)
+    const info = await navigate(session, dataUrl, 'load')
     check('data: 目标保持原状', info.authRetried === false && info.url.startsWith('data:'), JSON.stringify(info))
     check('没有调用补票', topUps === 0, String(topUps))
   }
@@ -131,14 +135,14 @@ try {
   console.log('== 用例 6：补票失败（404 地址）不抛错 ==')
   {
     setConnectionResolver(() => ({ authenticatedUrl: () => `${base}/nope` }))
-    const info = await navigate(KEY, `${base}/challenge`, 'load', SID)
+    const info = await navigate(session, `${base}/challenge`, 'load')
     check('重试到 404 也返回结果', typeof info.status === 'number' && info.authRetried === true, JSON.stringify(info))
   }
 
   console.log('== 用例 7：补票地址与原文相同/空串时跳过 ==')
   {
     setConnectionResolver(() => ({ authenticatedUrl: () => '' }))
-    const info = await navigate(KEY, `${base}/challenge`, 'load', SID)
+    const info = await navigate(session, `${base}/challenge`, 'load')
     check('空串不补票', info.authRetried === false, JSON.stringify(info))
   }
 } finally {

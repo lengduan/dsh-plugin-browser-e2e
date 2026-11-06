@@ -1,7 +1,7 @@
 /**
  * dsh-browser-e2e 回收行为验证：空闲超时 + session/disposed 两条回收路径。
  *
- * 直接调用 browser.js 的真实实现（不 mock），每条用例都真起一个无头 Edge，
+ * 直接调用 session.js / page.js 的真实实现（不 mock），每条用例都真起一个无头 Edge，
  * 断言「会话状态被清空」且「Edge 子进程已退出」。
  *
  * 不该被安装进 profile（package.json 的 files 只含 lib 与 cordis.patch.yml）。
@@ -9,13 +9,14 @@
  */
 import { spawnSync } from 'node:child_process'
 
-// 用例 A 依赖 8 秒空闲回收；browser.js 在模块加载时读取该环境变量，
+// 用例 A 依赖 8 秒空闲回收；session.js 在模块加载时读取该环境变量，
 // 所以必须在动态 import 之前设置（ESM 的静态 import 会先于模块体执行）。
 process.env.DSH_BROWSER_IDLE_MS ??= '8000'
 
 const {
-  activeSessionKeys, close, closeBySessionId, launch, navigate,
-} = await import('../lib/browser.js')
+  activeSessionKeys, close, closeBySessionId, launch, requireSession,
+} = await import('../lib/session.js')
+const { navigate } = await import('../lib/page.js')
 
 const EDGE_MIN_IDLE = 30
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -49,7 +50,7 @@ console.log('== 用例 A：空闲超时自动回收（DSH_BROWSER_IDLE_MS=8000�
   const before = edgeRootCount()
   const id = 'test-session-idle'
   await launch('test-key-idle', { headless: true }, id)
-  await navigate('test-key-idle', 'about:blank', 'load', id)
+  await navigate(requireSession('test-key-idle'), 'about:blank', 'load')
   check('启动后 sessions 持有该会话', activeSessionKeys().includes('test-key-idle'), JSON.stringify(activeSessionKeys()))
   check('启动后 Edge 主进程增加', edgeRootCount() > before, `before=${before} now=${edgeRootCount()}`)
   console.log('  等待 8s 空闲超时 + 轮询进程回落（每 250ms，最多 15s）…')
@@ -64,7 +65,7 @@ console.log('== 用例 B：session/disposed 钩子回收（同一条 closeBySess
   const before = edgeRootCount()
   const id = 'test-session-disposed'
   await launch('test-key-disposed', { headless: true }, id)
-  await navigate('test-key-disposed', 'about:blank', 'load', id)
+  await navigate(requireSession('test-key-disposed'), 'about:blank', 'load')
   check('启动后 sessions 持有该会话', activeSessionKeys().includes('test-key-disposed'), JSON.stringify(activeSessionKeys()))
   const r = await closeBySessionId(id)
   check('disposed 路径返回 closed=true', r.closed === true, JSON.stringify(r))
@@ -102,8 +103,8 @@ console.log('== 用例 E：显式 close 仍然生效 ==')
 console.log('== 用例 F：小空闲时限不打断 launch（launch 与空闲回收竞态）==')
 {
   const before = edgeRootCount()
-  // browser.js 在模块加载时读取 DSH_BROWSER_IDLE_MS，只能用子进程模拟「空闲时限小于启动耗时」。
-  const moduleUrl = new URL('../lib/browser.js', import.meta.url).href
+  // session.js 在模块加载时读取 DSH_BROWSER_IDLE_MS，只能用子进程模拟「空闲时限小于启动耗时」。
+  const moduleUrl = new URL('../lib/session.js', import.meta.url).href
   const childScript = `
 const { activeSessionKeys, close, launch } = await import(${JSON.stringify(moduleUrl)})
 const started = Date.now()
@@ -152,7 +153,7 @@ console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
   check('会话只有一个标签页', a.tabs === 1 && b.tabs === 1, JSON.stringify({ aTabs: a.tabs, bTabs: b.tabs }))
   const single = await waitUntil(() => edgeRootCount() <= before + 1, 10000)
   check('只新增一个 Edge 主进程', single && edgeRootCount() === before + 1, `before=${before} now=${edgeRootCount()}`)
-  const blank = await navigate('test-key-concurrent', 'about:blank', 'load', 'test-session-concurrent')
+  const blank = await navigate(requireSession('test-key-concurrent'), 'about:blank', 'load')
   check('并发启动后浏览器可正常导航', blank.url === 'about:blank', JSON.stringify(blank))
   await close('test-key-concurrent')
   const gone = await waitUntil(() => edgeRootCount() <= before, 15000)

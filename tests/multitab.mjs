@@ -15,10 +15,11 @@ import { spawnSync } from 'node:child_process'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
-const { close, closeAll, closeTab, click, evaluate, launch, navigate, snapshot, tabs } =
-  await import('../lib/browser.js')
+const { close, closeAll, closeTab, launch, requireSession, tabs } = await import('../lib/session.js')
+const { click, evaluate, navigate, snapshot } = await import('../lib/page.js')
 
 const KEY = 'test-multitab-key'
+let session = null
 const SID = KEY
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -79,8 +80,9 @@ try {
   console.log('== 用例 1：启动与第一个标签页 ==')
   {
     const info = await launch(KEY, { headless: true, viewportWidth: 800, viewportHeight: 600 }, SID)
+    session = requireSession(KEY)
     check('启动成功', info.reused === false && typeof info.summary === 'string', JSON.stringify(info))
-    const first = await navigate(KEY, `${base}/a`, 'load', SID)
+    const first = await navigate(session, `${base}/a`, 'load')
     check('首个导航在 t1', first.tabId === 't1' && !first.newTab, JSON.stringify(first))
     const list = await tabs(KEY)
     check('tabs 列出 1 个页且 active 为 t1', list.tabs.length === 1 && list.tabs[0].tab_id === 't1' && list.tabs[0].active === true, JSON.stringify(list.tabs))
@@ -91,7 +93,7 @@ try {
 
   console.log('== 用例 2：new_tab 新建页并设为 active ==')
   {
-    const second = await navigate(KEY, `${base}/b`, 'load', SID, { new_tab: true })
+    const second = await navigate(session, `${base}/b`, 'load', { new_tab: true })
     check('new_tab 生成 t2 且标记 newTab', second.tabId === 't2' && second.newTab === true, JSON.stringify(second))
     const list = await tabs(KEY)
     check('现在有 2 个页', list.tabs.length === 2, JSON.stringify(list.tabs))
@@ -101,27 +103,27 @@ try {
 
   console.log('== 用例 3：ref 表按页隔离 ==')
   {
-    const snapA = await snapshot(KEY, SID, 't1')
+    const snapA = await snapshot(session, 't1')
     const refA = refOf(snapA, 'A Button')
     check('t1 快照拿到 A 按钮 ref', Boolean(refA), snapA.text)
-    const hitA = await evaluate(KEY, 'window.__hit || null', SID, 't1')
+    const hitA = await evaluate(session, 'window.__hit || null', 't1')
     check('t1 初始未点击', hitA.value === null, JSON.stringify(hitA.value))
 
-    const clickedA = await click(KEY, { ref: refA }, SID, 't1')
+    const clickedA = await click(session, { ref: refA }, 't1')
     await sleep(100)
-    const afterA = await evaluate(KEY, "window.__hit || ''", SID, 't1')
+    const afterA = await evaluate(session, "window.__hit || ''", 't1')
     check('带 tab_id 点击 t1 生效', afterA.value === 'a', `${JSON.stringify(clickedA)} hit=${JSON.stringify(afterA.value)}`)
 
     // 同一个 ref 在 t2 上不存在：ref 表按页隔离。
-    const message = await expectThrow(() => click(KEY, { ref: refA }, SID, 't2'))
+    const message = await expectThrow(() => click(session, { ref: refA }, 't2'))
     check('t1 的 ref 在 t2 上失效', Boolean(message) && message.includes('不存在'), String(message))
 
-    const snapB = await snapshot(KEY, SID, 't2')
+    const snapB = await snapshot(session, 't2')
     const refB = refOf(snapB, 'B Button')
     check('t2 快照是 B 按钮', Boolean(refB), snapB.text)
-    await click(KEY, { ref: refB }, SID, 't2')
+    await click(session, { ref: refB }, 't2')
     await sleep(100)
-    const hitB = await evaluate(KEY, "window.__hit || ''", SID, 't2')
+    const hitB = await evaluate(session, "window.__hit || ''", 't2')
     check('点击 t2 生效', hitB.value === 'b', JSON.stringify(hitB.value))
   }
 
@@ -130,13 +132,13 @@ try {
     const list = await tabs(KEY)
     check('active 仍是 t2', list.activeTabId === 't2', JSON.stringify(list.activeTabId))
     // 缺省 snapshot 应读到 t2 的 B 按钮。
-    const snap = await snapshot(KEY, SID)
+    const snap = await snapshot(session)
     check('缺省快照作用于 active（t2）', snap.tabId === 't2' && snap.text.includes('B Button'), `${snap.tabId} ${snap.text}`)
     // 切回 t1：导航到 t1 后 active 变成 t1。
-    await navigate(KEY, `${base}/a`, 'load', SID, { tab_id: 't1' })
+    await navigate(session, `${base}/a`, 'load', { tab_id: 't1' })
     const after = await tabs(KEY)
     check('带 tab_id 导航后 active 切到 t1', after.activeTabId === 't1', JSON.stringify(after.activeTabId))
-    const snapDefault = await snapshot(KEY, SID)
+    const snapDefault = await snapshot(session)
     check('active 切换后缺省快照跟到 t1', snapDefault.tabId === 't1' && snapDefault.text.includes('A Button'), `${snapDefault.tabId} ${snapDefault.text}`)
   }
 
@@ -154,9 +156,9 @@ try {
 
   console.log('== 用例 6：不存在的 tab_id 作用于页面工具时报错 ==')
   {
-    const message = await expectThrow(() => snapshot(KEY, SID, 't9'))
+    const message = await expectThrow(() => snapshot(session, 't9'))
     check('snapshot 未知 tab 报错', Boolean(message) && message.includes('不存在'), String(message))
-    const clickMessage = await expectThrow(() => click(KEY, { selector: '#btn' }, SID, 't9'))
+    const clickMessage = await expectThrow(() => click(session, { selector: '#btn' }, 't9'))
     check('click 未知 tab 报错', Boolean(clickMessage) && clickMessage.includes('不存在'), String(clickMessage))
   }
 } finally {

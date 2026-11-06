@@ -20,9 +20,12 @@ import { join } from 'node:path'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
-const { close, closeAll, evaluate, launch, listPanelTabs, navigate, screenshot, tabs } = await import('../lib/browser.js')
+const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
+const { currentTab, evaluate, navigate } = await import('../lib/page.js')
+const { screenshot } = await import('../lib/capture.js')
 
 const KEY = 'test-cdp-key'
+let session = null
 const SID = KEY
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -135,6 +138,7 @@ try {
   console.log('== 用例 2：CDP 接管 ==')
   {
     const info = await launch(KEY, { mode: 'cdp', cdpEndpoint: endpoint }, SID)
+    session = requireSession(KEY)
     check('接管成功且 mode 为 cdp', info.reused === false && info.mode === 'cdp', JSON.stringify(info))
     check('摘要包含接管端点', info.summary.includes(endpoint), info.summary)
     const list = await tabs(KEY)
@@ -152,11 +156,11 @@ try {
 
   console.log('== 用例 3：接管后导航 / 求值 / 截图 ==')
   {
-    const info = await navigate(KEY, 'data:text/html,<title>cdp-page</title><h1 id="h">cdp-heading</h1>', 'load', SID)
+    const info = await navigate(session, 'data:text/html,<title>cdp-page</title><h1 id="h">cdp-heading</h1>', 'load')
     check('导航成功', info.title === 'cdp-page', JSON.stringify(info))
-    const value = await evaluate(KEY, "document.getElementById('h').textContent", SID)
+    const value = await evaluate(session, "document.getElementById('h').textContent")
     check('求值成功', value.value === 'cdp-heading', JSON.stringify(value.value))
-    const shot = await screenshot(KEY, { name: 'cdp-shot', format: 'jpeg', quality: 70 }, SID)
+    const shot = await screenshot(session, currentTab(session), { name: 'cdp-shot', format: 'jpeg', quality: 70 })
     check('截图成功（无固定视口时按内尺寸兜底）', shot.meta.width > 0 && shot.meta.height > 0, JSON.stringify(shot.meta))
     const list = await tabs(KEY)
     check('导航没有新建 page', list.tabs.length >= 1, JSON.stringify(list.tabs.map((t) => t.tab_id)))
