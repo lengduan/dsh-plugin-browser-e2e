@@ -1,0 +1,4 @@
+# dsh bundle patch：把 browser-e2e 工具集插入 profile 的配置层栈
+- insert:
+    - id: browser-e2e
+      name: 'dsh-browser-e2e'

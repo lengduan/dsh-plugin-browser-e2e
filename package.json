@@ -1,0 +1,34 @@
+{
+  "name": "dsh-browser-e2e",
+  "version": "0.1.0",
+  "description": "浏览器端到端验证工具集（browser_*）：用系统 Edge 驱动 Playwright，不触发 360 进程防护弹窗；装进 profile 后对所有会话与工作区可用",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "browser",
+    "playwright",
+    "e2e"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}
