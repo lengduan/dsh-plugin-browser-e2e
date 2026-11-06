@@ -89,6 +89,8 @@ console.log('== 用例 C：插件注册面（12 个工具的参数未变）==')
 const KEY = 'panel-test-key'
 // 生产环境里 agent.id 就是 SessionId，两者同源；这里保持同一取值。
 const SID = KEY
+// 面板 tab id 是「会话 key#页面 tab_id」的组合 id。
+const PANEL_TAB = `${KEY}#t1`
 const toolNames = []
 const tools = new Map()
 const routes = new Map()
@@ -126,8 +128,8 @@ let upgradeHandler = null
     },
   }
   apply(ctx)
-  check('注册 12 个工具', toolNames.length === 12, JSON.stringify(toolNames))
-  check('browser_e2e_click 参数仍为 ref/selector/x/y', JSON.stringify(Object.keys(tools.get('browser_e2e_click').parameters.properties)) === JSON.stringify(['ref', 'selector', 'x', 'y']))
+  check('注册 14 个工具', toolNames.length === 14, JSON.stringify(toolNames))
+  check('browser_e2e_click 参数仍为 ref/selector/x/y + tab_id', JSON.stringify(Object.keys(tools.get('browser_e2e_click').parameters.properties)) === JSON.stringify(['ref', 'selector', 'x', 'y', 'tab_id']))
   check('browser_e2e_screenshot 参数仍含 clip/format/quality/scale', ['name', 'fullPage', 'clip', 'format', 'quality', 'scale'].every((k) => k in tools.get('browser_e2e_screenshot').parameters.properties))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
@@ -191,12 +193,12 @@ await tools.get('browser_start').execute({ headless: true }, exec)
 check('浏览器已启动', activeSessionKeys().includes(KEY), JSON.stringify(activeSessionKeys()))
 const stateWithTab = await waitFor(() => panel.events.filter((event) => event.kind === 'state').find((event) => event.state.tabs.length > 0))
 check('启动后推送含 tab 的状态', Boolean(stateWithTab), JSON.stringify(panel.events.map((e) => e.kind)))
-check('tab id 是会话 key', stateWithTab?.state?.tabs?.[0]?.id === KEY, JSON.stringify(stateWithTab?.state?.tabs))
+check('tab id 是「会话 key#页面 tab_id」组合', stateWithTab?.state?.tabs?.[0]?.id === PANEL_TAB, JSON.stringify(stateWithTab?.state?.tabs))
 check('tab 带 sessionId', stateWithTab?.state?.tabs?.[0]?.sessionId === SID, JSON.stringify(stateWithTab?.state?.tabs))
-check('默认选中该 tab', stateWithTab?.state?.activeTabId === KEY, String(stateWithTab?.state?.activeTabId))
+check('默认选中该 tab', stateWithTab?.state?.activeTabId === PANEL_TAB, String(stateWithTab?.state?.activeTabId))
 
 await tools.get('browser_e2e_navigate').execute({ url: 'data:text/html,<title>panel</title><h1>hello panel</h1>' }, exec)
-const frame = await waitFor(() => panel.events.find((event) => event.kind === 'frame' && event.tabId === KEY && event.seq > 0))
+const frame = await waitFor(() => panel.events.find((event) => event.kind === 'frame' && event.tabId === PANEL_TAB && event.seq > 0))
 check('投屏帧到达', Boolean(frame), JSON.stringify(panel.events.map((e) => e.kind)))
 check('帧是 base64 JPEG', typeof frame?.data === 'string' && frame.data.startsWith('/9j/'), String(frame?.data?.slice(0, 8)))
 check('帧带宽高', frame?.width > 0 && frame?.height > 0, `${frame?.width}x${frame?.height}`)

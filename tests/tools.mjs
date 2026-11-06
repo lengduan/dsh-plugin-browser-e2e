@@ -238,8 +238,8 @@ try {
     })
     apply(makeCtx(fakeAttachments))
     const names = definitions.map((definition) => definition.name)
-    check('注册工具数量为 12', definitions.length === 12, JSON.stringify(names))
-    check('新增工具均已注册', ['browser_e2e_console', 'browser_e2e_network', 'browser_e2e_wait'].every((name) => names.includes(name)), JSON.stringify(names))
+    check('注册工具数量为 14', definitions.length === 14, JSON.stringify(names))
+    check('新增工具均已注册', ['browser_e2e_console', 'browser_e2e_network', 'browser_e2e_wait', 'browser_e2e_tabs', 'browser_e2e_close_tab'].every((name) => names.includes(name)), JSON.stringify(names))
     check('原有 9 个工具仍在', ['browser_start', 'browser_e2e_navigate', 'browser_e2e_snapshot', 'browser_e2e_click', 'browser_fill', 'browser_e2e_press', 'browser_e2e_screenshot', 'browser_evaluate', 'browser_e2e_close'].every((name) => names.includes(name)), JSON.stringify(names))
 
     const screenshotTool = definitions.find((definition) => definition.name === 'browser_e2e_screenshot')
