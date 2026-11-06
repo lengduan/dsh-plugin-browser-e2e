@@ -41,6 +41,7 @@
     "build:client": "node scripts/build-client.mjs"
   },
   "dependencies": {
+    "@deepseek-ai/schemastery": "3.19.0",
     "playwright-core": "1.63.0",
     "ws": "^8.22.1"
   }
