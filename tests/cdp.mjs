@@ -20,7 +20,7 @@ import { join } from 'node:path'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
-const { close, closeAll, evaluate, launch, navigate, screenshot, tabs } = await import('../lib/browser.js')
+const { close, closeAll, evaluate, launch, listPanelTabs, navigate, screenshot, tabs } = await import('../lib/browser.js')
 
 const KEY = 'test-cdp-key'
 const SID = KEY
@@ -140,8 +140,14 @@ try {
     const list = await tabs(KEY)
     check('tab 列表取 context.pages()（至少 1 个）', list.tabs.length >= 1, JSON.stringify(list.tabs))
     check('tab 列表 mode 为 cdp', list.mode === 'cdp', list.mode)
+    check('接管页 origin 为 adopted、loading 为布尔', list.tabs.every((tab) => tab.origin === 'adopted'
+      && typeof tab.loading === 'boolean'), JSON.stringify(list.tabs))
     const alive = child.exitCode === null && !child.killed
     check('接管不杀浏览器进程', alive, `exitCode=${child.exitCode}`)
+    // 面板 tab 需要带 mode / endpoint，否则面板会一直显示「隔离」。
+    const panelTabs = await listPanelTabs()
+    check('面板 tab 带 mode=cdp 与实际接管端点', panelTabs.length >= 1
+      && panelTabs.every((tab) => tab.mode === 'cdp' && tab.endpoint === endpoint), JSON.stringify(panelTabs))
   }
 
   console.log('== 用例 3：接管后导航 / 求值 / 截图 ==')

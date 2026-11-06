@@ -85,6 +85,8 @@ try {
     const list = await tabs(KEY)
     check('tabs 列出 1 个页且 active 为 t1', list.tabs.length === 1 && list.tabs[0].tab_id === 't1' && list.tabs[0].active === true, JSON.stringify(list.tabs))
     check('tabs 带 url 与 title', list.tabs[0].url.endsWith('/a') && list.tabs[0].title === 'page-a', JSON.stringify(list.tabs[0]))
+    check('tabs 带 loading / origin（created）字段', typeof list.tabs[0].loading === 'boolean'
+      && list.tabs[0].loading === false && list.tabs[0].origin === 'created', JSON.stringify(list.tabs[0]))
   }
 
   console.log('== 用例 2：new_tab 新建页并设为 active ==')
