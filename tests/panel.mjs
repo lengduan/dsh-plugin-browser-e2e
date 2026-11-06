@@ -15,7 +15,7 @@
 import { createServer, request as httpRequest } from 'node:http'
 import { WebSocket } from 'ws'
 
-// 测试期间不让空闲回收介入（browser.js 在导入时读取该环境变量）。
+// 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { mergeConfig, PanelHub } = await import('../lib/panel.js')
