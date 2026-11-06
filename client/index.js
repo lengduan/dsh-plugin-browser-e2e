@@ -5,10 +5,14 @@
  * browser_* 工具时，host 半区把当前页面推成 JPEG 帧，这里在右侧栏里实时显示。
  *
  * 协议 v1（与 host 半区严格一致）：
- *   客户端命令：attach{sessionId?} / select-tab{tabId} / request-frame /
+ *   客户端命令：attach{sessionId?} / select-tab{tabId} / close-tab{tabId} /
+ *              request-frame /
  *              configure{config:{quality?,maxWidth?,maxHeight?,everyNthFrame?}}
  *   服务端事件：hello{state} / state{state} / frame{tabId,seq,width,height,data} /
  *              action{trace:{tool,summary,at}} / error{code,message}
+ *
+ * 面板状态 state：{tabs, activeTabId, running, mode, endpoint, config}；
+ * tabs 项：{id, url, title, loading, origin, sessionId, mode?, endpoint?}。
  *
  * 本文件直接以浏览器 bundle 形式分发，只 require("react")，不写 JSX。
  */
@@ -28,6 +32,19 @@ window.__ModuleLoader__.load({
     const PLUGIN_TAG = "browser-e2e";
     /** tab 类型 id；tab 注册、pane.tab、pane.tab.title 三处共用。 */
     const TAB_ID = "dsh-browser-e2e";
+    /** 包名：插件卡片 key 与行配置 key 的前缀。 */
+    const PACKAGE_NAME = "dsh-browser-e2e";
+    /** 本插件在 profile 里的行 id（cordis.patch.yml 的 insert id）。 */
+    const ROW_ID = "browser-e2e";
+    /** `plugins.row.config` 的 key：`<包名>#<行 id>`。 */
+    const ROW_CONFIG_KEY = PACKAGE_NAME + "#" + ROW_ID;
+    /** 只保留最近这么多条动作提示（新的在前）。 */
+    const ACTION_LIMIT = 5;
+    /** 插件级配置缺省值（宿主 Config 下发的为准）。 */
+    const DEFAULT_PLUGIN_CONFIG = {
+      defaultMode: "isolated",
+      cdpEndpoint: "http://127.0.0.1:9222",
+    };
     /** tab 类型 kind，供 openTabIn/openTab 按类型点名。 */
     const TAB_KIND = "browser-e2e";
     /** host 半区挂载的 WebSocket 路径。 */
@@ -72,6 +89,23 @@ window.__ModuleLoader__.load({
       "连不上实时通道，将自动重试。": "Cannot reach the live channel; retrying automatically.",
       "最近动作": "Last action",
       "地址": "URL",
+      "隔离": "Isolated",
+      "CDP 接管": "CDP attached",
+      "端点": "Endpoint",
+      "关闭标签页": "Close tab",
+      "启动模式": "Launch mode",
+      "默认模式": "Default mode",
+      "CDP 端点": "CDP endpoint",
+      "保存": "Save",
+      "保存中": "Saving…",
+      "已保存": "Saved",
+      "保存失败": "Save failed",
+      "配置尚未就绪": "Configuration is not ready",
+      "宿主未提供这项配置": "The host does not expose this setting",
+      "还没有动作": "No action yet",
+      "浏览器面板设置": "Browser panel settings",
+      "插件设置": "Plugin settings",
+      "浏览器端到端验证工具与实时面板": "Browser E2E tools with a live panel",
     };
     let LANG = (() => {
       try { return String(navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en"; } catch (e) { return "zh"; }
@@ -108,6 +142,22 @@ window.__ModuleLoader__.load({
       chipText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
       mark: { flex: "0 0 auto", width: 14, height: 14 },
       action: { fontSize: "0.82em", opacity: 0.6, flex: "0 0 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      modeChip: { display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto", border: "1px solid rgba(128,128,128,.35)", borderRadius: 6, padding: "2px 7px", fontSize: "0.8em", whiteSpace: "nowrap" },
+      endpoint: { flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: 0.7, fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },
+      urlInput: { flex: "1 1 auto", minWidth: 80, border: "1px solid rgba(128,128,128,.2)", borderRadius: 6, background: "transparent", color: "inherit", padding: "3px 7px", fontSize: "0.95em", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", opacity: 0.8, boxSizing: "border-box" },
+      tabClose: { border: 0, background: "transparent", color: "inherit", cursor: "pointer", opacity: 0.55, fontSize: "0.95em", lineHeight: 1, padding: "0 0 0 2px", flex: "0 0 auto" },
+      traces: { display: "flex", flexDirection: "column", gap: 2, flex: "0 0 auto" },
+      traceLine: { display: "flex", alignItems: "baseline", gap: 6, fontSize: "0.8em", opacity: 0.65, minWidth: 0 },
+      traceTime: { flex: "0 0 auto", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },
+      traceText: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      formGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px 14px", padding: "4px 0 2px" },
+      formWide: { gridColumn: "1 / -1" },
+      formCard: { display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box", fontSize: "0.9em" },
+      formTitle: { fontWeight: 600 },
+      formActions: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+      saveBtn: { border: "1px solid rgba(90,140,255,.55)", background: "rgba(90,140,255,.18)", borderRadius: 6, padding: "3px 12px", fontSize: "0.92em", cursor: "pointer", color: "inherit" },
+      formError: { color: "#c0392b", fontSize: "0.85em", wordBreak: "break-word" },
+      cardLine: { fontSize: "0.9em", opacity: 0.8, lineHeight: 1.5 },
     };
 
     // ── 纯函数（同时挂到 exports 上供测试） ───────────────────────────────
@@ -146,14 +196,20 @@ window.__ModuleLoader__.load({
             url: typeof tab.url === "string" ? tab.url : "",
             title: typeof tab.title === "string" ? tab.title : "",
             loading: tab.loading === true,
+            origin: typeof tab.origin === "string" ? tab.origin : "",
             sessionId: typeof tab.sessionId === "string" ? tab.sessionId : undefined,
+            mode: tab.mode === "cdp" ? "cdp" : tab.mode === "isolated" ? "isolated" : undefined,
+            endpoint: typeof tab.endpoint === "string" ? tab.endpoint : undefined,
           });
         }
       }
+      const mode = input.mode === "cdp" ? "cdp" : "isolated";
       return {
         tabs,
         activeTabId: typeof input.activeTabId === "string" && input.activeTabId.length > 0 ? input.activeTabId : null,
         running: input.running === true,
+        mode,
+        endpoint: mode === "cdp" && typeof input.endpoint === "string" ? input.endpoint : "",
         config: normalizeConfig(input.config),
         message: typeof input.message === "string" ? input.message : "",
       };
@@ -198,7 +254,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 面板视图初值：连接状态由组件单独维护，这里只放服务端快照与最近帧。 */
-    const EMPTY_VIEW = { state: null, frame: null, seqs: {}, error: null, action: null };
+    const EMPTY_VIEW = { state: null, frame: null, seqs: {}, error: null, action: null, actions: [] };
 
     /**
      * 把一条服务端事件收敛进视图状态（纯函数，返回新对象）。
@@ -238,7 +294,10 @@ window.__ModuleLoader__.load({
       }
       if (event.kind === "action") {
         const trace = event.trace && typeof event.trace === "object" ? event.trace : null;
-        return trace ? Object.assign({}, view, { action: trace }) : view;
+        if (!trace) return view;
+        // 新的在前，只保留最近 ACTION_LIMIT 条。
+        const actions = [trace].concat(Array.isArray(view.actions) ? view.actions : []).slice(0, ACTION_LIMIT);
+        return Object.assign({}, view, { action: trace, actions });
       }
       return view;
     }
@@ -347,6 +406,35 @@ window.__ModuleLoader__.load({
       { key: "everyNthFrame", label: "取帧间隔", min: 1, max: 10 },
     ];
 
+    // ── 插件级设置字段（Host Config 表单用） ─────────────────────────────
+    /** 启动模式与 CDP 端点来自宿主 Config；投屏四项在本插件里始终可编辑。 */
+    const PLUGIN_CONFIG_FIELDS = [
+      { key: "defaultMode", label: "默认模式", kind: "choice", choices: ["isolated", "cdp"] },
+      { key: "cdpEndpoint", label: "CDP 端点", kind: "text" },
+      { key: "quality", label: "画面质量", kind: "number", min: 10, max: 100 },
+      { key: "maxWidth", label: "最大宽度", kind: "number", min: 100, max: 4096 },
+      { key: "maxHeight", label: "最大高度", kind: "number", min: 100, max: 4096 },
+      { key: "everyNthFrame", label: "取帧间隔", kind: "number", min: 1, max: 10 },
+    ];
+
+    /** 时间戳 → 本地 HH:MM:SS，供动作提示使用；非法值返回空串。 */
+    function formatClock(value) {
+      const time = Number(value);
+      if (!isFinite(time)) return "";
+      const date = new Date(time);
+      const pad = function (n) { return (n < 10 ? "0" : "") + n; };
+      return pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+    }
+
+    /** 读取一个设置字段的展示值：宿主值优先，缺失回退缺省值。 */
+    function pluginConfigValue(key, source) {
+      const raw = source && typeof source === "object" ? source[key] : undefined;
+      if (raw !== undefined && raw !== null) return key === "defaultMode" ? (raw === "cdp" ? "cdp" : "isolated") : String(raw);
+      if (key === "defaultMode") return DEFAULT_PLUGIN_CONFIG.defaultMode;
+      if (key === "cdpEndpoint") return DEFAULT_PLUGIN_CONFIG.cdpEndpoint;
+      return String(DEFAULT_CONFIG[key]);
+    }
+
     // ── 图形 ──────────────────────────────────────────────────────────────
     /** 浏览器窗口字形（右侧栏 tab chip 用）。 */
     function BrowserE2EMark() {
@@ -385,6 +473,176 @@ window.__ModuleLoader__.load({
         el("rect", { x: 1.75, y: 2.25, width: 12.5, height: 11.5, rx: 1.75 }),
         el("path", { d: "M1.75 5.75h12.5" }),
         el("path", { d: "M6.2 8.2l3.1 1.4-1.3.55-.55 1.35z", fill: "currentColor", stroke: "none" }),
+      );
+    }
+
+    // ── 插件设置页（plugins.row.config） ──────────────────────────────────
+    /**
+     * 插件行的配置表单，由 Plugins 页面注入 {view, form}。
+     *
+     * form.state 是宿主配置快照（status/value/revision/writable），
+     * form.mutate(ops, revision) 是原子写入口。保存只写改动过的字段。
+     */
+    function BrowserE2EConfigForm(props) {
+      const form = props && props.form ? props.form : null;
+      const snapshot = form && form.state ? form.state : null;
+      const [draft, setDraft] = React.useState(null);
+      const [error, setError] = React.useState("");
+      const [saving, setSaving] = React.useState(false);
+      const revision = snapshot ? snapshot.revision : undefined;
+
+      React.useEffect(function () {
+        setDraft(null);
+        setError("");
+      }, [revision]);
+
+      const source = snapshot && snapshot.value && typeof snapshot.value === "object" ? snapshot.value : {};
+      const values = {};
+      for (let i = 0; i < PLUGIN_CONFIG_FIELDS.length; i += 1) {
+        const field = PLUGIN_CONFIG_FIELDS[i];
+        values[field.key] = draft && draft[field.key] !== undefined
+          ? draft[field.key]
+          : pluginConfigValue(field.key, source);
+      }
+      const mode = values.defaultMode === "cdp" ? "cdp" : "isolated";
+      const view = props && props.view === "summary" ? "summary" : "page";
+
+      if (view === "summary") {
+        return el("span", { "data-dsh-part": "config-summary" },
+          t(mode === "cdp" ? "CDP 接管" : "隔离") + " · " + values.cdpEndpoint);
+      }
+      if (!form || !snapshot || snapshot.status !== "ready") {
+        const message = snapshot && snapshot.status === "unavailable" ? t("宿主未提供这项配置") : t("配置尚未就绪");
+        return el("div", { style: st.formCard, "data-dsh-part": "config-form" },
+          el("div", { style: st.hint }, message),
+        );
+      }
+
+      const writable = snapshot.writable !== false;
+      const edit = function (field, raw) {
+        setError("");
+        setDraft(function (prev) {
+          const next = Object.assign({}, prev || {});
+          next[field.key] = raw;
+          return next;
+        });
+      };
+
+      const save = function () {
+        if (!writable || saving) return;
+        const ops = [];
+        for (let i = 0; i < PLUGIN_CONFIG_FIELDS.length; i += 1) {
+          const field = PLUGIN_CONFIG_FIELDS[i];
+          const current = pluginConfigValue(field.key, source);
+          const next = values[field.key];
+          if (String(next) === String(current)) continue;
+          if (field.kind === "number") {
+            const num = Number(next);
+            if (!isFinite(num) || num < field.min || num > field.max) {
+              setError(field.label + " 必须是 " + field.min + "-" + field.max + " 的整数");
+              return;
+            }
+            ops.push({ op: "set", path: [field.key], value: Math.round(num) });
+          } else {
+            ops.push({ op: "set", path: [field.key], value: String(next) });
+          }
+        }
+        if (ops.length === 0) {
+          setDraft(null);
+          return;
+        }
+        setSaving(true);
+        setError("");
+        Promise.resolve(form.mutate(ops, snapshot.revision)).then(function (ok) {
+          setSaving(false);
+          if (ok === false) {
+            setError(t("保存失败"));
+            return;
+          }
+          setDraft(null);
+        }, function (failure) {
+          setSaving(false);
+          setError(failure && failure.message ? String(failure.message) : String(failure));
+        });
+      };
+
+      const controls = PLUGIN_CONFIG_FIELDS.map(function (field) {
+        let control;
+        if (field.kind === "choice") {
+          control = el("select", {
+            style: st.input,
+            value: values[field.key],
+            disabled: !writable,
+            onChange: function (event) { edit(field, event.target.value); },
+          }, field.choices.map(function (choice) {
+            return el("option", { key: choice, value: choice },
+              choice === "cdp" ? t("CDP 接管") : t("隔离"));
+          }));
+        } else if (field.kind === "number") {
+          control = el("input", {
+            type: "number",
+            style: st.input,
+            min: field.min,
+            max: field.max,
+            step: 1,
+            value: String(values[field.key]),
+            disabled: !writable,
+            onChange: function (event) { edit(field, event.target.value); },
+          });
+        } else {
+          control = el("input", {
+            type: "text",
+            style: st.input,
+            value: String(values[field.key]),
+            disabled: !writable,
+            onChange: function (event) { edit(field, event.target.value); },
+          });
+        }
+        return el("label", {
+          key: field.key,
+          style: field.kind === "text" ? Object.assign({}, st.field, st.formWide) : st.field,
+        },
+          el("span", { style: st.fieldLabel }, t(field.label)),
+          control,
+        );
+      });
+
+      return el("div", { style: st.formCard, "data-dsh-part": "config-form" },
+        el("div", { style: st.formTitle }, t("浏览器面板设置")),
+        el("div", { style: st.formGrid }, controls),
+        el("div", { style: st.formActions },
+          el("button", { type: "button", style: st.saveBtn, disabled: !writable || saving, onClick: save },
+            saving ? t("保存中") : t("保存")),
+          error ? el("span", { style: st.formError }, error) : null,
+        ),
+        !writable ? el("div", { style: st.hint }, t("配置尚未就绪")) : null,
+      );
+    }
+
+    // ── 插件卡片（Plugins 页） ────────────────────────────────────────────
+    /**
+     * 插件卡片：展示插件名、当前模式与 CDP 端点。
+     * configForm 由注册处的 inject 注入（ctx.configForms.get(ROW_ID)）。
+     */
+    function BrowserE2EPluginCard(props) {
+      const form = props && props.configForm ? props.configForm : null;
+      const [snapshot, setSnapshot] = React.useState(function () {
+        return form && typeof form.getSnapshot === "function" ? form.getSnapshot() : null;
+      });
+      React.useEffect(function () {
+        if (!form || typeof form.subscribe !== "function") return function () {};
+        setSnapshot(form.getSnapshot());
+        return form.subscribe(function () {
+          setSnapshot(form.getSnapshot());
+        });
+      }, [form]);
+      const source = snapshot && snapshot.value && typeof snapshot.value === "object" ? snapshot.value : {};
+      const mode = pluginConfigValue("defaultMode", source);
+      const endpoint = pluginConfigValue("cdpEndpoint", source);
+      return el("div", { style: st.formCard, "data-dsh-part": "plugin-card" },
+        el("div", { style: st.formTitle }, t("浏览器端到端验证工具与实时面板")),
+        el("div", { style: st.cardLine }, t("默认模式") + "：" + t(mode === "cdp" ? "CDP 接管" : "隔离")),
+        mode === "cdp" ? el("div", { style: st.cardLine }, t("CDP 端点") + "：" + endpoint) : null,
       );
     }
 
@@ -484,33 +742,68 @@ window.__ModuleLoader__.load({
         placeholderHint = t("刷新或操作页面后会自动推送新画面。");
       }
 
-      const tabBar = el("div", { style: st.tabBar, "data-dsh-part": "tabs" },
-        tabs.length === 0
-          ? el("span", { style: st.hint }, t("暂无页面"))
-          : tabs.map(function (tab) {
+      // tab 条只在有多个标签页时出现（单个页面没有切换/关闭的意义）。
+      const tabBar = tabs.length > 1
+        ? el("div", { style: st.tabBar, "data-dsh-part": "tabs" },
+          tabs.map(function (tab) {
             const active = tab.id === activeTabId;
             return el("button", {
               key: tab.id,
               type: "button",
               style: active ? st.tabOn : st.tabBtn,
-              title: tab.url || tab.id,
+              title: tab.title || tab.url || tab.id,
               "data-dsh-active": active ? "true" : "false",
               onClick: function () {
                 send({ v: PROTOCOL_VERSION, kind: "select-tab", tabId: tab.id });
               },
             },
-              el("span", { style: st.tabText }, tab.title || tab.url || tab.id),
+              el("span", { style: st.tabText }, tab.title || t("浏览器画面")),
               tab.loading ? el("span", { style: st.tabLoading }, t("加载中")) : null,
+              el("span", {
+                role: "button",
+                "aria-label": t("关闭标签页"),
+                title: t("关闭标签页"),
+                style: st.tabClose,
+                "data-dsh-part": "tab-close",
+                onClick: function (event) {
+                  event.stopPropagation();
+                  send({ v: PROTOCOL_VERSION, kind: "close-tab", tabId: tab.id });
+                },
+              }, "×"),
             );
           }),
-      );
+        )
+        : null;
+
+      const mode = state ? state.mode : "isolated";
+      const endpoint = state ? state.endpoint : "";
+      const modeChip = el("span", {
+        style: st.modeChip,
+        "data-dsh-part": "mode",
+        "data-dsh-mode": mode,
+      }, mode === "cdp" ? t("CDP 接管") : t("隔离"));
+      const endpointLine = mode === "cdp" && endpoint
+        ? el("span", { style: st.endpoint, title: endpoint }, endpoint)
+        : null;
 
       const toolbar = el("div", { style: st.toolbar, "data-dsh-part": "toolbar" },
         el("span", { style: st.status, "data-dsh-status": connection },
           el("span", { style: Object.assign({}, st.dot, { backgroundColor: statusColor }) }),
           statusText,
         ),
-        el("span", { style: st.url, title: currentUrl }, currentUrl || t("无页面")),
+        modeChip,
+        endpointLine,
+        el("input", {
+          type: "text",
+          readOnly: true,
+          style: st.urlInput,
+          value: currentUrl || "",
+          placeholder: state && state.message ? state.message : t("无页面"),
+          title: currentUrl,
+          "aria-label": t("地址"),
+          spellCheck: false,
+          onFocus: function (event) { event.target.select(); },
+        }),
         el("button", {
           type: "button",
           style: st.btn,
@@ -568,11 +861,24 @@ window.__ModuleLoader__.load({
           : null,
       );
 
-      const actionLine = view.action
-        ? el("div", { style: st.action, "data-dsh-part": "action", title: view.action.summary || "" },
-          t("最近动作") + "：" + (view.action.summary || view.action.tool || ""),
+      // 动作提示保留最近 5 条，新的在前（服务器按发生顺序推送，reduceEvent 已倒序）。
+      const actions = Array.isArray(view.actions) ? view.actions.slice(0, ACTION_LIMIT) : (view.action ? [view.action] : []);
+      const actionList = actions.length > 0
+        ? el("div", { style: st.traces, "data-dsh-part": "actions" },
+          actions.map(function (trace, index) {
+            const summary = trace.summary || trace.tool || "";
+            return el("div", {
+              key: String(trace.at || "") + ":" + index,
+              style: st.traceLine,
+              title: summary,
+              "data-dsh-part": "action",
+            },
+              el("span", { style: st.traceTime }, formatClock(trace.at)),
+              el("span", { style: st.traceText }, (trace.tool ? trace.tool + "：" : "") + summary),
+            );
+          }),
         )
-        : null;
+        : (state ? el("div", { style: st.action, "data-dsh-part": "action" }, t("还没有动作")) : null);
 
       return el("div", {
         style: st.root,
@@ -585,12 +891,12 @@ window.__ModuleLoader__.load({
         errorBanner,
         stage,
         settings,
-        actionLine,
+        actionList,
       );
     }
 
     // ── 插件注册 ──────────────────────────────────────────────────────────
-    const inject = ["slots", "sidebarRightTabs"];
+    const inject = ["slots", "sidebarRightTabs", "configForms"];
 
     /** tab 类型定义：id/kind/标题/guide 条目，guide 里只有一条 order 50 的入口。 */
     function tabDefinition() {
@@ -661,6 +967,46 @@ window.__ModuleLoader__.load({
             }, BrowserE2ETabTitle);
           }));
         } catch (e) { warn("sidebar.right.pane.tab.title", e); }
+
+        // 插件设置页：Plugins 页面按 `<包名>#<行 id>` 分发，行上出现「配置」入口。
+        try {
+          disposers.push(slots.inject("plugins.row.config", function () {
+            return slots.register({
+              name: "plugins.row.config",
+              key: ROW_CONFIG_KEY,
+            }, BrowserE2EConfigForm);
+          }));
+        } catch (e) { warn("plugins.row.config", e); }
+
+        // 插件卡片：家族分组（dsh-web-settings 的 webUiSettings 服务）在场时进
+        // web-ui.plugin.item 列表座位，否则进官方 plugins.bundle.config 键控座位。
+        const familyGroup = service(ctx, "webUiSettings") !== undefined;
+        const configForms = service(ctx, "configForms");
+        const cardInject = function () {
+          if (configForms && typeof configForms.get === "function") {
+            try { return { configForm: configForms.get(ROW_ID) }; } catch (e) { return {}; }
+          }
+          return {};
+        };
+        try {
+          if (familyGroup) {
+            disposers.push(slots.inject("web-ui.plugin.item", function () {
+              return slots.register({
+                name: "web-ui.plugin.item",
+                id: PLUGIN_ID,
+                order: 95,
+              }, BrowserE2EPluginCard);
+            }));
+          } else {
+            disposers.push(slots.inject("plugins.bundle.config", function () {
+              return slots.register({
+                name: "plugins.bundle.config",
+                key: PACKAGE_NAME,
+                inject: cardInject,
+              }, BrowserE2EPluginCard);
+            }));
+          }
+        } catch (e) { warn("plugin card", e); }
       }
 
       if (typeof ctx.effect === "function") {
@@ -685,6 +1031,8 @@ window.__ModuleLoader__.load({
     exports.reduceEvent = reduceEvent;
     exports.normalizeConfig = normalizeConfig;
     exports.normalizeState = normalizeState;
+    exports.formatClock = formatClock;
+    exports.pluginConfigValue = pluginConfigValue;
 
     // __ModuleLoader__ 用 factory 的返回值作为模块导出，漏掉它会拿到 undefined。
     return module.exports;
