@@ -494,6 +494,27 @@ try {
     check('同名截图不覆盖且都落盘', dupA.file !== dupB.file && existsSync(dupA.file) && existsSync(dupB.file),
       `${dupA.file} / ${dupB.file}`)
 
+    // 不传 name 的默认名也必须带唯一后缀：旧实现用 shot-<Date.now()>，同毫秒两次会互相覆盖。
+    const anonA = await screenshot(session, currentTab(session))
+    const anonB = await screenshot(session, currentTab(session))
+    check('无 name 的默认截图名带唯一后缀且不覆盖',
+      anonA.file !== anonB.file && existsSync(anonA.file) && existsSync(anonB.file)
+        && /shot-[0-9a-z]+\.png$/.test(anonA.file) && /shot-[0-9a-z]+\.png$/.test(anonB.file),
+      `${anonA.file} / ${anonB.file}`)
+
+    // 固定 Date.now 模拟「同一毫秒」：旧实现两次得到同名路径、第二次覆盖第一次，这条断言会失败。
+    const realDateNow = Date.now
+    Date.now = () => 1700000000000
+    try {
+      const sameMsA = await screenshot(session, currentTab(session))
+      const sameMsB = await screenshot(session, currentTab(session))
+      check('同一毫秒内两次无 name 截图不覆盖（默认名带自增序号）',
+        sameMsA.file !== sameMsB.file && existsSync(sameMsA.file) && existsSync(sameMsB.file),
+        `${sameMsA.file} / ${sameMsB.file}`)
+    } finally {
+      Date.now = realDateNow
+    }
+
     // 滚动后：数值倍率路径必须按页面坐标截取（不能截到文档顶部），无 clip 时倍率要真实生效。
     await navigate(session, 'data:text/html,<body style="margin:0">'
       + '<div style="height:800px;background:rgb(255,0,0)"></div>'
