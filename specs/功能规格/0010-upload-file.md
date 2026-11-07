@@ -105,6 +105,6 @@
    - 用例 9（工具契约）：`browser_e2e_upload 把 files 列为必填`、`files 支持字符串与数组`、`upload 接受 tab_id`。
    - 收尾：`msedge 主进程回落到运行前基线`。
 2. `node tests/tools.mjs`：exit 0、无 FAIL（快照 / 点击 / 填写无回归；用例 10 的 `注册的工具与工具表逐项一致` 覆盖新增工具的注册顺序）。
-3. `node tests/panel.mjs`：exit 0、无 FAIL（用例 C 的 `注册的工具与工具表逐项一致（顺序与名字）`、`作用于页面的工具都接受 tab_id` 覆盖新增工具）。
+3. `node tests/panel.mjs`：exit 0、无 FAIL（用例 C 的 `注册的工具与工具表逐项一致（顺序与名字）` 覆盖新增工具；`作用于页面的工具都接受 tab_id` 的覆盖由 `tests/upload.mjs` 用例 9 的工具契约标签 `upload 接受 tab_id` 承担，因为 `tests/panel.mjs` 的 tab_id 名单是硬编码，不含 upload）。
 4. cdp 模式：`node tests/cdp.mjs` 中新增用例的 `CDP 接管下 selector 上传生效`、`CDP 接管下坐标上传生效`；找不到 Edge 时按现有 SKIP 口径以 0 退出。
 5. `npm run test:unit` 与 `npm run test:integration`：exit 0、输出无 FAIL；`test:integration` 必须包含 `node tests/upload.mjs`（由计划指定的步骤加入脚本清单）。

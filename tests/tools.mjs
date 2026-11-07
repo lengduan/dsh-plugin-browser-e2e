@@ -1,6 +1,6 @@
 /**
  * dsh-browser-e2e 工具能力验证：console / network 捕获、snapshot 增强、
- * 点击三种方式、clip 截图、wait 与超时。
+ * 点击三种方式、悬停、拖拽、clip 截图、wait 与超时。
  *
  * 直接调用 page.js / capture.js 的真实实现（不 mock），真起无头 Edge；
  * 网络请求用 node:http 在 127.0.0.1 随机端口起本地服务制造。
@@ -18,8 +18,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
 const {
-  attachPageHooks, click, consoleEntries, evaluate, fill, navigate, networkEntries, RING_LIMIT, scroll, snapshot,
-  waitFor,
+  attachPageHooks, click, consoleEntries, drag, evaluate, fill, hover, navigate, networkEntries, RING_LIMIT, scroll,
+  snapshot, waitFor,
 } = await import('../lib/page.js')
 const { currentTab } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
@@ -146,6 +146,11 @@ async function expectThrow(fn) {
   } catch (error) {
     return error?.message ?? String(error)
   }
+}
+
+/** 把 HTML 包成 data: URL：夹具里含 `#` 选择器，必须编码，否则 `#` 会被当成 URL 片段。 */
+function dataUrl(html) {
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
 }
 
 /** 轮询直到条件成立；进程退出是异步的，固定 sleep 会偶发失败。 */
@@ -422,6 +427,206 @@ try {
     check('delta 全 0 报错', Boolean(zero) && zero.includes('非 0'), String(zero))
     const badDelta = await expectThrow(() => scroll(session, { delta_y: 'not-a-number' }))
     check('非数字 delta 报错', Boolean(badDelta) && badDelta.includes('必须是数字'), String(badDelta))
+  }
+
+  console.log('== 用例 5E：hover（ref / selector / 坐标 / settleMs / 失效 ref / 非法输入）==')
+  {
+    // ref 悬停：CSS :hover 展开子菜单，证明是真实鼠标移动而不是合成事件。
+    const menuHtml = '<!doctype html><html><head><style>'
+      + '#menu { position: fixed; left: 20px; top: 20px; width: 160px; height: 40px; background: #eeeeee; }'
+      + '#sub { display: none; position: fixed; left: 20px; top: 60px; width: 160px; height: 100px; background: #ccddee; }'
+      + '#menu:hover ~ #sub { display: block; }'
+      + '</style></head><body><div id="menu">菜单</div><div id="sub">子项</div></body></html>'
+    await navigate(session, dataUrl(menuHtml), 'load')
+    const menuSnapshot = await snapshot(session)
+    const menuNode = menuSnapshot.nodes.find((node) => node.id === 'menu')
+    const byRef = await hover(session, { ref: menuNode?.ref })
+    const subDisplay = await evaluate(session, "getComputedStyle(document.getElementById('sub')).display")
+    check('悬停 ref 展开 CSS 菜单', byRef.mode === 'ref' && byRef.ref === menuNode?.ref
+      && subDisplay.value === 'block', JSON.stringify({ byRef, ref: menuNode?.ref, subDisplay: subDisplay.value }))
+
+    // selector 悬停：mouseover 事件计数 >= 1。
+    const mouseoverHtml = '<!doctype html><html><body style="margin:0">'
+      + '<div id="hover-target" style="position:fixed;left:20px;top:20px;width:200px;height:60px;background:#eeeeee">hover me</div>'
+      + '<script>window.__over = 0; var t = document.getElementById("hover-target");'
+      + ' t.addEventListener("mouseover", function () { window.__over += 1 });</script></body></html>'
+    await navigate(session, dataUrl(mouseoverHtml), 'load')
+    const bySelector = await hover(session, { selector: '#hover-target' })
+    const overCount = await evaluate(session, 'window.__over')
+    check('悬停 selector 触发 mouseover 计数', bySelector.mode === 'selector' && bySelector.selector === '#hover-target'
+      && overCount.value >= 1, JSON.stringify({ bySelector, overCount: overCount.value }))
+
+    // 坐标悬停：真实鼠标移动（触发 mousemove / mouseenter）但不产生 click。
+    const pointHoverHtml = '<!doctype html><html><body style="margin:0">'
+      + '<div id="pad" style="position:fixed;left:100px;top:100px;width:200px;height:100px;background:#ffdddd">pad</div>'
+      + '<script>window.__hoverStats = { moves: 0, clicks: 0, enters: 0 }; var pad = document.getElementById("pad");'
+      + ' pad.addEventListener("mousemove", function () { window.__hoverStats.moves += 1 });'
+      + ' pad.addEventListener("click", function () { window.__hoverStats.clicks += 1 });'
+      + ' pad.addEventListener("mouseenter", function () { window.__hoverStats.enters += 1 });</script></body></html>'
+    await navigate(session, dataUrl(pointHoverHtml), 'load')
+    const byPoint = await hover(session, { x: 150, y: 140, settleMs: 300 })
+    const hoverStats = await evaluate(session, 'window.__hoverStats')
+    check('坐标悬停移动真实鼠标且未触发 click', byPoint.mode === 'point' && byPoint.x === 150 && byPoint.y === 140
+      && hoverStats.value?.moves >= 1 && hoverStats.value?.enters >= 1 && hoverStats.value?.clicks === 0,
+    JSON.stringify({ byPoint, hoverStats: hoverStats.value }))
+
+    // settleMs 实际等待：600ms 分支实际耗时明显长于 0 分支，且不少于 550ms。
+    await navigate(session, dataUrl(menuHtml), 'load')
+    const fastStart = Date.now()
+    const fast = await hover(session, { selector: '#menu', settleMs: 0 })
+    const fastElapsed = Date.now() - fastStart
+    const slowStart = Date.now()
+    const slow = await hover(session, { selector: '#menu', settleMs: 600 })
+    const slowElapsed = Date.now() - slowStart
+    check('hover 的 settleMs 实际等待', fast.settleMs === 0 && slow.settleMs === 600
+      && slowElapsed >= 550 && slowElapsed > fastElapsed,
+    JSON.stringify({ fastSettleMs: fast.settleMs, slowSettleMs: slow.settleMs, fastElapsed, slowElapsed }))
+
+    // 失效 ref：报「已失效」，且没有发出任何鼠标移动。
+    const goneHtml = '<!doctype html><html><body style="margin:0">'
+      + '<div id="gone" style="position:fixed;left:20px;top:20px;width:160px;height:40px;background:#eeeeee">gone</div>'
+      + '<script>window.__mouseMoves = 0; document.addEventListener("mousemove", function () { window.__mouseMoves += 1 });</script></body></html>'
+    await navigate(session, dataUrl(goneHtml), 'load')
+    const goneSnapshot = await snapshot(session)
+    const goneRef = goneSnapshot.nodes.find((node) => node.id === 'gone')?.ref
+    await evaluate(session, "document.getElementById('gone').remove()")
+    await sleep(100)
+    const movesBefore = (await evaluate(session, 'window.__mouseMoves')).value
+    const goneMessage = await expectThrow(() => hover(session, { ref: goneRef }))
+    const movesAfter = (await evaluate(session, 'window.__mouseMoves')).value
+    check('hover 失效 ref 报已失效且未移动鼠标', Boolean(goneMessage) && goneMessage.includes('已失效')
+      && movesBefore === 0 && movesAfter === movesBefore,
+    JSON.stringify({ goneMessage, movesBefore, movesAfter }))
+
+    // 非法输入：一个目标都没给（含空串视为未给）与多于一种都报错。
+    const noTarget = await expectThrow(() => hover(session, {}))
+    const blankTarget = await expectThrow(() => hover(session, { ref: '', selector: '' }))
+    const twoTargets = await expectThrow(() => hover(session, { selector: '#menu', x: 10, y: 10 }))
+    check('hover 三种目标都不给时报错', Boolean(noTarget) && noTarget.includes('缺少悬停目标') && noTarget.includes('三选一')
+      && Boolean(blankTarget) && blankTarget.includes('缺少悬停目标')
+      && Boolean(twoTargets) && twoTargets.includes('悬停目标只能给一种'),
+    JSON.stringify({ noTarget, blankTarget, twoTargets }))
+  }
+
+  console.log('== 用例 5F：drag（元素到元素 / 坐标 / steps / 失效目标 / 越界 / 非法输入）==')
+  {
+    // HTML5 draggable 列表：拖 A 到 C 之后，验证原生 dragstart / dragover / drop 与重排。
+    const listHtml = '<!doctype html><html><head><style>'
+      + 'body { margin: 0; font: 14px sans-serif; }'
+      + '#list { list-style: none; margin: 0; padding: 0; position: fixed; left: 20px; top: 20px; width: 200px; }'
+      + '#list li { height: 40px; line-height: 40px; padding-left: 10px; margin-bottom: 4px; background: #ddeeff; border: 1px solid #99aabb; }'
+      + '</style></head><body><ul id="list">'
+      + '<li id="a" draggable="true">A</li><li id="b" draggable="true">B</li><li id="c" draggable="true">C</li>'
+      + '</ul><script>'
+      + 'window.__dragEvents = { dragstart: 0, dragover: 0, drop: 0, dragend: 0 }; var list = document.getElementById("list");'
+      + ' Array.prototype.forEach.call(list.children, function (li) {'
+      + '   li.addEventListener("dragstart", function (e) { window.__dragEvents.dragstart += 1;'
+      + '     e.dataTransfer.setData("text/plain", li.id); e.dataTransfer.effectAllowed = "move"; }); });'
+      + ' list.addEventListener("dragover", function (e) { e.preventDefault(); e.dataTransfer.dropEffect = "move";'
+      + '   window.__dragEvents.dragover += 1; });'
+      + ' list.addEventListener("drop", function (e) { e.preventDefault(); window.__dragEvents.drop += 1;'
+      + '   var dragged = document.getElementById(e.dataTransfer.getData("text/plain"));'
+      + '   var target = e.target && e.target.closest ? e.target.closest("li") : null;'
+      + '   if (!dragged || !target || target === dragged) return; list.insertBefore(dragged, target.nextSibling); });'
+      + ' list.addEventListener("dragend", function () { window.__dragEvents.dragend += 1; });'
+      + '</script></body></html>'
+    await navigate(session, dataUrl(listHtml), 'load')
+    const listSnapshot = await snapshot(session)
+    const refOf = (id) => listSnapshot.nodes.find((node) => node.id === id)?.ref
+    const dragged = await drag(session, { from: { ref: refOf('a') }, to: { ref: refOf('c') }, steps: 8, settleMs: 300 })
+    const dragEvents = await evaluate(session, 'window.__dragEvents')
+    const order = await evaluate(session, "Array.prototype.map.call(document.getElementById('list').children, function (li) { return li.id })")
+    check('元素到元素拖拽重排列表并触发 dragstart/dragover/drop', dragged.path === 'dragTo'
+      && dragged.fromMode === 'ref' && dragged.toMode === 'ref' && dragged.steps === 8
+      && dragEvents.value?.dragstart >= 1 && dragEvents.value?.dragover >= 1 && dragEvents.value?.drop === 1
+      && JSON.stringify(order.value) === JSON.stringify(['b', 'c', 'a']),
+    JSON.stringify({ dragged, dragEvents: dragEvents.value, order: order.value }))
+
+    // 坐标拖拽：真实指针事件链，isTrusted 必须为 true（合成事件验证会假通过）。
+    const padHtml = '<!doctype html><html><body style="margin:0">'
+      + '<div id="pad" style="position:fixed;left:0;top:0;width:600px;height:400px;background:#eeeeee">pad</div>'
+      + '<script>window.__ptr = { down: 0, move: 0, up: 0, trusted: true };'
+      + ' function note(name) { return function (e) { window.__ptr[name] += 1; if (!e.isTrusted) window.__ptr.trusted = false; }; }'
+      + ' document.addEventListener("pointerdown", note("down"));'
+      + ' document.addEventListener("pointermove", note("move"));'
+      + ' document.addEventListener("pointerup", note("up"));'
+      + ' window.__dragMoves = { tracking: false, count: 0 };'
+      + ' document.addEventListener("mousedown", function () { window.__dragMoves.tracking = true; window.__dragMoves.count = 0; });'
+      + ' document.addEventListener("mousemove", function () { if (window.__dragMoves.tracking) window.__dragMoves.count += 1; });'
+      + ' document.addEventListener("mouseup", function () { window.__dragMoves.tracking = false; });'
+      + '</script></body></html>'
+    await navigate(session, dataUrl(padHtml), 'load')
+    const pointDrag = await drag(session, { from: { x: 100, y: 100 }, to: { x: 400, y: 300 }, steps: 5, settleMs: 300 })
+    const pointerStats = await evaluate(session, 'window.__ptr')
+    check('坐标拖拽触发 pointerdown/pointermove/pointerup 且 isTrusted 为 true', pointDrag.path === 'mouse'
+      && pointDrag.fromMode === 'point' && pointDrag.toMode === 'point'
+      && pointerStats.value?.down >= 1 && pointerStats.value?.move >= 1 && pointerStats.value?.up >= 1
+      && pointerStats.value?.trusted === true,
+    JSON.stringify({ pointDrag, pointerStats: pointerStats.value }))
+
+    // steps 是按下与松开之间的插值 mousemove 次数：3 与 9 各发对应次数。
+    const movesOf = async (steps) => {
+      await drag(session, { from: { x: 100, y: 100 }, to: { x: 400, y: 300 }, steps, settleMs: 0 })
+      return (await evaluate(session, 'window.__dragMoves.count')).value
+    }
+    const moves3 = await movesOf(3)
+    const moves9 = await movesOf(9)
+    check('steps 控制中间 mousemove 次数', moves3 === 3 && moves9 === 9,
+      JSON.stringify({ moves3, moves9 }))
+
+    // 目标 ref 失效：按下鼠标之前就报错，不产生 mousedown。
+    const staleTargetHtml = '<!doctype html><html><body style="margin:0">'
+      + '<div id="src" style="position:fixed;left:20px;top:20px;width:100px;height:100px;background:#ccddee">src</div>'
+      + '<div id="dst" style="position:fixed;left:200px;top:20px;width:100px;height:100px;background:#eeddcc">dst</div>'
+      + '<script>window.__mouseDowns = 0; document.addEventListener("mousedown", function () { window.__mouseDowns += 1 });</script>'
+      + '</body></html>'
+    await navigate(session, dataUrl(staleTargetHtml), 'load')
+    const staleSnapshot = await snapshot(session)
+    const srcRef = staleSnapshot.nodes.find((node) => node.id === 'src')?.ref
+    const dstRef = staleSnapshot.nodes.find((node) => node.id === 'dst')?.ref
+    await evaluate(session, "document.getElementById('dst').remove()")
+    await sleep(100)
+    const staleMessage = await expectThrow(() => drag(session, { from: { ref: srcRef }, to: { ref: dstRef } }))
+    const mouseDowns = (await evaluate(session, 'window.__mouseDowns')).value
+    check('拖拽目标 ref 失效时未按下鼠标', Boolean(staleMessage) && staleMessage.includes('已失效') && mouseDowns === 0,
+      JSON.stringify({ staleMessage, mouseDowns }))
+
+    // 坐标越界：负数 / x 超宽 / y 超高，文案沿用 click 口径。
+    const negative = await expectThrow(() => drag(session, { from: { x: -1, y: 10 }, to: { x: 10, y: 10 } }))
+    const wideX = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 10000, y: 10 } }))
+    const tallY = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 10, y: 10000 } }))
+    check('drag 坐标越界报错', Boolean(negative) && negative.includes('坐标不能为负数')
+      && Boolean(wideX) && wideX.includes('超出视口宽度')
+      && Boolean(tallY) && tallY.includes('超出视口高度'),
+    JSON.stringify({ negative, wideX, tallY }))
+
+    // 缺 from / 缺 to / 单侧多于一种目标。
+    const noFrom = await expectThrow(() => drag(session, {}))
+    const noTo = await expectThrow(() => drag(session, { from: { x: 10, y: 10 } }))
+    const fromTwo = await expectThrow(() => drag(session, { from: { ref: '@1', selector: '#src' }, to: { x: 10, y: 10 } }))
+    const toTwo = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { selector: '#dst', x: 20, y: 20 } }))
+    check('drag 缺 from/to 或单侧多目标报错', Boolean(noFrom) && noFrom.includes('缺少拖拽起点（from）目标')
+      && Boolean(noTo) && noTo.includes('缺少拖拽终点（to）目标')
+      && Boolean(fromTwo) && fromTwo.includes('拖拽起点（from）目标只能给一种')
+      && Boolean(toTwo) && toTwo.includes('拖拽终点（to）目标只能给一种'),
+    JSON.stringify({ noFrom, noTo, fromTwo, toTwo }))
+
+    // steps / settleMs 区间与整数校验（hover 的 settleMs 同一口径）。
+    const stepsZero = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 20, y: 20 }, steps: 0 }))
+    const stepsTooMany = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 20, y: 20 }, steps: 61 }))
+    const stepsFraction = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 20, y: 20 }, steps: 4.5 }))
+    const settleNegative = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 20, y: 20 }, settleMs: -1 }))
+    const settleTooBig = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 20, y: 20 }, settleMs: 5001 }))
+    const settleFraction = await expectThrow(() => drag(session, { from: { x: 10, y: 10 }, to: { x: 20, y: 20 }, settleMs: 1.5 }))
+    const hoverSettleBad = await expectThrow(() => hover(session, { x: 10, y: 10, settleMs: 5001 }))
+    check('steps 与 settleMs 非法报错', Boolean(stepsZero) && stepsZero.includes('steps 必须是 1-60 的整数，收到 0')
+      && Boolean(stepsTooMany) && stepsTooMany.includes('收到 61')
+      && Boolean(stepsFraction) && stepsFraction.includes('收到 4.5')
+      && Boolean(settleNegative) && settleNegative.includes('settleMs 必须是 0-5000 的整数，收到 -1')
+      && Boolean(settleTooBig) && settleTooBig.includes('收到 5001')
+      && Boolean(settleFraction) && settleFraction.includes('收到 1.5')
+      && Boolean(hoverSettleBad) && hoverSettleBad.includes('settleMs 必须是 0-5000 的整数'),
+    JSON.stringify({ stepsZero, stepsTooMany, stepsFraction, settleNegative, settleTooBig, settleFraction, hoverSettleBad }))
   }
 
   console.log('== 用例 6：ref 失效检测 ==')
