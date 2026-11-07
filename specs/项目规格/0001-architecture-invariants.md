@@ -23,7 +23,7 @@
 ```
 接口层   tools.js（工具表）              protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  read.js  capture.js  auth.js  screencast.js
+实现层   session.js  page.js  read.js  capture.js  auth.js  human.js  screencast.js
 公共     invariants.js（不变量断言）       fence.js（安全围栏）
 ```
 
@@ -40,8 +40,9 @@
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
+| `lib/human.js` | 人机协同等待：页内人机验证探测、轮询判定与完成信号（`humanCheck` / `waitForHuman`） | 会话生命周期、面板、工具定义 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 25 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 27 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -50,7 +51,7 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / defaults.js
+tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / human.js / defaults.js
 index.js → tools.js / panel.js / session.js / auth.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
@@ -58,6 +59,7 @@ page.js → auth.js / invariants.js
 read.js → page.js
 recipe.js → page.js
 download.js → page.js / capture.js
+human.js → page.js
 auth.js → fence.js
 screencast.js → protocol.js
 capture.js → protocol.js
@@ -95,6 +97,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `context` | `page.js` 的 `createPage` 读 | CDP 模式新建页面 |
 | `browser` | `page.js` 的 `createPage` 读 | 隔离模式新建页面与前置检查 |
 | `viewport` | `page.js` 的 `createPage` 读 | 隔离模式新页视口 |
+| `headless` | `session.js` 的 `sessionOf`（初始 null）与 `launch`（isolated 写本次启动值、cdp 写 false）写；`human.js` 的 `waitForHuman` 读 | 人工等待结果的可见性提示 |
 | `touch` | `page.js` 的 `scroll` / `consoleEntries` / `networkEntries` 调用；定义在 `session.js` 的 `sessionOf`（挂 `touchSession`） | 刷新空闲计时 |
 
 #### 标签页条目（`page.js` 的 `addPage` 创建）
@@ -134,6 +137,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
     `checks` 每项为 `{ index, kind, expected, pass, actual }`，`selector` 条目另带 `state`，`url` 条目另带 `urlMatch`。
   - `browser_e2e_clipboard`：`summary` / `action` / `target` / `rich` / `sanitized` / `accepted` / `inserted` / `plainChars` / `htmlChars` / `plainDerived`。
   - `browser_e2e_dialog`：`summary` / `text`（`policy` / `promptText` / `total` / `count` / `entries` 随返回值原样返回，`run` 不读取）。
+  - `browser_e2e_captcha_check`：`summary` / `detected` / `kind` / `evidence` / `url` / `tabId`；
+  - `browser_e2e_wait_for_human`：`summary` / `needed` / `resolved` / `waitedMs` / `polls` / `probeErrors` / `detected` / `kind` / `url` / `reason` / `selector` / `headless` / `timeoutMs` / `pollMs` / `tabId` / `hint` / `lastProbeError`（后两项仅对应情形出现）。
 
 ### 明确不做
 

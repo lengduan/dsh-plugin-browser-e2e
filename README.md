@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：25 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：27 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 25 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 27 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-25 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+27 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -74,6 +74,8 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
 | `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
+| `browser_e2e_captcha_check` | 非阻塞探测当前页有没有人机验证：结构选择器优先（reCAPTCHA / hCaptcha / Turnstile / Cloudflare 挑战 / 通用 captcha），未命中且 `textScan` 为 true 时读页面文本兜底；返回 `detected` / `kind` / `evidence`；loopback 主机名跳过文本检测；`detected:false` 只表示未检测到 |
+| `browser_e2e_wait_for_human` | 把页面交给用户完成人机验证并轮询等待：`reason`（自由文本，默认 confirm，保留前 200 字符）、`timeoutMs`（5000-300000，默认 60000）、`pollMs`（250-10000，默认 1500）、可选完成信号 `selector`、`textScan`；超时**不抛错**，返回 `resolved:false` 与 `hint`；结果带 `headless` 供判断用户能否看到窗口 |
 | `browser_e2e_assert` | 一次判定多条断言并逐条给证据：`checks`（1-20 条）每项给 `selector`（配合 `state`，默认 visible）/ `text`（页面可见文本子串，区分大小写）/ `url`（配合 `urlMatch`）/ `expression`（同步表达式）之一；任一条未通过仍成功返回，`pass=false`，`checks[]` 给 index / kind / expected / pass / actual；不等待、不重试；只作用于主文档 |
 | `browser_e2e_recipe` | 一次按顺序执行 1-20 个声明式步骤（`navigate` / `wait` / `click` / `fill` / `press` / `hover` / `scroll` / `extract`）：首个失败即停、已执行步骤不回滚，返回逐步 PASS / FAIL、失败步号与 `extract` 输出；步骤字段与对应工具同名，`wait` 步不接受 `expression`、没有 `evaluate` 步骤（不执行调用方脚本）；总预算 `timeoutMs` 默认 60000（1000-120000），只在步骤之间检查；全部输出合计上限 20000 字符 |
 | `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装。`timeoutMs` 是执行上限（默认 30000，允许 1000-120000），到点中断页面内正在执行的脚本并报错，页面与标签页保持打开 |
@@ -174,6 +176,18 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - `response` 是页面级事件，子 frame 的请求也可能命中，不提供按 frame 过滤；`url` 只看主框架。
 - `url` 每约 100ms 轮询一次，短于轮询间隔的中间地址可能被跳过；`timeoutMs` 精度同样约 ±100ms。调用中没有取消入口，只能靠 `timeoutMs` 兜底。
 - 单次等待超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能在等待期间被空闲回收（见「进程回收」），长等待前把该值设 0 或调到大于单次等待。
+
+### 人机协同等待与验证码检测
+
+扫码登录、2FA、滑块 / reCAPTCHA 这类步骤只能由真人完成。`browser_e2e_captcha_check` 只探测、不阻塞；`browser_e2e_wait_for_human` 把页面交给用户并轮询到人工步骤结束。调用前先告诉用户「去哪个窗口做什么」，等待期间面板不显示额外状态。
+
+- **检测规则**：页内探针按顺序匹配结构选择器——hCaptcha → Turnstile → Cloudflare（`#challenge-form` / `.challenge-form`）→ reCAPTCHA → 通用 `#captcha` / `.captcha`，命中第一组即返回该 `kind`，`evidence` 是命中的单个选择器。结构未命中且 `textScan` 为 true 时读 `document.body.innerText` 前 120000 字符做大小写不敏感短语匹配，命中返回 `kind:'captcha'`、`evidence:'text: <原文前 40 字>'`。只读主 frame：iframe 子文档与 shadow root 内部不遍历；跨源挑战以主文档里的 iframe 元素形态被结构检测命中。
+- **loopback 文本豁免**：`localhost`、`127.0.0.1`、`::1`、`[::1]` 与 `*.localhost` 跳过文本检测，避免本机工具界面正文引用验证码字样时自指误报；结构检测不受此限。主机名为空（`data:` / `about:blank`）不跳过。
+- **等待判定**：`browser_e2e_wait_for_human` 先做纯参数校验（`timeoutMs` 5000-300000、`pollMs` 250-10000、`reason` 空白折叠后保留前 200 字符、`textScan` 布尔），再解析标签页、校验 `selector` 语法，然后按 `pollMs` 轮询：每轮先查会话 / 标签页是否已关闭，再跑探针；探针失败只记 `probeErrors` 与 `lastProbeError`，本轮不参与判定（登录提交后的导航会让页面脚本短暂不可读）。只有「本轮观测成功、未检测到验证、且 `selector` 为空或已出现」才返回 `resolved:true`。
+- **完成信号**：`selector` 是 AND 条件，验证仍在时即使元素出现也不会提前返回。`selector` 只在该标签页主文档内匹配，入口只校验一次语法。
+- **超时不是错误**：到点返回 `resolved:false`、`needed` / `kind` / `waitedMs` / `polls` / `probeErrors`、`hint` 与固定摘要，可确认用户完成后再次调用。`resolved:true` 只表示「未检测到验证」（`needed:false` 时同理），不是「页面一定没有验证」；纯图片验证码、无已知 class 的自绘组件、iframe / shadow DOM 内部文本会漏报，可配合 `selector` 或 `browser_e2e_snapshot` / `browser_e2e_read` 兜底。误报（正文讨论验证码的页面）会让等待不结束，可传 `textScan:false` 或用 `selector` 收窄。
+- **可见性与 headless**：isolated 模式默认 `headless: true`，用户看不到窗口，本工具除页面自解外只能等出超时；结果的 `headless` 与 `hint` 用于提示「先 close 再以 `headless=false` 重启，或改用 cdp 模式接管可见浏览器」。cdp 模式按可见处理（`headless:false`），不探测用户浏览器本身是否 headless。面板是只读视图，不能代替用户在窗口内操作。
+- **边界**：只作用于调用开始时解析的标签页，等待期间不跟随 active tab 切换；同页导航 / 重定向不影响；用户登录若打开新标签页，需 `browser_e2e_tabs` 后在新标签页重新调用。探针是一次 `page.evaluate`，**不可被 `timeoutMs` 中断**：页面主线程死循环或不返回时整次调用会挂住（与 `browser_e2e_evaluate` 同一既有边界）。不做 OCR / 自动解题、面板输入或直控、跨 tab 等待、审批流、重试与截图证据。等待期间不刷新空闲计时，单次等待超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能被空闲回收（见「进程回收」）；默认上限 300000 低于默认空闲 600000，改小该值时需自行保证大于单次等待。
 
 ### 断言（browser_e2e_assert）
 
@@ -343,6 +357,8 @@ browser_e2e_dialog { limit: 20 }
 browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
 browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
+browser_e2e_captcha_check { textScan: true }
+browser_e2e_wait_for_human { reason: "login", selector: "#dashboard", timeoutMs: 120000, pollMs: 1500 }
 browser_e2e_assert { checks: [{ selector: "#ok", state: "visible" }, { text: "已提交" }, { url: "**/result", urlMatch: "glob" }] }
 browser_e2e_recipe { steps: [{ type: "wait", selector: "#user" }, { type: "fill", selector: "#user", value: "demo" }, { type: "fill", selector: "#pass", value: "secret" }, { type: "click", selector: "#submit" }, { type: "wait", selector: "#result" }, { type: "extract", selector: "#result" }] }
 browser_e2e_console { limit: 50 }
@@ -401,6 +417,9 @@ node tests/assert.mjs
 # 声明式多步步骤：纯校验 / 渲染组（不启动浏览器）+ 执行组（真起无头 Edge + 本地 HTTP 夹具）
 node tests/recipe.mjs
 
+# 人机验证检测与人工等待：检测组 / 等待组 / 校验组（真起无头 Edge + 本地 HTTP 夹具）
+node tests/human.mjs
+
 # 文件上传：宿主侧路径校验 / ref、selector、坐标三条下发路径 / 覆盖与清空（真起无头 Edge）
 node tests/upload.mjs
 
@@ -422,20 +441,20 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（25 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（27 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  screencast.js
+实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  human.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
-- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`auth.js` 可整体删除。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
 - `protocol.js` 是面板协议 v1 的单一契约来源，host 与 client 的校验从表派生；客户端常量由 `scripts/build-client.mjs` 经 `scripts/protocol-inject.mjs` 注入 `lib/client.js`，源码↔产物一致由 `tests/invariants.mjs` 守护。细节见 `specs/项目规格/0002-panel-protocol-v1.md`。
 - 投屏链路：工具执行 → `PanelHub.broadcastAction` 与 `scheduleSync` → WebSocket 广播 `state` / `action`；`Screencast` 适配器对当前页开 CDP 投屏，帧经 socket 推给面板，面板回 ack 后取下一帧。
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
 
 </details>
 
@@ -456,7 +475,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。25 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。27 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -484,6 +503,7 @@ npm run test:integration
 - **右键与中键的浏览器行为** —— 右键会触发页面 `contextmenu`，但原生右键菜单是否弹出取决于模式与浏览器，工具不负责关闭，菜单可能遮挡后续输入（建议随后点击页面空白处）；中键在 isolated 下打开的新页不在本工具标签页注册表里，在 cdp 下会操作用户真实浏览器。验证链接行为优先用左键配页面事件。
 - **对话框处理是「先设策略、后触发」** —— `browser_e2e_dialog` 在对话框打开的事件回调里立即应答（不立即应答页面会冻结），所以无法「先读文案、再按文案决定接受 / 取消」：要验证文案用默认 `dismiss`（记录照写），要走确认分支必须先把 `policy` 设为 `accept` 再触发。策略与记录按标签页隔离，新标签页从 `dismiss` 开始；`beforeunload` 一律接受（与浏览器默认一致）；HTTP 认证、权限请求、`window.print()` 与页面自绘的 `<dialog>` 元素不在覆盖范围；跨源 iframe（OOPIF）里的对话框是否上报未验证。CDP 接管模式下设 `accept` 等于替用户在真实浏览器里点确定。
 - **evaluate 超时只中断当前脚本** —— `browser_e2e_evaluate` 的 `timeoutMs` 到点用 CDP 的 `Runtime.terminateExecution` 中断目标页主线程正在执行的脚本：只中断「正在执行」的那段，表达式返回永不 resolve 的 Promise 时页内等待仍会继续；Worker、跨源 iframe 与同源子 frame 内的死循环是否被中断未验证。中断可能打断页面自己的事件处理或框架渲染，DOM 会停在半完成状态，需要时重新 `browser_e2e_snapshot`。CDP 接管模式下这会打断用户浏览器里该页正在执行的脚本。若把 `DSH_BROWSER_IDLE_MS` 设得小于 `timeoutMs`，浏览器可能先被空闲回收，该次调用报「浏览器尚未启动」。
+- **人机验证检测是启发式且可能漏报** —— `browser_e2e_captcha_check` / `browser_e2e_wait_for_human` 只匹配已知结构选择器与一组文本短语，且只读主 frame：纯图片验证码、无已知 class 的自绘组件、跨源 iframe 子文档内部与 shadow DOM 内部文本会漏报，等待可能立即返回 `resolved:true`（`needed:false`）。`resolved:true` 只表示「未检测到」，不是「页面一定没有验证」，调用方需自行用 `browser_e2e_snapshot` / `browser_e2e_read` 或 `selector` 兜底。隔离模式默认 headless，用户看不到窗口，除页面自解外只能等出超时；`headless` 与 `hint` 用于改走 `headless=false` 或 cdp。探针是一次页面求值，不可被 `timeoutMs` 中断，页面主线程死锁时整次调用会挂住。
 - **剪贴板的边界** —— 只作用主 frame，iframe 内可编辑元素不支持；不提供真实快捷键粘贴（`method=system`）与剪贴板读回，验证复制按钮的推荐路径是「点击复制 → `action=paste` 回填 → 断言页面内容」；`sanitize: false` 只在 isolated 模式允许，且 `isolated` headed 下 `write` 改写的是用户真实系统剪贴板；`grantPermissions` 是整表授予，isolated 写入授予会替换此前的 `clipboard-read`，测试每次读回前需重新授予；非 https / localhost / file 的页面没有 `navigator.clipboard`，`write` 报固定错误而 `paste` 不受影响；后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略兜底插入。
 
 <a id="dev-note"></a>

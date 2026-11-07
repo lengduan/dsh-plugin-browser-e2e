@@ -1641,7 +1641,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 25 个（含 read / dialog / clipboard / assert / recipe）', table.length === 25 && names.length === 25, String(table.length))
+    check('工具表共 27 个（含 read / dialog / clipboard / assert / recipe / human）', table.length === 27 && names.length === 27, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
@@ -1745,6 +1745,32 @@ try {
         && recipeTool.description.includes('不接受 expression 条件')
         && recipeTool.description.includes('没有 evaluate 步骤'),
       String(recipeTool?.description))
+
+    const captchaTool = definitions.find((definition) => definition.name === 'browser_e2e_captcha_check')
+    check('browser_e2e_captcha_check 参数只有 textScan / tab_id 且无必填',
+      JSON.stringify(Object.keys(captchaTool?.parameters.properties ?? {}).sort()) === JSON.stringify(['tab_id', 'textScan'])
+        && captchaTool.parameters.properties.textScan?.type === 'boolean'
+        && captchaTool.parameters.properties.tab_id?.type === 'string'
+        && captchaTool.parameters.additionalProperties === false
+        && captchaTool.parameters.required.length === 0,
+      JSON.stringify(captchaTool?.parameters))
+    const waitHumanTool = definitions.find((definition) => definition.name === 'browser_e2e_wait_for_human')
+    check('browser_e2e_wait_for_human 参数含 reason / timeoutMs / pollMs / selector / textScan / tab_id 且无必填',
+      ['reason', 'timeoutMs', 'pollMs', 'selector', 'textScan', 'tab_id']
+        .every((field) => field in waitHumanTool.parameters.properties)
+        && waitHumanTool.parameters.properties.reason?.type === 'string'
+        && waitHumanTool.parameters.properties.timeoutMs?.type === 'integer'
+        && waitHumanTool.parameters.properties.pollMs?.type === 'integer'
+        && waitHumanTool.parameters.properties.selector?.type === 'string'
+        && waitHumanTool.parameters.properties.textScan?.type === 'boolean'
+        && waitHumanTool.parameters.additionalProperties === false
+        && waitHumanTool.parameters.required.length === 0,
+      JSON.stringify(waitHumanTool?.parameters))
+    check('browser_e2e_wait_for_human 描述声明区间 / 默认值与超时不抛错',
+      ['5000', '300000', '250', '10000', '60000', '1500', '200'].every((item) => waitHumanTool.description.includes(item))
+        && waitHumanTool.description.includes('resolved=false')
+        && waitHumanTool.description.includes('headless'),
+      String(waitHumanTool?.description))
 
     const downloadTool = definitions.find((definition) => definition.name === 'browser_e2e_download')
     check('download 参数含两种来源与完整性字段', ['url', 'ref', 'selector', 'x', 'y', 'filename',
