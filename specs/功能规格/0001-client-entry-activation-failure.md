@@ -56,4 +56,5 @@
    `web boot: ... did not activate`、`already registered`；页面标题为 `DeepSeek Harness`，
    正文可交互。
 4. 全量串行 9 个测试：invariants / client-bundle / screencast / panel / tools / auth /
-   multitab / cdp / reclaim，合计 356 PASS / 0 FAIL（2026-11-07 实测，见 `.scratch/review-loop/03-执行记录.md`）。
+   multitab / cdp / reclaim，合计 371 PASS / 0 FAIL（2026-11-07 实测；`.scratch/` 不入库，
+   复跑用 `npm run test:unit` 与 `npm run test:integration`）。
