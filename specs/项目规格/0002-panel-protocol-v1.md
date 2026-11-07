@@ -80,8 +80,8 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 
 `state` 形状：`{tabs, activeTabId, running, mode, endpoint, config}`；
 `tabs` 项为 `{id, url, title, loading, origin, sessionId, mode, endpoint}`；
-`mode` / `endpoint` 由当前选中 tab 的所属会话推导，无 tab 时按隔离模式回退
-（`mode: 'isolated'`、`endpoint: ''`）。
+`state` 不含 `message` 等规格外字段，client 不得依赖；`mode` / `endpoint` 由当前选中 tab 的所属会话推导，
+无 tab 时按隔离模式回退（`mode: 'isolated'`、`endpoint: ''`）。
 
 ### 投屏设置（区间与默认值的唯一来源）
 

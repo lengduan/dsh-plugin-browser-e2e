@@ -212,7 +212,6 @@ window.__ModuleLoader__.load({
         mode,
         endpoint: mode === "cdp" && typeof input.endpoint === "string" ? input.endpoint : "",
         config: normalizeConfig(input.config),
-        message: typeof input.message === "string" ? input.message : "",
       };
     }
 
@@ -787,7 +786,7 @@ window.__ModuleLoader__.load({
         return function () { liveTitle.set(sessionId, undefined); };
       }, [liveTitle, sessionId, activeTitle]);
 
-      const currentUrl = activeTab ? activeTab.url : (state && state.message ? state.message : "");
+      const currentUrl = activeTab ? activeTab.url : "";
       const statusText = connection === "open" ? t("实时") : connection === "connecting" ? t("连接中") : t("已断开");
       const statusColor = connection === "open" ? "#3fa66a" : connection === "connecting" ? "#d9a441" : "#c05050";
       const frame = view.frame && (activeTabId === null || view.frame.tabId === activeTabId) ? view.frame : null;
@@ -871,7 +870,7 @@ window.__ModuleLoader__.load({
           readOnly: true,
           style: st.urlInput,
           value: currentUrl || "",
-          placeholder: state && state.message ? state.message : t("无页面"),
+          placeholder: t("无页面"),
           title: currentUrl,
           "aria-label": t("地址"),
           spellCheck: false,

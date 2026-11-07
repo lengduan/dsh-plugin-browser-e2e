@@ -309,6 +309,11 @@ await check('默认 CDP 端点单源：bundle 注入值等于 lib/defaults.js，
   assert.equal(JSON.parse(injected[1]), DEFAULT_CDP_ENDPOINT)
   assert.ok(!clientSource.includes('9222'), 'client 源文件不应手写默认 CDP 端点')
 })
+await check('client 不依赖规格外的 state.message 字段', () => {
+  assert.ok(!/state\s*&&\s*state\.message|state\.message/.test(clientSource),
+    'client 源文件不应读取 state.message')
+  assert.ok(!bundle.includes('state.message'), '产物也不应含 state.message')
+})
 await check('默认 CDP 端点宿主侧取自 lib/defaults.js（session / index 不各写一份）', () => {
   const sessionSource = readFileSync(new URL('../lib/session.js', import.meta.url), 'utf8')
   const indexSource = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
