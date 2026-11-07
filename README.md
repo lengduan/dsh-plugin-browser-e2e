@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：15 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、点击、填表、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：16 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、点击、填表、文件上传、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 15 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、点击、填表、滚动、截图、控制台与网络取证、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 16 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、点击、填表、文件上传、滚动、截图、控制台与网络取证、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-15 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+16 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -60,6 +60,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数 |
 | `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一 |
 | `browser_e2e_fill` | 向 input / textarea / contenteditable 填入文本：`ref` / `selector` / `x`+`y` 三选一，`value` 必填 |
+| `browser_e2e_upload` | 把宿主本地文件附加到 `input[type=file]`（真实文件选择路径，不是页面内合成 `File`）：`ref` / `selector` / `x`+`y` 三选一；`files` 必填（绝对路径或数组，最多 20 个，总大小默认 <= 20 MiB，`maxBytes` 可调到 512 MiB）；`clear` 默认 true 覆盖（不追加），`clear: false` 只在没有选择时设置；只接受 `input[type=file]`，不做 label 下钻、不校验 `accept` |
 | `browser_e2e_scroll` | 滚动页面：`delta_x` / `delta_y` 至少一个非 0；给 `x`+`y` 时先移动鼠标到该视口坐标再滚 |
 | `browser_e2e_press` | 按下键盘按键（如 Enter、Tab、Escape、Control+A），作用于当前焦点元素 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
@@ -208,6 +209,7 @@ browser_e2e_snapshot
 browser_e2e_click { ref: "@12" }
 browser_e2e_fill { selector: "input[name=q]", value: "DSH" }
 browser_e2e_press { key: "Enter" }
+browser_e2e_upload { selector: "input[type=file]", files: "C:\\tmp\\report.pdf" }
 browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_console { limit: 50 }
 browser_e2e_network { limit: 20 }
@@ -252,6 +254,9 @@ node tests/reclaim.mjs
 # 工具能力：console / network / 全 DOM 快照与 4000 截断 / 三种点击 / fill 三种目标 / scroll / 截图倍率 / wait
 node tests/tools.mjs
 
+# 文件上传：宿主侧路径校验 / ref、selector、坐标三条下发路径 / 覆盖与清空（真起无头 Edge）
+node tests/upload.mjs
+
 # 分层聚合
 npm run test:unit
 npm run test:integration
@@ -270,7 +275,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（15 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（16 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  capture.js  auth.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -304,7 +309,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。15 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。16 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -320,6 +325,7 @@ npm run test:integration
 - **profile 里的版本是 git 快照** —— `dsh plugin add` 装的是指定 commit 的快照，改完源码必须 commit + push，再在 profile 里重新解析，否则跑的还是旧提交。
 - **插件卡片座位不注册** —— 客户端暂不注册 `web-ui.plugin.item` / `plugins.bundle.config`；在当前桌面宿主上注册会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），插件行改由宿主按 `Config` 自动渲染。
 - **静态页面没有新帧** —— 投屏只在实际产生帧时推送，静态页要看到画面需点面板刷新按钮，这是 CDP 投屏协议本身的行为。
+- **文件上传的边界** —— `browser_e2e_upload` 只处理主 frame（iframe 内的文件控件匹配不到），不支持 `webkitdirectory` 目录上传（目录按「路径不是文件」拒绝），不校验 `accept`、不按扩展名改写文件名或 MIME；`clear: false` 不支持追加（Playwright 无法把已选 `File` 还原成宿主路径），也不能与 `x`+`y` 组合（要先点击才读得到当前选择）。上传完成后不自动点提交、不等待上传请求。
 
 <a id="dev-note"></a>
 ### Dev Note

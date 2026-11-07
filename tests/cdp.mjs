@@ -6,22 +6,24 @@
  *   - connectOverCDP 连接路径与 tab 列表（取 context.pages()）；
  *   - 接管后不新建 page、不设置视口（viewportSize 为 null 时截图走内尺寸兜底）；
  *   - 导航 / 求值可用；
+ *   - selector / 坐标两条文件上传路径在 CDP 接管下可用（夹具为本地 file:// 页面）；
  *   - browser_e2e_close 只断开连接，浏览器进程仍然存活；
  *   - 非 loopback 端点被拒绝。
  *
  * 运行：node tests/cdp.mjs
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, evaluate, navigate } = await import('../lib/page.js')
+const { currentTab, evaluate, navigate, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 
 const KEY = 'test-cdp-key'
@@ -110,6 +112,22 @@ if (edgePath === null) {
 
 const port = await pickPort()
 const userDataDir = mkdtempSync(join(tmpdir(), 'dsh-cdp-test-'))
+// 文件上传夹具：本地临时目录 + file:// 页面，不依赖外网。
+const uploadDir = mkdtempSync(join(tmpdir(), 'dsh-cdp-upload-'))
+const uploadPagePath = join(uploadDir, 'upload.html')
+const uploadFilePath = join(uploadDir, 'cdp.txt')
+writeFileSync(uploadPagePath, '<!doctype html><html lang="zh"><head><meta charset="utf-8">'
+  + '<title>cdp-upload</title></head><body style="margin:0">'
+  + '<input id="single" type="file" style="position:fixed;left:20px;top:20px;width:260px;height:32px">'
+  + '<label id="picker" for="coord" style="position:fixed;left:20px;top:120px;display:block;'
+  + 'width:200px;height:48px;background:#ddd;text-align:center;line-height:48px">picker</label>'
+  + '<input id="coord" type="file" style="display:none">'
+  + '<script>window.__changes=[];Array.prototype.forEach.call('
+  + 'document.querySelectorAll("input[type=file]"),function(i){i.addEventListener("change",function(){'
+  + 'window.__changes.push({id:i.id,names:Array.prototype.map.call(i.files,function(f){return f.name})})})})'
+  + '</script></body></html>', 'utf8')
+writeFileSync(uploadFilePath, 'cdp')
+const uploadPageUrl = pathToFileURL(uploadPagePath).href
 const child = spawn(edgePath, [
   '--headless=new',
   '--disable-gpu',
@@ -166,6 +184,30 @@ try {
     check('导航没有新建 page', list.tabs.length >= 1, JSON.stringify(list.tabs.map((t) => t.tab_id)))
   }
 
+  console.log('== 用例 3B：CDP 接管下 selector 上传生效 ==')
+  {
+    await navigate(session, uploadPageUrl, 'load')
+    const info = await upload(session, { selector: '#single' }, uploadFilePath)
+    const names = await evaluate(session,
+      "Array.from(document.getElementById('single').files).map(function (f) { return f.name })")
+    check('CDP 接管下 selector 上传生效', info.mode === 'selector'
+      && JSON.stringify(names.value) === JSON.stringify(['cdp.txt']),
+    JSON.stringify({ info, names: names.value }))
+  }
+
+  console.log('== 用例 3C：CDP 接管下坐标上传生效 ==')
+  {
+    // 坐标取 picker 标签（label[for=coord]）中心，真实点击后由 Playwright 接住文件选择器。
+    const info = await upload(session, { x: 120, y: 144 }, uploadFilePath)
+    const names = await evaluate(session,
+      "Array.from(document.getElementById('coord').files).map(function (f) { return f.name })")
+    const changes = await evaluate(session,
+      "window.__changes.filter(function (c) { return c.id === 'coord' })")
+    check('CDP 接管下坐标上传生效', info.mode === 'point' && info.x === 120 && info.y === 144
+      && JSON.stringify(names.value) === JSON.stringify(['cdp.txt']) && changes.value.length === 1,
+    JSON.stringify({ info, names: names.value, changes: changes.value }))
+  }
+
   console.log('== 用例 4：close 只断开连接 ==')
   {
     const info = await close(KEY)
@@ -184,6 +226,11 @@ try {
     rmSync(userDataDir, { recursive: true, force: true })
   } catch {
     // Windows 上目录可能还被进程占用，留给系统临时目录清理
+  }
+  try {
+    rmSync(uploadDir, { recursive: true, force: true })
+  } catch {
+    // 同上：夹具目录只是临时文件，删不掉不影响结论
   }
 }
 
