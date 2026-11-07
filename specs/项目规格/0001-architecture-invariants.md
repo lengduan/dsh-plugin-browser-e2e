@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/panel.js / lib/index.js / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / tests/invariants.mjs
 
 ## 需求
 
@@ -32,6 +32,7 @@
 | `lib/protocol.js` | 面板协议 v1 的单一契约来源：路由路径、版本、关闭码、命令表、事件表、投屏设置区间与默认值、`panelTabId` 组合规则 | 运行时状态、连接对象 |
 | `lib/invariants.js` | 跨调用不变量断言函数；每个函数配「违反后果」注释；全部纯函数 | 入参校验、I/O、读全局 Map |
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
+| `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
 | `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`）、事件环（console/network 环形缓冲、ref 表）、`snapshot/click/fill/scroll/press/waitFor/evaluate/consoleEntries/networkEntries` | 落盘、协议、面板连接 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
@@ -40,20 +41,24 @@
 | `lib/tools.js` | 15 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
-| `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量由 `scripts/build-client.mjs` 从 `lib/protocol.js` 注入 | — |
+| `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
 
 依赖方向（实现层单向，禁止回指）：
 
 ```
 tools.js → session.js / page.js / capture.js
-index.js → tools.js / panel.js / session.js
+index.js → tools.js / panel.js / session.js / auth.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
-session.js → page.js / capture.js / invariants.js / protocol.js
+session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js
+auth.js → fence.js
 screencast.js → protocol.js / invariants.js
 capture.js → （无内部依赖）
-protocol.js / invariants.js / fence.js → （无内部依赖）
+protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
 ```
+
+构建脚本 `scripts/protocol-inject.mjs` 从 `lib/protocol.js` / `lib/defaults.js` 取注入值；
+这是「构建脚本 → lib」的一次性依赖，不进宿主运行期调用图。
 
 `page.js` 不 import `session.js`：它接收 session 对象，需要广播面板事件时调用 `session.emit`
 （由 `session.js` 在 `sessionOf` 里挂上）。这样会话层可以调用页面层，页面层不回指会话层。
@@ -62,6 +67,52 @@ protocol.js / invariants.js / fence.js → （无内部依赖）
 
 CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`）是同一接缝（帧源）上的
 两个真实适配器，因此保留为两个模块；其余依赖都是进程内纯计算或本地可替代，不建端口。
+
+### 进程内对象契约（隐式接口）
+
+模块之间不只有函数调用，还通过共享可变对象协作。下面是实际跨模块读写的字段（行号以当前
+HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型检查，改字段名或形状必须同步改
+消费方。
+
+#### `session` 对象（`session.js` 创建，`page.js` 读写）
+
+| 字段 | 读写点 | 用途 |
+|---|---|---|
+| `key` | `page.js:76`、`92`、`197`、`301` 读 | 面板事件里的会话 key |
+| `emit` | `page.js:76`、`92`、`197`、`301` 读 | 页面层广播面板事件（不 import `session.js`） |
+| `pages` | `page.js:73`、`87-90`、`107` 读，`page.js:73`、`88` 写 | 标签页注册表 |
+| `activeTabId` | `page.js:75`、`89-90`、`107`、`290` 读写 | 当前标签页 |
+| `nextTabSeq` | `page.js:61`、`72` 读，`page.js:72` 写 | 分配 `t<N>` |
+| `hookedPages` | `page.js:137-138` 读 | 防止同一个 page 重复挂监听 |
+| `mode` | `page.js:122` 读 | 选择 `newPage` 路径 |
+| `context` | `page.js:124` 读 | CDP 模式新建页面 |
+| `browser` | `page.js:119`、`126` 读 | 隔离模式新建页面与前置检查 |
+| `viewport` | `page.js:126` 读 | 隔离模式新页视口 |
+| `touch` | `page.js:733`、`759`、`777` 调用 | 刷新空闲计时 |
+
+#### 标签页条目（`page.js:60-71` 创建）
+
+| 字段 | 读写方 |
+|---|---|
+| `id` / `page` / `loading` / `origin` | `session.js:594-599`、`638-643` 读；`capture.js:152` 读 `page` |
+| `refs` / `consoleRing` / `networkRing` / `networkByRequest` | `page.js` 内部读写（`page.js:142-180`、`251-253`、`294`、`300`、`518-519`、`611`、`675`、`761`、`779`），不跨模块读取 |
+
+#### 其他跨模块字段
+
+- `capture.js` 写 `session.artifactsDir`（`capture.js:53-60`）。
+- `panel.js` 读 `screencast.tabId` / `screencast.page`（`panel.js:235`），据此判断「同一个 tab
+  但页面对象已经换了」；`cdp` 只在 `screencast.js` 内部读写（`screencast.js:31`、`77`、`80`、`88`、`117`）。
+- 能力函数返回值被 `tools.js` 读的字段：
+  - `start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`（`tools.js:166-175`）；
+  - `navigate`：`summary` / `title` / `tabId`（`tools.js:197`）；
+  - `tabs`：`summary` / `mode` / `text`（`tools.js:207`）；
+  - `close_tab`：`summary` / `activeTabId`（`tools.js:218`）；
+  - `snapshot`：`summary` / `url` / `tabId` / `text`（`tools.js:229`）；
+  - `screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等，`tools.js:119-126`、`373-395`）；
+  - `console` / `network`：`summary` / `count` / `total` / `text`（`tools.js:409-410`、`423-424`）；
+  - `wait`：`summary` / `state` / `timeoutMs`（`tools.js:448`）；
+  - `evaluate`：`summary` / `value`（`tools.js:465-469`）；
+  - `click` / `fill` / `scroll` / `press` / `close`：只读 `summary`（`tools.js:252`、`282`、`304`、`318`、`478`）。
 
 ### 明确不做
 
@@ -88,7 +139,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 |---|---|---|---|
 | 294 | 跨调用 | 对不存在的 tab 取页对象会抛 TypeError 或操作错页 | `invariants.assertTabExists` |
 | 300 | 跨调用 | 没有 active tab 时页面工具作用在 `undefined` 上 | `invariants.assertBrowserRunning` |
-| 308 | 跨调用 | CDP 连接已失效仍 `newPage`，报 Target closed | `invariants.assertCdpUsable` |
+| 308 | 跨调用 | CDP 连接已失效仍 `newPage`，报 Target closed | `invariants.assertCdpConnected` |
 | 480 | 单次 | 端点字符串不是 URL，连接必然失败 | `session.launch`（入参） |
 | 483 | 单次 | 只支持 http 端点 | `session.launch` |
 | 486 | 单次 | 非 loopback 端点会把 CDP 暴露给外部主机 | `session.launch` |
@@ -97,8 +148,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | 521 | 跨调用 | 并发 launch 期间会话被 close，返回已摘除的实例 | `invariants.assertNotClosedDuringLaunch` |
 | 524 | 跨调用 | 并发 launch 失败时后到者拿到半初始化会话 | `invariants.assertLaunchSettled` |
 | 556 | 跨调用 | 启动过程中继续 newPage，留下半初始化会话与孤儿进程 | `invariants.assertNotClosedDuringLaunch` |
-| 572 | 跨调用 | 无 context 时接管后所有页面能力不可用 | `invariants.assertCdpUsable`（接管前置） |
-| 579 | 跨调用 | 无标签页时接管得到空会话 | `invariants.assertCdpUsable`（接管前置） |
+| 572 | 跨调用 | 无 context 时接管后所有页面能力不可用 | `invariants.assertCdpContext`（接管前置） |
+| 579 | 跨调用 | 无标签页时接管得到空会话 | `invariants.assertCdpHasPages`（接管前置） |
 | 721 | 跨调用 | 未启动就导航：页面不存在 | `invariants.assertBrowserRunning` |
 | 994 | 跨调用 | ref 不在本页 ref 表：xpath 可能指向另一页元素 | `invariants.assertRefBelongsToTab` |
 | 1018 | 单次 | 负坐标点击落到视口外 | `page.click/fill/scroll`（入参） |
@@ -154,15 +205,20 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 
 | 位置（原） | 不变量 | 违反后果 | 目标归属 |
 |---|---|---|---|
-| `screencast.js:21-24` 注释「同一时刻最多持有一个 CDP 会话」 | `assertSingleScreencast` | 两个 CDP 会话同时推帧，面板画面在两个页面间串台 | `invariants.js` |
+| `screencast.js:21-24` 注释「同一时刻最多持有一个 CDP 会话」 | `assertSingleScreencast` | 两个 CDP 会话同时推帧，面板画面在两个页面间串台 | `invariants.js`（生产路径由串行队列保证，见下） |
 | `browser.js:150-151` 注释「ref 表按页隔离」 | `assertRefBelongsToTab` | 切 tab 后旧 ref 落到另一页，点击位置错误 | `invariants.js`（与 294/994 同源） |
+
+`assertSingleScreencast` 目前只被 `tests/invariants.mjs:137-140` 调用，生产路径不再调用它。
+同一时刻只持有一个 CDP 会话由 `lib/screencast.js` 的内部串行队列结构性保证：`start` / `stop`
+都经 `enqueue` 排队（`screencast.js:15-17`、`32-45`、`54-56`、`107-110`），`_start` 先 `_stop`
+掉旧会话；该断言保留给纯函数测试。
 
 ### 协议层的两条契约（不 `throw`，转 `error` 事件）
 
 | 位置（原） | 契约 | 处理 | 目标归属 |
 |---|---|---|---|
 | `panel.js:333-340` 协议版本不符 | 同一面板 host 只讲一个版本，首帧版本不符即关闭连接（1002） | `protocol.isSupportedProtocol` 判定后回 `protocol-mismatch` 错误事件 | `protocol.js` + `panel.js` |
-| `panel.js:369-371` 最后一个标签页不可关 | 与工具层同一条不变量 | `invariants.assertCanCloseLastTab` 判定后回 `last-tab` 错误事件 | `invariants.js` + `panel.js` |
+| `panel.js:363-368` + `session.js:540-546` 最后一个标签页不可关 | 与工具层同一条不变量；判据是「目标 tab 所属会话的页数」 | 面板只有 tab 列表、没有 session 对象，`panel.js` 先按 `sameSessionTabs.length <= 1` 预检并回 `last-tab`；`session.closeTab` 内仍调 `invariants.assertCanCloseLastTab` 兜底，并把 `error.code` 置为 `'last-tab'`（`panel.js:372` 按 code 转错误） | `invariants.js` + `session.js` + `panel.js` |
 
 ## 不变量清单（`lib/invariants.js`）
 
@@ -171,18 +227,19 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | 函数 | 判据 | 错误信息（保持原口径） |
 |---|---|---|
 | `assertBrowserRunning(session)` | 会话存在且至少一个标签页 | 浏览器尚未启动，请先调用 browser_e2e_start |
+| `assertCurrentTabAvailable(session)` | 会话存在、`activeTabId` 非 null/undefined，且该 id 在 `pages` 里 | 浏览器尚未启动或没有可用标签页，请先 browser_e2e_start |
 | `assertTabExists(session, tabId)` | `tabId` 在该会话 `pages` 里 | tab {id} 不存在，请先 browser_e2e_tabs 获取最新 tab_id |
 | `assertCanCloseLastTab(session)` | 会话标签页数 > 1 | 这是最后一个标签页，不能关闭；如需结束整个浏览器请用 browser_e2e_close |
 | `assertNotClosedDuringLaunch(session)` | 会话状态不是 closing/closed | 浏览器已关闭（启动与关闭并发），请重新调用 browser_e2e_start |
 | `assertLaunchSettled(session)` | 并发启动落定后会话有浏览器 | 浏览器启动失败（同一会话的并发启动未成功），请重试 browser_e2e_start |
-| `assertModeNotHotSwitched(session, requestedMode)` | 请求 mode 与已运行会话一致 | 浏览器已启动（{当前} 模式）；如需切换为 {请求} 模式请先 browser_e2e_close |
-| `assertEndpointNotHotSwitched(session, requestedEndpoint)` | 请求端点与已运行会话一致 | 浏览器已启动（CDP 端点 {当前}）；如需切换为 {请求} 请先 browser_e2e_close |
+| `assertModeNotHotSwitched(currentMode, requestedMode)` | 请求 mode 与已运行会话一致 | 浏览器已启动（{当前} 模式）；如需切换为 {请求} 模式请先 browser_e2e_close |
+| `assertEndpointNotHotSwitched(currentEndpoint, requestedEndpoint)` | 请求端点与已运行会话一致 | 浏览器已启动（CDP 端点 {当前}）；如需切换为 {请求} 请先 browser_e2e_close |
 | `assertCdpConnected(session)` | 会话仍持有 CDP context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
 | `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
 | `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |
 | `assertRefBelongsToTab(tab, ref)` | ref 在该 tab 的 ref 表 | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |
 | `assertRefRevalidated(ref, check)` | 元素仍命中且宽高 > 0 | ref {ref} 已失效…（两条原文案） |
-| `assertSingleScreencast(active, next)` | 安装新 CDP 会话前旧的已置空 | 同一时刻只能有一个投屏会话（违反后果：画面串台） |
+| `assertSingleScreencast(activeCdp)` | `activeCdp` 为 null/undefined（当前没有持有 CDP 会话） | 同一时刻只能有一个投屏会话（违反后果：画面串台） |
 
 ## `panelTabId` 组合规则（单一实现：`lib/protocol.js`）
 
@@ -266,16 +323,30 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 ## 边界
 
 - `invariants.js` 的断言只在「违反=状态损坏」处使用；入参校验留在能力函数入口，不搬进来。
-- `auth.js` 可整体删除：删除后除导航不再自动补票外，其余能力不受影响（删除测试）。
-- `capture.js` 可整体删除：删除后页面只剩交互，不落盘（删除测试）。
+- `auth.js` 删除是**能力删除**：需同时删 `page.js` 的 `import { topUpIfChallenged }`（`page.js:7`）
+  与导航里的调用（`page.js:297`）、`index.js` 的 `setConnectionResolver` 注入（`index.js:13`、`140`），
+  并删 `tests/auth.mjs`；删除后导航不再自动补票，其余能力不受影响。
+- `capture.js` 删除同样是**能力删除**：需同时改 `session.js` 的产物目录（`import { ensureArtifactsDir }`，
+  `session.js:16`、`422`）、`tools.js` 的截图工具（`import { screenshot }`，`tools.js:17`；工具定义
+  `322-398`）、`panel.js` 的刷新帧（`import { captureJpeg }`，`panel.js:17`；`request-frame` 分支
+  `384-396`）；删除后截图能力随之消失，面板刷新按钮也没有可截的帧源。
+- 上述两条都是能力删除，不是零改动模块删除。
 - `invariants.js` 删除后约束会散回各能力函数（删除测试的反向判据）。
 
 ## 验收
 
-1. `node tests/invariants.mjs` 通过：覆盖全部不变量断言、状态机全部合法/非法转移、
-   `panelTabId` 组合与拆分、协议常量与 client 注入块一致性、投屏设置单一来源。
-2. 改 `session.js` 只需跑 `tests/invariants.mjs` + `tests/reclaim.mjs` + `tests/multitab.mjs`；
-   改 `capture.js` 只需跑 `tests/tools.mjs` 的截图用例 + `tests/invariants.mjs`；
-   若必须全量跑才可信，说明边界没切对。
+1. `npm run test:unit` 通过（脚本内容见 `package.json`：`node tests/invariants.mjs &&
+   node tests/client-bundle.mjs && node tests/screencast.mjs`）：覆盖全部不变量断言、状态机全部
+   合法/非法转移、`panelTabId` 组合与拆分、协议常量与 client 注入块一致性、投屏设置单一来源、
+   投屏串行队列。
+2. 按改动面跑可执行命令（每条都以 `npm run test:unit` 打底；含 `tests/` 的命令会真起无头 Edge）：
+   - 改 `session.js`：`npm run test:unit && node tests/panel.mjs && node tests/multitab.mjs && node tests/reclaim.mjs`
+     （`panel.js` 也覆盖 session 的面板面）。
+   - 改 `capture.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
+   - 改 `page.js` / `tools.js`：`npm run test:unit && node tests/tools.mjs && node tests/multitab.mjs`。
+   - 改 `protocol.js` / `panel.js` / `index.js`：`npm run test:unit && node tests/panel.mjs`。
+   - 无法判断改动面时：`npm run test:unit && npm run test:integration`。
 3. `lib/` 内不再有 `browser.js`（无 re-export 转发层），所有 import 直接指向新文件。
-4. 三级测试全绿：见任务书第 6 节；进程计数类断言以回落到运行前基线为准。
+4. 三级测试全绿（说明见 README「开发」节）：单元 `npm run test:unit`（不启动浏览器）→ 集成
+   `npm run test:integration`（真起无头 Edge，脚本串行）→ 手工 GUI 验证（`browser_e2e_*` 工具
+   与右侧面板）。进程计数类断言以回落到运行前基线为准，不看绝对值。

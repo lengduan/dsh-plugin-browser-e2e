@@ -61,7 +61,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 `browser_e2e_start` 的 `mode: 'cdp'` 经 `chromium.connectOverCDP` 接管已用远程调试端口启动的浏览器：
 
 - 只接受 loopback 的 http 端点（默认 `http://127.0.0.1:9222`），其它主机/协议直接报错。
-- 不启动新进程、不新建页面、不设置视口；tab 列表取 `context.pages()`，用户新开的页面也会纳入。
+- 不启动新进程、接管时不新建页面、不设置视口；tab 列表取 `context.pages()`，用户新开的页面也会纳入。`browser_e2e_navigate` 传 `new_tab: true` 时会新建一个标签页（`session.context.newPage()`）。
 - `browser_e2e_close` 只断开连接，不结束你的浏览器进程，也不关闭标签页。
 - 需要先自己启动浏览器：`msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\edge-cdp-profile"`（Chrome 136+ 对默认数据目录忽略该开关，必须用非默认 `--user-data-dir`）。
 
@@ -80,7 +80,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 - **动作提示**：每次 `browser_e2e_*` 工具调用后，面板收到一条 `action` 事件（工具名 + 一句话摘要），面板保留最近 5 条，新的在前。
 - **设置页**：Plugins 页的插件行由宿主按本插件导出的 `Config`（6 项：`defaultMode`、`cdpEndpoint`、`quality`、`maxWidth`、`maxHeight`、`everyNthFrame`）自动渲染「配置」入口，保存经宿主 `form.mutate` 写 profile，不重载插件；客户端不注册 `plugins.row.config` 座位。插件卡片座位（`web-ui.plugin.item` / `plugins.bundle.config`）也暂不注册：在当前桌面宿主上注册它会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），属已知限制。
 
-面板只是视图：它不启动浏览器、不操作页面，所有行为仍然只能由 `browser_e2e_*` 工具发起。
+面板是只读视图：它不启动浏览器、不操作页面，所有行为仍然只能由 `browser_e2e_*` 工具发起。唯一例外是协议命令 `close-tab`（用户主动关页，宿主调用 `session.closeTab`）；刷新按钮的 `request-frame` 只触发一次 `captureJpeg` 截图，不改变页面状态。
 
 已启动浏览器后要切换 `mode`（isolated ↔ cdp）或改 `cdpEndpoint`，需要先 `browser_e2e_close` 再用新的 `mode` / `cdpEndpoint` 调用 `browser_e2e_start`；已启动时传入与当前不一致的值会直接报错，不会静默复用。
 
@@ -101,7 +101,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 客户端命令：`attach{sessionId?}`、`select-tab{tabId}`、`close-tab{tabId}`、`request-frame`、`configure{config}`。
 服务端事件：`hello{state}`、`state{state}`、`frame{tabId,seq,width,height,data}`、`action{trace}`、`error{code,message}`。
 
-`state` 形状：`{tabs, activeTabId, running, mode, endpoint, config}`；`tabs` 项为 `{id, url, title, loading, origin, sessionId}`。`mode` / `endpoint` 由当前 tab 列表推导，列表未带模式时按隔离模式回退（`mode: 'isolated'`、`endpoint: ''`）。
+`state` 形状：`{tabs, activeTabId, running, mode, endpoint, config}`；`tabs` 项为 `{id, url, title, loading, origin, sessionId, mode, endpoint}`。`mode` / `endpoint` 由当前 tab 列表推导，列表未带模式时按隔离模式回退（`mode: 'isolated'`、`endpoint: ''`）。
 
 面板路由只在宿主提供 `webServer` 服务时挂载；CLI 等没有 webServer 的场景，工具照常可用，只是没有面板。
 

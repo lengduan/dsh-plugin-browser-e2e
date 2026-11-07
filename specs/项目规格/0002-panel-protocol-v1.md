@@ -53,6 +53,29 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 | `action` | `{trace:{tool, summary, at}}` |
 | `error` | `{code, message}` |
 
+### 错误码表
+
+`code` 的取值以 `lib/panel.js` 的 `sendError` / `reportError` 调用点为准：
+
+| code | 触发条件 | 是否关闭连接 |
+|---|---|---|
+| `invalid-payload` | 帧不是合法 JSON，或解析结果不是对象 | 首帧关闭；后续帧只回错误 |
+| `protocol-mismatch` | `v` 不等于 `PANEL_PROTOCOL_VERSION` | 首帧关闭（1002）；后续帧只回错误 |
+| `unknown-tab` | `select-tab` / `close-tab` 的 `tabId` 不在当前 tab 列表，或 `parsePanelTabId` 返回 null | 否 |
+| `last-tab` | `close-tab` 时目标 tab 所属会话只剩一个页面 | 否 |
+| `close-tab-failed` | `session.closeTab` 抛错且 `error.code` 不是 `last-tab` | 否 |
+| `no-active-tab` | `request-frame` 时没有选中 tab | 否 |
+| `capture-failed` | `request-frame` 调 `captureJpeg` 抛错 | 否 |
+| `invalid-config` | `configure` 的 `config` 不是对象、字段非整数或越界 | 否 |
+| `invalid-command` | `kind` 不在 `PANEL_COMMANDS` 表 | 否 |
+| `state-failed` | 状态同步 / 广播（`broadcastState`）抛错 | 否 |
+| `config-sync-failed` | `applyConfig` 重开投屏或广播失败 | 否 |
+| `command-failed` | 命令队列处理过程中抛错 | 否 |
+| `screencast-failed` | 建 CDP 会话或 `Page.startScreencast` 失败 | 否 |
+
+`sendError` 只回给当前连接；`reportError` 广播给所有连接（`state-failed`、`config-sync-failed`、
+`capture-failed`、`screencast-failed`、`command-failed` 走后者）。
+
 `state` 形状：`{tabs, activeTabId, running, mode, endpoint, config}`；
 `tabs` 项为 `{id, url, title, loading, origin, sessionId, mode, endpoint}`；
 `mode` / `endpoint` 由当前选中 tab 的所属会话推导，无 tab 时按隔离模式回退
@@ -85,7 +108,9 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 
 ## 边界
 
-- 面板只是视图：不启动浏览器、不操作页面；所有行为只能由 `browser_e2e_*` 工具发起。
+- 面板默认是只读视图：不启动浏览器、不操作页面；所有工具行为只能由 `browser_e2e_*` 发起。
+  唯一例外是协议命令 `close-tab`（用户主动关页，宿主调 `session.closeTab`），它会真的关闭页面。
+- `request-frame` 只触发一次 `captureJpeg` 并推回一帧，不改变页面状态。
 - 宿主不提供 `webServer` 时（CLI 场景）不挂路由，工具照常可用。
 - `configure` 只改宿主进程内配置，不写回 profile；插件重载后回到插件 Config 的值。
 - 投屏是 CDP `Page.startScreencast`：静态页面不产生新帧，刷新按钮走 `captureJpeg` 兜底。
