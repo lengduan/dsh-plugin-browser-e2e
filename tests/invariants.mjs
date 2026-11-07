@@ -20,6 +20,7 @@ import {
   tabs,
 } from '../lib/session.js'
 import { navigate, titleOf } from '../lib/page.js'
+import { captureJpeg } from '../lib/capture.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
   PANEL_PROTOCOL_VERSION, PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelErrorCode,
@@ -685,8 +686,49 @@ await check('titleOf：标题超时返回空串，同样清理定时器', async 
   }
 })
 
+console.log('== 用例 J：captureJpeg 默认质量单一来源 ==')
+await check('captureJpeg：未传 quality 时取 DEFAULT_SCREENCAST_CONFIG.quality', async () => {
+  const calls = []
+  const fakePage = {
+    screenshot: async (options) => {
+      calls.push(options)
+      return Buffer.alloc(0)
+    },
+    viewportSize: () => ({ width: 10, height: 10 }),
+  }
+  const frame = await captureJpeg(fakePage)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].type, 'jpeg')
+  assert.equal(calls[0].quality, DEFAULT_SCREENCAST_CONFIG.quality,
+    `默认质量应取协议表 ${DEFAULT_SCREENCAST_CONFIG.quality}，实际 ${calls[0].quality}`)
+  assert.equal(frame.width, 10)
+  assert.equal(frame.height, 10)
+})
+
+await check('capture.js 的默认质量来自 protocol.js，没有写死数字', () => {
+  const source = readFileSync(new URL('../lib/capture.js', import.meta.url), 'utf8')
+  assert.ok(source.includes("from './protocol.js'"), 'capture.js 应 import protocol.js')
+  assert.ok(source.includes('DEFAULT_SCREENCAST_CONFIG.quality'), '默认质量应取自协议表')
+  assert.ok(!/Number\.isInteger\(options\.quality\)\s*\?\s*options\.quality\s*:\s*\d+/.test(source),
+    'captureJpeg 不应把默认质量写成数字字面量')
+})
+
+await check('captureJpeg：显式 quality 优先于默认值', async () => {
+  const calls = []
+  const fakePage = {
+    screenshot: async (options) => {
+      calls.push(options)
+      return Buffer.alloc(0)
+    },
+    viewportSize: () => null,
+  }
+  await captureJpeg(fakePage, { quality: 42 })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].quality, 42)
+})
+
 await closeAll()
-await check('用例 H 结束：会话注册表已清空', () => {
+await check('收尾检查：会话注册表已清空', () => {
   assert.deepEqual(activeSessionKeys(), [])
 })
 

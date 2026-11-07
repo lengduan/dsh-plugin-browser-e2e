@@ -53,7 +53,7 @@ session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / d
 page.js → auth.js / invariants.js
 auth.js → fence.js
 screencast.js → protocol.js
-capture.js → （无内部依赖）
+capture.js → protocol.js
 protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
 ```
 
@@ -256,6 +256,7 @@ HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型�
 - `PANEL_CONFIG_LIMITS`：`quality [10,100]`、`maxWidth [100,4096]`、`maxHeight [100,4096]`、
   `everyNthFrame [1,10]`；只有这一份。
 - `DEFAULT_SCREENCAST_CONFIG`：`70 / 1280 / 800 / 1`；只有这一份（原在 `screencast.js:13-18`）。
+  单次 JPEG 帧（`capture.js` 的 `captureJpeg`）未传 `quality` 时也取它的 `quality`，不另写默认值。
 - host 侧：`mergeConfig`（用户当场操作，越界回错误）与 `initialConfigOf`（插件配置可能被手改脏，
   逐字段回退默认）都从区间表派生。
 - client 侧：`client/index.js` 不手写区间与默认值，由 `scripts/build-client.mjs` 把
@@ -350,7 +351,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 | 项 | 现状 | 未处置理由 |
 |---|---|---|
 | `page.js` 粒度过大 | 约 840 行、27 个导出，混装：标签页注册表与生命周期、事件环（console/network 环形缓冲、ref 表）、snapshot 的 DOM→xpath/role/name 启发式、五种交互动作、视口度量、展示格式化。 | 拆分面覆盖所有页面能力，回归风险高；且本规格第 30-43 行的模块表把这几块整体划给 `page.js`，拆分须先改规格。建议拆为 `snapshot.js`（DOM 快照引擎）与 `observation.js`（事件环），交互与格式化留在 `page.js`。 |
-| 视口度量三份 | `page.js` 的 `viewportBounds`、`capture.js` 的 `viewportBounds`、`capture.js` 内联的 `innerWidth/innerHeight` 兜底。 | 收敛需要新建公共模块或调整依赖方向（`capture.js` 当前无内部依赖），会改动本规格的依赖图，故留待拆分 `page.js` 时一并处理。 |
+| 视口度量三份 | `page.js` 的 `viewportBounds`、`capture.js` 的 `viewportBounds`、`capture.js` 内联的 `innerWidth/innerHeight` 兜底。 | 收敛需要新建公共模块或调整依赖方向（`capture.js` 现仅依赖 `protocol.js`），会改动本规格的依赖图，故留待拆分 `page.js` 时一并处理。 |
 | client 死代码 | `client/index.js` 的 `BrowserE2EConfigForm`、`BrowserE2EPluginCard`、`PLUGIN_CONFIG_FIELDS` 无注册点（宿主按 Config 自行渲染设置页）。 | 属整洁度，不影响行为；删除需同步 `tests/client-bundle.mjs` 与功能规格 0001 的相关描述。 |
 | `session.js` 粒度过大 | 约 680 行、16 个导出，混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
