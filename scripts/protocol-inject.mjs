@@ -12,6 +12,7 @@ import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
   PANEL_SOCKET_PATH,
 } from '../lib/protocol.js'
+import { DEFAULT_CDP_ENDPOINT } from '../lib/defaults.js'
 
 /** 生成物头注释（客户看到它就知道不要手改）。 */
 export const HEADER = '/* 由 scripts/build-client.mjs 生成，勿手改；源文件：client/index.js */\n'
@@ -51,6 +52,8 @@ export function protocolBlock() {
     `${indent}const PANEL_COMMANDS = Object.freeze(${JSON.stringify(PANEL_COMMANDS)});`,
     `${indent}/** 服务端事件名（线上协议名，host 的事件表同源）。 */`,
     `${indent}const PANEL_EVENTS = Object.freeze(${JSON.stringify(PANEL_EVENTS)});`,
+    `${indent}/** 默认 CDP 端点（与 lib/defaults.js 同源）。 */`,
+    `${indent}const DEFAULT_CDP_ENDPOINT = ${JSON.stringify(DEFAULT_CDP_ENDPOINT)};`,
     INJECT_END,
   ].join('\n')
 }

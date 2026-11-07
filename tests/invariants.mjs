@@ -15,12 +15,15 @@ import {
   assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled, assertModeNotHotSwitched,
   assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated, assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
-import { nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, launch, sessionOf, subscribePanelEvents } from '../lib/session.js'
+import {
+  nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
+} from '../lib/session.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
   PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
 } from '../lib/protocol.js'
 import { HEADER, injectProtocol, readSource } from '../scripts/protocol-inject.mjs'
+import { DEFAULT_CDP_ENDPOINT } from '../lib/defaults.js'
 
 let pass = 0
 let fail = 0
@@ -254,6 +257,12 @@ await check('源码 ↔ 产物一致：injectProtocol(readSource()) 即 lib/clie
   const normalized = expected.endsWith('\n') ? expected : expected + '\n'
   assert.equal(bundle, normalized)
 })
+await check('默认 CDP 端点单源：bundle 注入值等于 lib/defaults.js，client 源文件不手写 9222', () => {
+  const injected = /const DEFAULT_CDP_ENDPOINT = ("[^"]*");/.exec(bundle)
+  assert.ok(injected, 'bundle 缺少 DEFAULT_CDP_ENDPOINT')
+  assert.equal(JSON.parse(injected[1]), DEFAULT_CDP_ENDPOINT)
+  assert.ok(!clientSource.includes('9222'), 'client 源文件不应手写默认 CDP 端点')
+})
 
 console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 Edge）==')
 
@@ -437,8 +446,7 @@ await check('失败清理期间被 close：终态 closed，不被启动落定覆
   await closePromise
   assert.equal(session.state, 'closed')
 })
-await check('已广播 opened 后启动失败：补广播同 key 的 closed 事件', async () => {
-  const events = []
+await check('已广播 opened 后启动失败：补广播同 key 的 closed 事件', async () => {  const events = []
   const unsubscribe = subscribePanelEvents((event) => events.push(event))
   try {
     const browser = fakeBrowser({
@@ -462,6 +470,28 @@ await check('已广播 opened 后启动失败：补广播同 key 的 closed 事�
   } finally {
     unsubscribe()
   }
+})
+
+await check('launch 遇到非法 mode 显式报错，不静默降级为 isolated', async () => {
+  const chromium = fakeChromium({
+    launch: async () => {
+      throw new Error('不应被调用')
+    },
+  })
+  await assert.rejects(
+    () => launch('g-bad-mode', { mode: 'cdpp' }, undefined, {}, { chromium }),
+    /mode 只支持 isolated \/ cdp/,
+  )
+  assert.ok(!activeSessionKeys().includes('g-bad-mode'), '非法 mode 不应登记会话')
+})
+await check('closeTab 关最后一个页：抛结构化 last-tab 错误且页仍在', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-close-last', {}, undefined, {}, { chromium })
+  const error = await closeTab('g-close-last', 't1').catch((thrown) => thrown)
+  assert.equal(error?.code, 'last-tab')
+  assert.match(String(error.message), /最后一个标签页/)
+  assert.equal(sessionOf('g-close-last').pages.size, 1)
 })
 
 // 清空会话注册表，避免假会话影响后续用例与进程退出。

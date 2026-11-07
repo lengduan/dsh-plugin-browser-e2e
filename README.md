@@ -191,6 +191,9 @@ node tests/invariants.mjs
 # 客户端注册面与协议纯函数冒烟（Node VM 桩，不启动浏览器）
 node tests/client-bundle.mjs
 
+# 投屏串行队列与面板命令串行队列（假 CDP，不启动浏览器）
+node tests/screencast.mjs
+
 # 面板宿主半区：围栏 / 设置 / 工具参数契约 / 真实 Edge + WebSocket 端到端协议（含 close-tab）
 node tests/panel.mjs
 

@@ -21,7 +21,7 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 const { mergeConfig, PanelHub } = await import('../lib/panel.js')
 const { PANEL_STATE_PATH, PANEL_SOCKET_PATH, PANEL_PROTOCOL_VERSION } = await import('../lib/protocol.js')
 const { isLoopbackRequest, isLoopbackAddress, isLoopbackHostname } = await import('../lib/fence.js')
-const { activeSessionKeys, closeAll } = await import('../lib/session.js')
+const { activeSessionKeys, closeAll, listPanelTabs } = await import('../lib/session.js')
 const { apply } = await import('../lib/index.js')
 
 let pass = 0
@@ -88,7 +88,7 @@ console.log('== 用例 B：设置合并 ==')
 console.log('== 用例 C：插件注册面（表驱动的工具契约）==')
 // 期望从工具表派生：新增工具只改 lib/tools.js，这里不用改断言。
 const { buildToolTable } = await import('../lib/tools.js')
-const TOOL_TABLE = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: {} })
+const TOOL_TABLE = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
 const KEY = 'panel-test-key'
 // 生产环境里 agent.id 就是 SessionId，两者同源；这里保持同一取值。
 const SID = KEY
@@ -149,6 +149,8 @@ let upgradeHandler = null
     return fill.required.includes('value') && ['ref', 'selector', 'x', 'y'].every((field) => field in fill.properties)
   })())
   check('browser_e2e_screenshot 参数含 clip/format/quality/scale', ['name', 'fullPage', 'clip', 'format', 'quality', 'scale'].every((k) => k in tools.get('browser_e2e_screenshot').parameters.properties))
+  check('browser_e2e_start 的 mode 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode.enum)
+    === JSON.stringify(['isolated', 'cdp']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
 }
@@ -268,6 +270,24 @@ const lastTabError = await waitFor(() => panel.events.slice(eventsBeforeLastClos
   .find((event) => event.kind === 'error' && event.code === 'last-tab'))
 check('最后一个 tab 关闭回 error（last-tab）', Boolean(lastTabError), JSON.stringify(panel.events.filter((e) => e.kind === 'error')))
 
+// 多会话：判据是目标 tab 所属会话的页数，别的会话还有页不能让它误判成可关闭。
+const KEY2 = 'panel-test-key2'
+await tools.get('browser_e2e_start').execute({ headless: true }, { agent: { id: KEY2 } })
+const key2PanelTab = `${KEY2}#t1`
+const tabsAfterKey2 = await listPanelTabs()
+check('第二个会话启动后共有 2 个面板 tab', tabsAfterKey2.length === 2, JSON.stringify(tabsAfterKey2.map((tab) => tab.id)))
+const eventsBeforeKey2Close = panel.events.length
+panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'close-tab', tabId: key2PanelTab }))
+const key2Error = await waitFor(() => panel.events.slice(eventsBeforeKey2Close)
+  .find((event) => event.kind === 'error'))
+check('关闭另一会话的唯一页回 last-tab（不是 close-tab-failed）', key2Error?.code === 'last-tab', JSON.stringify(key2Error))
+const key2TabsAfter = await listPanelTabs()
+check('last-tab 后该会话的页仍在', key2TabsAfter.some((tab) => tab.id === key2PanelTab), JSON.stringify(key2TabsAfter.map((tab) => tab.id)))
+// 收尾：关掉第二个会话，后续断言仍按单会话状态进行。
+await tools.get('browser_e2e_close').execute({}, { agent: { id: KEY2 } })
+const key2Closed = await waitFor(async () => (await listPanelTabs()).length === 1)
+check('关掉第二会话后只剩 1 个面板 tab', Boolean(key2Closed), JSON.stringify((await listPanelTabs()).map((tab) => tab.id)))
+
 panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'configure', config: { quality: 55, maxWidth: 900 } }))
 const configured = await waitFor(() => panel.events.filter((event) => event.kind === 'state').find((event) => event.state.config.quality === 55))
 check('configure 生效并回推状态', Boolean(configured), JSON.stringify(panel.events.filter((e) => e.kind === 'state').slice(-2)))
@@ -358,6 +378,38 @@ console.log('== 用例 E：插件 Config 默认值（launch 缺省值）==')
   }
   check('配置默认值不让已启动会话报 mode 不一致', reuseError === null && typeof reused === 'string' && reused.includes('已启动'), `${reuseError} / ${String(reused).split('\n')[0]}`)
   await reuseDefs.get('browser_e2e_close').execute({}, { agent: { id: 'panel-config-reuse' } })
+
+  // volatile 即时更新：先 apply，再替换配置引用里的快照；后续 start 应读到新值
+  // （defaultMode 改成 cdp，端点换成非 loopback，报 loopback 错误即证明两处都读到了新值）。
+  const volatileDefs = new Map()
+  const volatileConfig = {
+    defaultMode: { get: () => 'isolated' },
+    cdpEndpoint: { get: () => 'http://127.0.0.1:9222' },
+  }
+  apply(makeToolCtx(volatileDefs), volatileConfig)
+  volatileConfig.defaultMode = { get: () => 'cdp' }
+  volatileConfig.cdpEndpoint = { get: () => 'http://10.0.0.5:9222' }
+  let volatileError = null
+  try {
+    await volatileDefs.get('browser_e2e_start').execute({ headless: true }, { agent: { id: 'panel-volatile' } })
+  } catch (error) {
+    volatileError = error instanceof Error ? error.message : String(error)
+  }
+  check('volatile 更新后 start 即时读到新 defaultMode / cdpEndpoint',
+    typeof volatileError === 'string' && volatileError.includes('loopback'), String(volatileError))
+
+  // mode 非法值显式报错，且不能落成 isolated 会话。
+  const badModeDefs = new Map()
+  apply(makeToolCtx(badModeDefs))
+  let badModeError = null
+  try {
+    await badModeDefs.get('browser_e2e_start').execute({ mode: 'cdpp' }, { agent: { id: 'panel-bad-mode' } })
+  } catch (error) {
+    badModeError = error instanceof Error ? error.message : String(error)
+  }
+  check('mode=cdpp 的 start 显式报错且不启动 isolated',
+    typeof badModeError === 'string' && badModeError.includes('mode 只支持 isolated / cdp')
+      && !activeSessionKeys().includes('panel-bad-mode'), `${badModeError} / ${JSON.stringify(activeSessionKeys())}`)
 }
 
 console.log('== 用例 F：投屏参数接线（Config → PanelHub）==')

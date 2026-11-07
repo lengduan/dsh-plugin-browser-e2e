@@ -47,10 +47,10 @@ window.__ModuleLoader__.load({
     const ROW_CONFIG_KEY = PACKAGE_NAME + "#" + ROW_ID;
     /** 只保留最近这么多条动作提示（新的在前）。 */
     const ACTION_LIMIT = 5;
-    /** 插件级配置缺省值（宿主 Config 下发的为准）。 */
+    /** 插件级配置缺省值（宿主 Config 下发的为准；默认端点由构建从 lib/defaults.js 注入）。 */
     const DEFAULT_PLUGIN_CONFIG = {
       defaultMode: "isolated",
-      cdpEndpoint: "http://127.0.0.1:9222",
+      cdpEndpoint: DEFAULT_CDP_ENDPOINT,
     };
     /** tab 类型 kind，供 openTabIn/openTab 按类型点名。 */
     const TAB_KIND = "browser-e2e";

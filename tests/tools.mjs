@@ -508,7 +508,7 @@ try {
     const names = definitions.map((definition) => definition.name)
     // 期望从 lib/tools.js 的工具表派生：新增工具只改表，这里不用改断言。
     const { buildToolTable } = await import('../lib/tools.js')
-    const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: {} })
+    const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
