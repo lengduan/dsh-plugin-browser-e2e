@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：20 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、点击、填表、文件上传、下载、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：21 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 20 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、点击、填表、文件上传、下载与完整性校验、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 21 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-20 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+21 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -58,6 +58,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_tabs` | 列出本会话标签页：`tab_id` / url / title / active / `loading` / `origin`（`created` 本会话新建 / `adopted` CDP 接管） |
 | `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭，结束整个浏览器用 `browser_e2e_close` |
 | `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数。`delta: true` 只返回自上次快照以来的新增 / 变化 / 移除（与 `query` 互斥，默认 ref 继续有效）；`query`（`text` / `selector` / `role`，可加 `limit` 与 `includeHidden`）定位元素并返回可直接点击的 `selector`，不写快照基线；`frame` 读取指定同源 iframe（整数索引或 name / url 子串），子 frame 只读、不分配 ref |
+| `browser_e2e_read` | 结构化读取：按 `controls` / `links` / `tables` / `forms` 四节返回记录（控件带 `role` / `name` / `type` / `value` / `checked` / `options` / 所属表单，链接带绝对 `href`，表格带表头 / 行矩阵 / `totalRows`，表单带 `action` / `fieldCount`）；每条记录带页内校验过的 CSS `selector`，`unique: true` 时可直接传给 `click` / `fill`；`maxItems` 默认 50（1-100），`includeValues` 默认 false（`password` / `file` 永不返回值），`selector` 收窄范围；只读主文档，不写快照 ref |
 | `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一 |
 | `browser_e2e_fill` | 向 input / textarea / contenteditable 填入文本：`ref` / `selector` / `x`+`y` 三选一，`value` 必填；`mode` 缺省 `insert`（一次写入并替换）或 `keystrokes`（先清空再逐键，`delayMs` 0-1000，仅 ref / selector） |
 | `browser_e2e_hover` | 悬停：`ref` / `selector` / `x`+`y` 三选一，用真实鼠标移动触发 CSS `:hover` 与 mouseover / mouseenter；`settleMs`（0-5000，默认 300）是悬停后等待页面反应的时长，`0` 表示不等待 |
@@ -82,6 +83,16 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - 一次最多 2000 个字符（按码点计），且 `delayMs × 字符数` 不超过 30000 ms。
 - 中文与 emoji 走 `Input.insertText`，每个码点只产生一次 input、不产生 keydown；`\t` 不是 Tab 键，移动焦点请用 `browser_e2e_press`。
 - 不回读最终值：受控 / 掩码 / `maxlength` 可能改写值，需要断言时用 `browser_e2e_evaluate`。
+
+### 结构化读取
+
+`browser_e2e_read` 把页面按 `controls` / `links` / `tables` / `forms` 四节压成固定形状的记录，默认只读前三节；每节先全量计数，再按 `maxItems`（默认 50，1-100）列出，`omitted` 给出「命中数 − 列出数」。
+
+- 每条记录带 `selector`：候选顺序为 `#id` → `[data-testid]` → 表单控件 `[name]` → 链接 `[href]` → 从 `html` 起的 `nth-of-type` 链，每个候选都在整文档校验唯一。`unique: true` 的 selector 可直接传给 `browser_e2e_click` / `browser_e2e_fill`；`unique: false`（不唯一，或选择器超过 500 字符被省略）不要直接用于操作。
+- 控件记录：`role`（显式 ARIA 优先，否则按标签与 `type` 推导）、`name`、`type`、`hasValue`、`checked` / `disabled` / `readonly` / `required`（只在为真时出现）、`options` / `optionsTotal`、所属表单 `form`；`includeValues: true` 时追加 `value`，`password` / `file` 永不返回值。
+- 表格记录：`headers` 取最后一个 `thead` 行的单元格，无 `thead` 且首行全是 `th` 时取首行；`rows` 是表体行矩阵，每格压成一行并截断；`totalRows` 是 DOM 行数，`omittedRows` 表示未列出的行。ARIA 表格（`role=table|grid|treegrid`）按 `role=row` / `columnheader` / `cell` / `gridcell` 读取。
+- 文本预算 16000 字符，按请求节数均分；某节超出时从末尾整条丢弃（表格先丢行再丢整表），被丢的条目计入 `omitted`，文末追加截断提示。要读更多就只请求一节，或用 `selector` 收窄范围。
+- 只读主文档：不进入 iframe 与 shadow root；不可见元素（`display:none`、`input[type=hidden]`、折叠菜单）不列出；不写快照 ref 表与 delta 基线，可与快照在同一页面交替调用。
 
 ### 多标签页
 
@@ -339,20 +350,20 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（20 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（21 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  capture.js  download.js  auth.js  screencast.js
+实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
-- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`auth.js` 可整体删除。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`auth.js` 可整体删除。
 - `protocol.js` 是面板协议 v1 的单一契约来源，host 与 client 的校验从表派生；客户端常量由 `scripts/build-client.mjs` 经 `scripts/protocol-inject.mjs` 注入 `lib/client.js`，源码↔产物一致由 `tests/invariants.mjs` 守护。细节见 `specs/项目规格/0002-panel-protocol-v1.md`。
 - 投屏链路：工具执行 → `PanelHub.broadcastAction` 与 `scheduleSync` → WebSocket 广播 `state` / `action`；`Screencast` 适配器对当前页开 CDP 投屏，帧经 socket 推给面板，面板回 ack 后取下一帧。
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
 
 </details>
 
@@ -373,7 +384,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。20 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。21 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -387,6 +398,7 @@ npm run test:integration
 - **快照 4000 上限的体积** —— 全 DOM 逐节点返回并附一行缩进文本，上限 4000 条。实测 4100 个简单 div 的页面返回 4000 条，模型可见文本 193,317 字节（约 189 KB）；DOM 更复杂时体积更大，会明显占用上下文。`delta: true` 与 `query` 可压缩模型可见文本，但 delta 只对比前 4000 个可见节点，4000 条以外的节点不参与对比也不进基线；delta 与 query 的正文各 20000 字符上限，delta 的 removed 列表最多逐条列 200 个。
 - **快照脚本 15 秒超时不可终止** —— 单次快照的页面脚本在宿主侧有 15000ms 超时，超时后本次调用报错，但页面脚本本身无法被终止，可能继续占用页面线程并让后续 `evaluate` 排队；遇到同步死循环页面请稍后重试或改用 `browser_e2e_evaluate` 小范围读取。扫描上限 20000 个元素，超过时 `scanTruncated` 为真且 `total` 表示已扫描到的可见元素数。
 - **快照只读同源 iframe** —— `frame` 参数只接受同源 iframe（空 url / `about:blank` / `about:srcdoc` 视为同源），跨源 iframe 直接报错；子 frame 只读，节点不分配 ref、不写主文档 ref 表，子 frame 内的元素操作（`f<N>@M` 之类）留给 P1-9。快照增量基线保存在会话内存中，不持久化、不跨会话复用。
+- **结构化读取的边界** —— `browser_e2e_read` 只读主文档，不进入任何 iframe（同源也不进）与 shadow root；不可见元素不列出，读隐藏表单需先让页面显示；表格不识别分页与虚拟滚动，`totalRows` 只是 DOM 行数；`input[type=file]` 只给 `hasValue`、不返回文件名；`href` 超过 500 字符时截断并置 `hrefTruncated: true`，截断值不可用于导航；`unique: false` 的 selector 在页面上不唯一，直接交给 click / fill 会因 Playwright strict 模式报错。页面脚本无超时与取消（与快照一致），耗时由 20000 元素扫描上限与 `maxItems` 限住；文本按 16000 字符预算分节截断，大页面请只请求一节或用 `selector` 收窄。
 - **多标签页测试的进程计数是观察项** —— `tests/multitab.mjs` 收尾只打印剩余 msedge 主进程数与启动前基线，不据此断言；`tests/reclaim.mjs` 末尾打印的「应为 0」同样只是观察，真正的断言是「回落到 before 基线」——本机若已开着 Edge，基线不是 0，绝对值不可比。
 - **profile 里的版本是 git 快照** —— `dsh plugin add` 装的是指定 commit 的快照，改完源码必须 commit + push，再在 profile 里重新解析，否则跑的还是旧提交。
 - **插件卡片座位不注册** —— 客户端暂不注册 `web-ui.plugin.item` / `plugins.bundle.config`；在当前桌面宿主上注册会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），插件行改由宿主按 `Config` 自动渲染。

@@ -23,7 +23,7 @@
 ```
 接口层   tools.js（工具表）              protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  capture.js  auth.js  screencast.js
+实现层   session.js  page.js  read.js  capture.js  auth.js  screencast.js
 公共     invariants.js（不变量断言）       fence.js（安全围栏）
 ```
 
@@ -34,12 +34,13 @@
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
-| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate/snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/scroll/press/waitFor/evaluate/consoleEntries/networkEntries/networkDetail`、`titleOf` | 落盘、协议、面板连接 |
+| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate/snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/scroll/press/waitFor/evaluate/consoleEntries/networkEntries/networkDetail`、`titleOf` | 落盘、协议、面板连接、结构化读取（`lib/read.js`） |
+| `lib/read.js` | 结构化页面读取：页内扫描 controls / links / tables / forms，唯一 CSS selector 生成与校验，记录整形与文本预算（`readStructured`） | 生命周期、事件环、ref 表、交互动作、截图、面板 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 全部 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 21 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -48,11 +49,12 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / capture.js / download.js / defaults.js
+tools.js → session.js / page.js / read.js / capture.js / download.js / defaults.js
 index.js → tools.js / panel.js / session.js / auth.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js
+read.js → page.js
 download.js → page.js / capture.js
 auth.js → fence.js
 screencast.js → protocol.js
@@ -111,6 +113,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_tabs`：`summary` / `mode` / `text`；
   - `browser_e2e_close_tab`：`summary` / `activeTabId`；
   - `browser_e2e_snapshot`：`summary` / `url` / `tabId` / `text` / `mode` / `frame` / `baseline` / `added` / `changed` / `removed` / `matches` / `truncated` / `scanTruncated`（`mode` / `frame` / `scanTruncated` 各模式都返回；`baseline` / `added` / `changed` / `removed` 只在 delta，`matches` 只在 query）；
+  - `browser_e2e_read`：`summary` / `url` / `tabId` / `text` / `mode` / `sections` / `truncated` / `scanTruncated`；
   - `browser_e2e_screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等）；
   - `browser_e2e_console` / `browser_e2e_network`：`summary` / `count` / `total` / `text`；
   - `browser_e2e_network_detail`：`summary` / `text`；
@@ -386,6 +389,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
      （`panel.js` 也覆盖 session 的面板面）。
    - 改 `capture.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `page.js` / `tools.js`：`npm run test:unit && node tests/tools.mjs && node tests/multitab.mjs`。
+   - 改 `read.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `protocol.js` / `panel.js` / `index.js`：`npm run test:unit && node tests/panel.mjs`。
    - 无法判断改动面时：`npm run test:unit && npm run test:integration`。
 3. `lib/` 内不再有 `browser.js`（无 re-export 转发层），所有 import 直接指向新文件。

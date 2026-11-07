@@ -1398,8 +1398,21 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
+    check('工具表共 21 个（含 read）', table.length === 21 && names.length === 21, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
+    const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
+    check('read 参数含 sections / maxItems / includeValues / selector / tab_id',
+      ['sections', 'maxItems', 'includeValues', 'selector', 'tab_id']
+        .every((field) => field in readTool.parameters.properties)
+      && readTool.parameters.properties.sections?.type === 'array'
+      && readTool.parameters.properties.sections?.items?.type === 'string'
+      && readTool.parameters.properties.maxItems?.type === 'integer'
+      && readTool.parameters.properties.includeValues?.type === 'boolean'
+      && readTool.parameters.properties.selector?.type === 'string'
+      && readTool.parameters.additionalProperties === false
+      && readTool.parameters.required.length === 0,
+    JSON.stringify(readTool.parameters))
     const fillTool = definitions.find((definition) => definition.name === 'browser_e2e_fill')
     check('fill 把 value 列为必填并提供四种目标参数', fillTool.parameters.required.includes('value')
       && ['ref', 'selector', 'x', 'y', 'tab_id'].every((field) => field in fillTool.parameters.properties),
