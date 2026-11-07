@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/download.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -36,9 +36,10 @@
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
 | `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate/snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/scroll/press/waitFor/evaluate/consoleEntries/networkEntries/networkDetail`、`titleOf` | 落盘、协议、面板连接 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
+| `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 19 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 全部 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -47,11 +48,12 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / capture.js / defaults.js
+tools.js → session.js / page.js / capture.js / download.js / defaults.js
 index.js → tools.js / panel.js / session.js / auth.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js
+download.js → page.js / capture.js
 auth.js → fence.js
 screencast.js → protocol.js
 capture.js → protocol.js
@@ -118,7 +120,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
     `matchedResponse`（`url` / `method` / `status` / `mimeType` / `at` / `buffered`）；
   - `browser_e2e_evaluate`：`summary` / `value`；
   - `browser_e2e_click` / `fill` / `hover` / `drag` / `scroll` / `press` / `close`：只读 `summary`；
-  - `browser_e2e_upload`：`summary` / `multiple` / `accept` / `totalBytes` / `visible` / `replaced` / `selected`。
+  - `browser_e2e_upload`：`summary` / `multiple` / `accept` / `totalBytes` / `visible` / `replaced` / `selected`；
+  - `browser_e2e_download`：`summary` / `file` / `filename` / `bytes` / `sha256` / `source` / `url` / `suggestedFilename` / `finalUrl`；
 
 ### 明确不做
 
@@ -350,7 +353,8 @@ CDP 模式只断连，绝不结束用户浏览器进程。
   里的调用、`index.js` 的 `setConnectionResolver` 注入，并删 `tests/auth.mjs`；删除后导航不再自动
   补票，其余能力不受影响。
 - `capture.js` 删除同样是**能力删除**：需同时改 `session.js` 的产物目录（`import { ensureArtifactsDir }`
-  与 `launch` 里的调用）、`tools.js` 的截图工具（`import { screenshot }` 与 `browser_e2e_screenshot`
+  与 `launch` 里的调用）、`download.js` 的下载目录派生（`import { ensureArtifactsDir }`）、`tools.js`
+  的截图工具（`import { screenshot }` 与 `browser_e2e_screenshot`
   定义）、`panel.js` 的刷新帧（`import { captureJpeg }` 与 `request-frame` 分支）；删除后截图能力随之
   消失，面板刷新按钮也没有可截的帧源。
 - 上述两条都是能力删除，不是零改动模块删除。
@@ -367,7 +371,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 | `session.js` 粒度过大 | 约 680 行、16 个导出，混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
 | 会话解析入口不统一 | 9 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs`/`close_tab` 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
-| 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 19 个 `run` 的返回契约，属较大重构，留待单独一轮。 |
+| 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
 | client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
 | 工具描述里的 limit / timeoutMs 默认值 | `lib/tools.js` 描述与 `lib/page.js` 写死「默认 100」「默认 10000」，与已收敛的视口 / 快照 / 截图 / 缓冲上限常量同类，但尚无单一来源。 | 需新增常量并补本规格的常量口径，属 11 条 P2 清单外的同类残留，留待后续。 |
 

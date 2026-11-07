@@ -1412,6 +1412,12 @@ try {
     check('scroll 参数含 delta_x / delta_y / x / y / tab_id', ['delta_x', 'delta_y', 'x', 'y', 'tab_id'].every((field) => field in scrollTool.parameters.properties),
       JSON.stringify(Object.keys(scrollTool.parameters.properties)))
 
+    const downloadTool = definitions.find((definition) => definition.name === 'browser_e2e_download')
+    check('download 参数含两种来源与完整性字段', ['url', 'ref', 'selector', 'x', 'y', 'filename',
+      'maxBytes', 'expectedSha256', 'timeoutMs', 'tab_id'].every((field) => field in downloadTool.parameters.properties)
+      && downloadTool.parameters.additionalProperties === false,
+    JSON.stringify(Object.keys(downloadTool.parameters.properties)))
+
     const screenshotTool = definitions.find((definition) => definition.name === 'browser_e2e_screenshot')
     const exec = { agent: { id: KEY } }
     const value = await screenshotTool.execute({ clip: { x: 10, y: 10, width: 100, height: 50 } }, exec)

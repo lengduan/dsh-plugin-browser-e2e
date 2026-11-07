@@ -13,8 +13,9 @@
  * 运行：node tests/cdp.mjs
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { get } from 'node:http'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer as createHttpServer, get } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +26,7 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
 const { currentTab, evaluate, navigate, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
+const { download } = await import('../lib/download.js')
 
 const KEY = 'test-cdp-key'
 let session = null
@@ -128,6 +130,39 @@ writeFileSync(uploadPagePath, '<!doctype html><html lang="zh"><head><meta charse
   + '</script></body></html>', 'utf8')
 writeFileSync(uploadFilePath, 'cdp')
 const uploadPageUrl = pathToFileURL(uploadPagePath).href
+
+// 下载夹具：本地 HTTP 服务（URL 模式只能走 HTTP(S)），页面上的 download 链接覆盖点击触发路径。
+const HTTP_BODY = Buffer.from('cdp-http-body')
+const CLICK_BODY = Buffer.from('cdp-click-body')
+const downloadServer = createHttpServer((req, res) => {
+  const path = new URL(req.url, 'http://127.0.0.1').pathname
+  if (path === '/page') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-download</title></head>'
+      + '<body style="margin:0"><a id="cdp-download" href="/files/cdp-click.txt" download="cdp-click.txt"'
+      + ' style="position:fixed;left:20px;top:20px;display:block;width:240px;height:40px;background:#eee">'
+      + 'download</a></body></html>')
+    return
+  }
+  if (path === '/files/cdp-http.txt') {
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-disposition': 'attachment; filename="cdp-http.txt"',
+    })
+    res.end(HTTP_BODY)
+    return
+  }
+  if (path === '/files/cdp-click.txt') {
+    res.writeHead(200, { 'content-type': 'text/plain' })
+    res.end(CLICK_BODY)
+    return
+  }
+  res.writeHead(404, { 'content-type': 'text/plain' })
+  res.end('unknown')
+})
+await new Promise((resolve) => downloadServer.listen(0, '127.0.0.1', resolve))
+const downloadBase = `http://127.0.0.1:${downloadServer.address().port}`
+
 const child = spawn(edgePath, [
   '--headless=new',
   '--disable-gpu',
@@ -208,6 +243,34 @@ try {
     JSON.stringify({ info, names: names.value, changes: changes.value }))
   }
 
+  console.log('== 用例 3D：CDP 接管下下载（直接 URL / 点击触发）==')
+  {
+    const tabsBefore = (await tabs(KEY)).tabs
+    const contentTabsBefore = tabsBefore.filter((tab) => !String(tab.url).startsWith('edge://'))
+    const httpInfo = await download(session, { url: `${downloadBase}/files/cdp-http.txt` })
+    check('CDP 接管下直接 URL 下载成功', httpInfo.source === 'request'
+      && httpInfo.filename === 'cdp-http.txt' && existsSync(httpInfo.file)
+      && readFileSync(httpInfo.file).equals(HTTP_BODY), JSON.stringify(httpInfo))
+    check('CDP 下载 sha256 与内容一致', httpInfo.sha256
+      === createHash('sha256').update(HTTP_BODY).digest('hex') && /^[0-9a-f]{64}$/.test(httpInfo.sha256),
+    httpInfo.sha256)
+
+    await navigate(session, `${downloadBase}/page`, 'load')
+    const clickInfo = await download(session, { selector: '#cdp-download' })
+    check('CDP 接管下点击触发下载成功（createReadStream 路径）', clickInfo.source === 'browser'
+      && clickInfo.filename === 'cdp-click.txt' && existsSync(clickInfo.file)
+      && readFileSync(clickInfo.file).equals(CLICK_BODY), JSON.stringify(clickInfo))
+
+    // 规格 0016「状态变化 / 标签页」：工具不额外建页；浏览器自己打开的 edge:// 内部页
+    // （本机 Edge 下载开始时会开 edge://downloads-hub/）不算工具建页。
+    const tabsAfter = (await tabs(KEY)).tabs
+    const contentTabsAfter = tabsAfter.filter((tab) => !String(tab.url).startsWith('edge://'))
+    const extraPages = tabsAfter.filter((tab) => !tabsBefore.some((before) => before.tab_id === tab.tab_id))
+    check('CDP 下载不新建标签页', contentTabsAfter.length === contentTabsBefore.length
+      && extraPages.every((tab) => String(tab.url).startsWith('edge://')),
+    JSON.stringify({ before: tabsBefore.map((tab) => `${tab.tab_id}:${tab.url}`), after: tabsAfter.map((tab) => `${tab.tab_id}:${tab.url}`) }))
+  }
+
   console.log('== 用例 4：close 只断开连接 ==')
   {
     const info = await close(KEY)
@@ -221,6 +284,8 @@ try {
 } finally {
   await closeAll()
   child.kill()
+  downloadServer.closeAllConnections?.()
+  await new Promise((resolve) => downloadServer.close(resolve))
   await sleep(500)
   try {
     rmSync(userDataDir, { recursive: true, force: true })

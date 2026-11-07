@@ -142,7 +142,7 @@ let upgradeHandler = null
   check('每个工具都有 run 与 output', TOOL_TABLE.every((definition) => typeof definition.run === 'function'
     && (definition.output === undefined || typeof definition.output.render === 'function')))
   check('新增 scroll 工具已注册', tools.has('browser_e2e_scroll'))
-  check('作用于页面的工具都接受 tab_id', ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'press', 'screenshot', 'console', 'network', 'wait', 'evaluate', 'hover', 'drag']
+  check('作用于页面的工具都接受 tab_id', ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'press', 'screenshot', 'console', 'network', 'wait', 'evaluate', 'hover', 'drag', 'download']
     .every((suffix) => 'tab_id' in tools.get(`browser_e2e_${suffix}`).parameters.properties))
   check('browser_e2e_fill 把 value 列为必填，且提供 ref/selector/x/y 目标参数', (() => {
     const fill = tools.get('browser_e2e_fill').parameters

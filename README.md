@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：19 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、点击、填表、文件上传、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：20 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、点击、填表、文件上传、下载、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 19 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、点击、填表、文件上传、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 20 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、点击、填表、文件上传、下载与完整性校验、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-19 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+20 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -66,6 +66,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_scroll` | 滚动页面：`delta_x` / `delta_y` 至少一个非 0；给 `x`+`y` 时先移动鼠标到该视口坐标再滚 |
 | `browser_e2e_press` | 按下键盘按键（如 Enter、Tab、Escape、Control+A），作用于当前焦点元素 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
+| `browser_e2e_download` | 下载并校验完整性：`url`（HTTP(S) 直接经当前浏览器上下文取回，共享 Cookie / 登录态）或 `ref` / `selector` / `x`+`y`（点击触发 download 事件）二选一；`filename` 覆盖服务器建议名，`maxBytes` 默认 100 MiB（上限 1 GiB），`expectedSha256` 可选强校验，`timeoutMs` 默认 60000；落盘到产物目录的 `downloads/` 子目录（`DSH_BROWSER_DOWNLOAD_DIR` 覆盖），返回路径、字节数与 SHA-256，同名不覆盖 |
 | `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100） |
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
@@ -133,6 +134,22 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - 整页宽高取 `document.documentElement.scrollWidth/scrollHeight` 与 `document.body` 的较大值；CDP 接管模式没有固定视口，非整页截图按 `window.innerWidth/innerHeight` 兜底。
 - `name` 是文件名前缀，只允许字母、数字、`.`、`_`、`-`，不能含 `..` 或路径分隔符（`/`、`\`、`:`）；落盘时追加「时间戳 + 自增序号」的唯一后缀，实际文件名形如 `<name>-<后缀>.png`。缺省用 `shot-<时间戳+序号>`，同样带唯一后缀。
 - 宿主挂载 `attachments` 服务时截图存为附件，工具结果里追加一个图片内容块；附件服务不可用或存图失败时退回纯文本路径，文件此时已经落盘。
+
+### 下载
+
+`browser_e2e_download` 把文件落到下载目录并返回完整性信息，两种来源必须且只能给一种：
+
+- `url`：HTTP(S) 地址经当前标签页所属浏览器上下文的请求客户端取回（`context.request`），与页面共享 Cookie / 登录态，**不导航当前页**。整包读入内存后写盘，因此先按 `Content-Length` 预检，分块传输的超大响应会在读入后才按 `maxBytes` 拒绝。请求失败直接报错，不做「新开临时页导航捕获附件」的回退。
+- `ref` / `selector` / `x` + `y`：先登记 `page.waitForEvent('download')`，再按 `browser_e2e_click` 的语义点击一次，等浏览器产生下载事件后流式落盘。点击目标只在主 frame，iframe 内元素不支持；页面自行导航或开新页不回滚。点击没有触发下载时等到 `timeoutMs` 报超时。
+
+落盘与校验口径：
+
+- 目录：默认 `<产物目录>/downloads/`，即 `~/.dsh/browser-e2e/artifacts/<时间戳>/downloads/`；唯一覆盖项是环境变量 `DSH_BROWSER_DOWNLOAD_DIR`（绝对路径），相对路径直接报错。不提供按次 `savePath`。
+- 文件名：显式 `filename` 必须是不含目录路径的纯文件名（拒绝路径分隔符、控制字符、Windows 非法字符、`.` / `..`、以点或空格结尾、Windows 保留设备名，最长 180 字符）；未给时按 `Content-Disposition` 的 `filename*` → `filename` → URL 末段 → `download` 取服务器建议名并做宽松清洗（只取 basename、非法字符替换、保留名加前缀、超长保留扩展名）。同名不覆盖，按 `name-1.ext`、`name-2.ext` 递增。
+- 大小：`maxBytes` 默认 104857600（100 MiB），取值 1..1073741824（1 GiB）。0 字节一律按失败处理；超限销毁下载流、删除半成品。
+- 完整性：成功必返回 SHA-256（64 位小写十六进制）；传了 `expectedSha256` 就强校验，不匹配时报错并删除文件。文件名、字节数与摘要都返回，调用方不要只看文件存在。
+- 超时：`timeoutMs` 是总预算（默认 60000，1000..300000），URL 模式传给 `context.request.get`，点击模式用于等事件与写盘；不支持取消、断点续传或重试。
+- 模式：isolated 与 cdp 走同一套链路；点击模式统一用 `download.createReadStream()`，不依赖 `download.path()`（远程连接下会抛错）。CDP 模式下用户浏览器策略拒绝下载时按失败处理。
 
 ### 鉴权补票（本机 DSH GUI）
 
@@ -229,8 +246,9 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `DSH_BROWSER_PROXY` | 空 | `browser_e2e_start` 未传 `proxy` 时使用的 HTTP 代理地址 |
 | `DSH_BROWSER_IDLE_MS` | `600000`（10 分钟） | 无调用多久后关闭该会话浏览器；`0` 关闭空闲回收 |
 | `DSH_BROWSER_CLOSE_TIMEOUT_MS` | `5000` | 关闭浏览器时等待 graceful close 的毫秒上限 |
+| `DSH_BROWSER_DOWNLOAD_DIR` | 空 | `browser_e2e_download` 的下载目录（绝对路径）；空表示用 `<产物目录>/downloads/`，相对路径报错 |
 
-截图落在 `~/.dsh/browser-e2e/artifacts/<时间戳>/`。
+截图落在 `~/.dsh/browser-e2e/artifacts/<时间戳>/`；下载落在该目录的 `downloads/` 子目录（可用 `DSH_BROWSER_DOWNLOAD_DIR` 覆盖）。
 
 ### 使用示例
 
@@ -246,6 +264,8 @@ browser_e2e_hover { selector: ".menu-trigger", settleMs: 300 }
 browser_e2e_drag { from: { ref: "@3" }, to: { ref: "@6" }, steps: 12 }
 browser_e2e_press { key: "Enter" }
 browser_e2e_upload { selector: "input[type=file]", files: "C:\\tmp\\report.pdf" }
+browser_e2e_download { url: "http://127.0.0.1:19387/files/report.pdf" }
+browser_e2e_download { selector: "#export", expectedSha256: "<64 位十六进制>" }
 browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
 browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
@@ -292,6 +312,9 @@ node tests/reclaim.mjs
 # 工具能力：console / network 列表与网络正文详情 / 全 DOM 快照与 4000 截断 / 三种点击 / fill 三种目标 / 悬停 / 拖拽 / scroll / 截图倍率 / wait
 node tests/tools.mjs
 
+# 下载：URL 直接取回 / 点击触发 / 文件名与目录 / 大小上限 / SHA-256（真起无头 Edge + 本地 HTTP 夹具）
+node tests/download.mjs
+
 # wait 的 url / response 条件：真起无头 Edge + 本地 HTTP 夹具（不在 test:integration 聚合里，单独跑）
 node tests/wait.mjs
 
@@ -316,20 +339,20 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（19 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（20 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  capture.js  auth.js  screencast.js
+实现层   session.js  page.js  capture.js  download.js  auth.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
-- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`capture.js` 持截图与产物目录；`auth.js` 可整体删除。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`auth.js` 可整体删除。
 - `protocol.js` 是面板协议 v1 的单一契约来源，host 与 client 的校验从表派生；客户端常量由 `scripts/build-client.mjs` 经 `scripts/protocol-inject.mjs` 注入 `lib/client.js`，源码↔产物一致由 `tests/invariants.mjs` 守护。细节见 `specs/项目规格/0002-panel-protocol-v1.md`。
 - 投屏链路：工具执行 → `PanelHub.broadcastAction` 与 `scheduleSync` → WebSocket 广播 `state` / `action`；`Screencast` 适配器对当前页开 CDP 投屏，帧经 socket 推给面板，面板回 ack 后取下一帧。
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/capture.js`（截图）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
 
 </details>
 
@@ -350,7 +373,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。19 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。20 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -370,6 +393,7 @@ npm run test:integration
 - **静态页面没有新帧** —— 投屏只在实际产生帧时推送，静态页要看到画面需点面板刷新按钮，这是 CDP 投屏协议本身的行为。
 - **网络正文读取的边界** —— `browser_e2e_network_detail` 在调用时才回取正文，导航、浏览器内存回收或 Service Worker 响应可能让正文不再可读，此时报「响应体不可读」并提示在同一文档内重读；流式响应（SSE / 长轮询）在 `timeout_ms` 到点报超时，底层读取无法取消；正文在浏览器侧整块缓冲后才按 `max_chars` 截断，超大文件的内存开销不受该参数限制，也不提供 base64 正文与按 URL 猜测式脱敏（默认只隐藏敏感头）。
 - **文件上传的边界** —— `browser_e2e_upload` 只处理主 frame（iframe 内的文件控件匹配不到），不支持 `webkitdirectory` 目录上传（目录按「路径不是文件」拒绝），不校验 `accept`、不按扩展名改写文件名或 MIME；`clear: false` 不支持追加（Playwright 无法把已选 `File` 还原成宿主路径），也不能与 `x`+`y` 组合（要先点击才读得到当前选择）。上传完成后不自动点提交、不等待上传请求。
+- **下载的边界** —— URL 模式把响应体整体读入内存（`APIResponse` 只有 `body()`），默认 100 MiB、硬上限 1 GiB 是内存风险边界，超大文件改用点击触发模式；URL 请求失败直接报错，不做导航捕获附件的回退；不支持取消、断点续传与重试；点击触发只接本次调用期间的第一个下载事件，`navigate` / `evaluate` 在工具调用之外触发的下载无法追溯；一次只处理一个文件；`Content-Disposition` 缺失且 URL 末段为空时文件名回退 `download`；不按扩展名过滤，也不解析 PDF / 压缩包。
 - **悬停与拖拽只作用于主 frame** —— `browser_e2e_hover` / `browser_e2e_drag` 与 `browser_e2e_click` 一致，只查主框架、不进入 iframe；坐标目标按视口 CSS 像素校验，元素目标不暴露 `force` / `sourcePosition` / `targetPosition`，被遮挡时报 Playwright 超时。拖拽中途页面导航会由 Playwright 报执行上下文销毁；HTML5 目标若不在 `dragover` 里 `preventDefault()`，浏览器会拒绝 drop，这是页面行为，不是工具失败。
 - **逐键输入（`mode=keystrokes`）的边界** —— 不支持坐标目标（无法可靠清空与校验可编辑性）；不支持真实 IME 与组合键，中文 / emoji 走 `Input.insertText`、不产生 keydown / keyup，`\t` 不会移动焦点；`\n` / `\r` 映射为 Enter，单行 input 里可能触发表单提交。工具在最后一个按键后立即返回，不等防抖落定；掩码与受控组件可能改写最终值，工具不回读。后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略按键（不做 focus emulation）。
 

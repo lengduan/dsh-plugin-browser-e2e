@@ -148,7 +148,7 @@
 
 <header>
   <h1>dsh-plugin-browser-e2e 架构图</h1>
-  <div class="sub">DSH 浏览器端到端验证插件：宿主半区 18 个 <code>browser_e2e_*</code> 工具 + 右侧实时浏览器面板</div>
+  <div class="sub">DSH 浏览器端到端验证插件：宿主半区 20 个 <code>browser_e2e_*</code> 工具 + 右侧实时浏览器面板</div>
   <div class="meta">
     <span>仓库 <code>C:\lengduan\githubs\dsh-plugin-browser-e2e</code></span>
     <span>分支 <code>main</code></span>
@@ -207,7 +207,7 @@
       <!-- 工具注册表 -->
       <rect x="48" y="252" width="244" height="112" rx="8" fill="#ffffff" stroke="#94a3b8"></rect>
       <text x="64" y="276" font-size="13.5" font-weight="bold" fill="#1f2937">ctx.tools.register</text>
-      <text x="64" y="298" font-size="12" fill="#64748b">18 个工具，全部来自</text>
+      <text x="64" y="298" font-size="12" fill="#64748b">20 个工具，全部来自</text>
       <text x="64" y="317" font-size="12" fill="#64748b">lib/tools.js 的同一张表</text>
       <text x="64" y="336" font-size="12" fill="#64748b">execute 由 index.js 包装：</text>
       <text x="64" y="355" font-size="12" fill="#64748b">广播面板动作 + 触发状态同步</text>
@@ -361,7 +361,7 @@
       <!-- 接口层盒子 -->
       <rect x="150" y="90" width="330" height="96" rx="8" fill="#eff6ff" stroke="#93c5fd"></rect>
       <text x="166" y="114" font-size="13.5" font-weight="bold" fill="#1d4ed8">tools.js</text>
-      <text x="166" y="136" font-size="11.5" fill="#334155">18 个工具的单一声明（name / description /</text>
+      <text x="166" y="136" font-size="11.5" fill="#334155">20 个工具的单一声明（name / description /</text>
       <text x="166" y="153" font-size="11.5" fill="#334155">parameters / run / output）</text>
       <text x="166" y="174" font-size="11" fill="#64748b">依赖 → session · page · capture · defaults</text>
 
@@ -1167,7 +1167,7 @@
       <tr><td class="mono">视口度量三份</td><td><code>page.js</code> 与 <code>capture.js</code> 各一份 <code>viewportBounds</code>，capture 另有内联兜底</td><td>收敛会改依赖图（capture 现只依赖 protocol），留待拆 page.js 时一并处理</td></tr>
       <tr><td class="mono">串行队列两份</td><td><code>panel.js</code> 与 <code>screencast.js</code> 各一份 enqueue/queue，逻辑相同</td><td>抽出公共模块会增加一条依赖边并改依赖图，留待拆分评估</td></tr>
       <tr><td class="mono">会话解析入口不统一</td><td>9 个工具用 <code>sessionOf</code>（会创建会话），console / network 用 <code>requireSession</code>，tabs / close_tab 经 <code>session.tabs</code> / <code>session.closeTab</code> 内的 <code>sessions.get</code>；未启动时报错文案不同</td><td>只影响未启动时的会话表残留与文案，统一需逐工具核对语义</td></tr>
-      <tr><td class="mono">展示格式化四处</td><td><code>page.js</code> 的 timeOf/oneLine、<code>session.js</code> 的 tabs 文本、<code>tools.js</code> 的标题拼串、client 的 formatClock；timeOf 取 UTC、formatClock 用本地时区</td><td>上移会改动全部 18 个工具 <code>run</code> 的返回契约，属较大重构</td></tr>
+      <tr><td class="mono">展示格式化四处</td><td><code>page.js</code> 的 timeOf/oneLine、<code>session.js</code> 的 tabs 文本、<code>tools.js</code> 的标题拼串、client 的 formatClock；timeOf 取 UTC、formatClock 用本地时区</td><td>上移会改动全部 20 个工具 <code>run</code> 的返回契约，属较大重构</td></tr>
       <tr><td class="mono">client 文案 / 样式孤儿键</td><td>删除死组件后留下 17 个无引用 EN 文案键（45 键中）与 9 个无引用样式键（44 键中）；规格基线记 9 + 8</td><td>整洁度问题，不影响行为；清理需与 client-bundle 文案断言一起核对</td></tr>
       <tr><td class="mono">默认值散落</td><td><code>tools.js</code> 描述与 <code>page.js</code> 写死「默认 100」「默认 10000」，尚无单一来源</td><td>需新增常量并补规格的常量口径</td></tr>
     </tbody>
@@ -1195,7 +1195,7 @@
     <li><code>specs/项目规格/0002-panel-protocol-v1.md</code>：路由、命令、事件、错误码、投屏设置、panelTabId、单 Hub 限制。</li>
     <li><code>specs/功能规格/0001-client-entry-activation-failure.md</code>：客户端注册面与 entry 激活失败的约束。</li>
     <li><code>lib/index.js</code>：Config 与 apply、工具注册包装、session/disposed 与卸载回收、面板路由挂载。</li>
-    <li><code>lib/tools.js</code>：18 个工具声明与 <code>run</code> 实现（第 159-614 行的工具表）。</li>
+    <li><code>lib/tools.js</code>：20 个工具声明与 <code>run</code> 实现（工具表）。</li>
     <li><code>lib/session.js</code>：状态转移表（98-104）、<code>nextSessionState</code>（113）、<code>touchSession</code>（147）、<code>launch</code>（308）、<code>close</code>（519）、<code>closeTab</code>（562）、<code>closeBySessionId</code>（598）、<code>closeAll</code>（605）。</li>
     <li><code>lib/page.js</code>：<code>addPage</code>（59）、<code>removePage</code>（86）、<code>createPage</code>（118）、<code>attachPageHooks</code>（135）及容量常量（14-23）。</li>
     <li><code>lib/panel.js</code>：<code>PanelHub</code>（77）、<code>state</code>（144）、<code>broadcastState</code>（196）、<code>scheduleSync</code>（204）、<code>sync</code>（214）、<code>ensureScreencast</code>（228）、<code>applyConfig</code>（257）、<code>pushFrame</code>（279）、<code>handleCommand</code>（319）。</li>
