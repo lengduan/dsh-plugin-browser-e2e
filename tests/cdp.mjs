@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, dialogEntries, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, setDialogPolicy, upload } = await import('../lib/page.js')
+const { currentTab, clipboard, dialogEntries, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, setDialogPolicy, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
 
@@ -344,6 +344,30 @@ try {
       JSON.stringify(list.tabs))
     const alive = child.exitCode === null && !child.killed
     check('CDP 重置不结束用户浏览器进程', alive, `exitCode=${child.exitCode}`)
+  }
+
+  console.log('== 用例 3G：CDP 接管下粘贴投递与 sanitize=false 拒绝 ==')
+  {
+    await navigate(session, 'data:text/html,<title>cdp-clipboard</title>'
+      + '<div id="editor" contenteditable="true" style="width:300px;height:60px;border:1px solid black">cdp</div>'
+      + '<script>window.__pastes=[];document.addEventListener("paste",function(e){'
+      + 'window.__pastes.push({id:e.target&&e.target.id,'
+      + 'text:e.clipboardData?(e.clipboardData.getData("text/plain")||""):null,'
+      + 'html:e.clipboardData?(e.clipboardData.getData("text/html")||""):null});'
+      + 'if(e.target&&e.target.id==="editor")e.preventDefault()})</script>', 'load')
+    const info = await clipboard(session,
+      { action: 'paste', text: 'CDP 粘贴', html: '<b>CDP</b>', selector: '#editor' })
+    const recorded = await evaluate(session, 'window.__pastes[window.__pastes.length - 1]')
+    check('CDP 接管下粘贴事件投递生效', info.accepted === true && info.target?.mode === 'selector'
+      && recorded.value?.id === 'editor' && recorded.value?.text === 'CDP 粘贴'
+      && recorded.value?.html === '<b>CDP</b>',
+    JSON.stringify({ info, recorded: recorded.value }))
+
+    // cdp 模式不自动授权，write 的结果取决于用户浏览器，因此只覆盖 sanitize=false 的拒绝路径。
+    const rawMessage = await expectThrow(() => clipboard(session,
+      { action: 'paste', text: 'x', html: '<b>x</b>', sanitize: false }))
+    check('CDP 接管下 sanitize=false 报错', Boolean(rawMessage)
+      && rawMessage.includes('sanitize=false 只在 isolated 模式可用'), String(rawMessage))
   }
 
   console.log('== 用例 4：close 只断开连接 ==')

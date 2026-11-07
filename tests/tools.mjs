@@ -19,7 +19,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
-  attachPageHooks, clearRings, click, consoleEntries, DEFAULT_EVALUATE_TIMEOUT_MS, drag, evaluate, fill, hover,
+  attachPageHooks, clearRings, CLIPBOARD_HTML_LIMIT, CLIPBOARD_TEXT_LIMIT, click, consoleEntries,
+  DEFAULT_EVALUATE_TIMEOUT_MS, drag, evaluate, fill, hover,
   MAX_EVALUATE_TIMEOUT_MS, MIN_EVALUATE_TIMEOUT_MS, navigate,
   NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MAX_MS, NETWORK_BODY_TIMEOUT_MIN_MS, NETWORK_BODY_TIMEOUT_MS,
   networkDetail, networkEntries, RING_LIMIT, scroll, snapshot, waitFor,
@@ -1505,7 +1506,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 22 个（含 read / dialog）', table.length === 22 && names.length === 22, String(table.length))
+    check('工具表共 23 个（含 read / dialog / clipboard）', table.length === 23 && names.length === 23, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
@@ -1531,6 +1532,26 @@ try {
     const scrollTool = definitions.find((definition) => definition.name === 'browser_e2e_scroll')
     check('scroll 参数含 delta_x / delta_y / x / y / tab_id', ['delta_x', 'delta_y', 'x', 'y', 'tab_id'].every((field) => field in scrollTool.parameters.properties),
       JSON.stringify(Object.keys(scrollTool.parameters.properties)))
+
+    const clipboardTool = definitions.find((definition) => definition.name === 'browser_e2e_clipboard')
+    check('clipboard 把 action 列为唯一必填参数且声明 write / paste 枚举',
+      JSON.stringify(clipboardTool.parameters.required) === JSON.stringify(['action'])
+        && JSON.stringify(clipboardTool.parameters.properties.action?.enum) === JSON.stringify(['write', 'paste'])
+        && clipboardTool.parameters.additionalProperties === false,
+      JSON.stringify(clipboardTool.parameters))
+    check('clipboard 参数含 text / html / sanitize / ref / selector / tab_id',
+      ['text', 'html', 'sanitize', 'ref', 'selector', 'tab_id'].every((field) => field in clipboardTool.parameters.properties)
+        && clipboardTool.parameters.properties.text?.type === 'string'
+        && clipboardTool.parameters.properties.html?.type === 'string'
+        && clipboardTool.parameters.properties.sanitize?.type === 'boolean'
+        && clipboardTool.parameters.properties.ref?.type === 'string'
+        && clipboardTool.parameters.properties.selector?.type === 'string',
+      JSON.stringify(Object.keys(clipboardTool.parameters.properties)))
+    check('clipboard 描述里的载荷上限取自 page.js 常量',
+      clipboardTool.description.includes(String(CLIPBOARD_TEXT_LIMIT))
+        && clipboardTool.description.includes(String(CLIPBOARD_HTML_LIMIT))
+        && CLIPBOARD_TEXT_LIMIT === 100000 && CLIPBOARD_HTML_LIMIT === 200000,
+      JSON.stringify({ CLIPBOARD_TEXT_LIMIT, CLIPBOARD_HTML_LIMIT, description: clipboardTool.description }))
 
     const downloadTool = definitions.find((definition) => definition.name === 'browser_e2e_download')
     check('download 参数含两种来源与完整性字段', ['url', 'ref', 'selector', 'x', 'y', 'filename',
