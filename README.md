@@ -59,13 +59,13 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭，结束整个浏览器用 `browser_e2e_close` |
 | `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数。`delta: true` 只返回自上次快照以来的新增 / 变化 / 移除（与 `query` 互斥，默认 ref 继续有效）；`query`（`text` / `selector` / `role`，可加 `limit` 与 `includeHidden`）定位元素并返回可直接点击的 `selector`，不写快照基线；`frame` 读取指定同源 iframe（整数索引或 name / url 子串），子 frame 只读、不分配 ref |
 | `browser_e2e_read` | 结构化读取：按 `controls` / `links` / `tables` / `forms` 四节返回记录（控件带 `role` / `name` / `type` / `value` / `checked` / `options` / 所属表单，链接带绝对 `href`，表格带表头 / 行矩阵 / `totalRows`，表单带 `action` / `fieldCount`）；每条记录带页内校验过的 CSS `selector`，`unique: true` 时可直接传给 `click` / `fill`；`maxItems` 默认 50（1-100），`includeValues` 默认 false（`password` / `file` 永不返回值），`selector` 收窄范围；只读主文档，不写快照 ref |
-| `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一 |
+| `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一；`clickCount` 1-3（缺省 1，2 双击、3 三击），`button` 选 `left` / `right` / `middle`（缺省 `left`），`modifiers` 在点击期间额外按住 `Alt` / `Control` / `Meta` / `Shift` |
 | `browser_e2e_fill` | 向 input / textarea / contenteditable 填入文本：`ref` / `selector` / `x`+`y` 三选一，`value` 必填；`mode` 缺省 `insert`（一次写入并替换）或 `keystrokes`（先清空再逐键，`delayMs` 0-1000，仅 ref / selector） |
 | `browser_e2e_hover` | 悬停：`ref` / `selector` / `x`+`y` 三选一，用真实鼠标移动触发 CSS `:hover` 与 mouseover / mouseenter；`settleMs`（0-5000，默认 300）是悬停后等待页面反应的时长，`0` 表示不等待 |
 | `browser_e2e_drag` | 拖拽：`from` / `to` 各是一个三选一目标（`ref` / `selector` / `x`+`y`）；两侧都是元素时走 Playwright `dragTo`（覆盖 HTML5 draggable 与 pointer 事件），任一侧是坐标时手写鼠标序列；`steps`（1-60，默认 12）控制按下与松开之间的插值 mousemove 次数，`settleMs`（0-5000，默认 300）是释放后的等待 |
 | `browser_e2e_upload` | 把宿主本地文件附加到 `input[type=file]`（真实文件选择路径，不是页面内合成 `File`）：`ref` / `selector` / `x`+`y` 三选一；`files` 必填（绝对路径或数组，最多 20 个，总大小默认 <= 20 MiB，`maxBytes` 可调到 512 MiB）；`clear` 默认 true 覆盖（不追加），`clear: false` 只在没有选择时设置；只接受 `input[type=file]`，不做 label 下钻、不校验 `accept` |
 | `browser_e2e_scroll` | 滚动页面：`delta_x` / `delta_y` 至少一个非 0；给 `x`+`y` 时先移动鼠标到该视口坐标再滚 |
-| `browser_e2e_press` | 按下键盘按键（如 Enter、Tab、Escape、Control+A），作用于当前焦点元素 |
+| `browser_e2e_press` | 键盘按键，作用于当前焦点元素：`action=press`（缺省）按下并抬起一次，`repeat` 1-100 重复；`action=down` 只按下并保持按住，`action=up` 只释放；按住的键按标签页记账，会影响随后的 click / fill，`navigate` 前自动释放 |
 | `browser_e2e_clipboard` | 剪贴板读写：`action=write` 把 `text` 与可选富文本 `html` 写进浏览器剪贴板（isolated 自动授予 `clipboard-write`，cdp 不授权）；`action=paste` 把带 `text/plain` / `text/html` 的 paste 事件投递到 `ref` / `selector` / 当前焦点元素，页面未消费且目标是 input / textarea 时在选区处插入文本。`html` 缺省在页内按白名单净化，`sanitize: false` 只在 isolated 模式允许；不做真实快捷键粘贴，也不回读剪贴板内容 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
 | `browser_e2e_download` | 下载并校验完整性：`url`（HTTP(S) 直接经当前浏览器上下文取回，共享 Cookie / 登录态）或 `ref` / `selector` / `x`+`y`（点击触发 download 事件）二选一；`filename` 覆盖服务器建议名，`maxBytes` 默认 100 MiB（上限 1 GiB），`expectedSha256` 可选强校验，`timeoutMs` 默认 60000；落盘到产物目录的 `downloads/` 子目录（`DSH_BROWSER_DOWNLOAD_DIR` 覆盖），返回路径、字节数与 SHA-256，同名不覆盖 |
@@ -85,6 +85,21 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - 一次最多 2000 个字符（按码点计），且 `delayMs × 字符数` 不超过 30000 ms。
 - 中文与 emoji 走 `Input.insertText`，每个码点只产生一次 input、不产生 keydown；`\t` 不是 Tab 键，移动焦点请用 `browser_e2e_press`。
 - 不回读最终值：受控 / 掩码 / `maxlength` 可能改写值，需要断言时用 `browser_e2e_evaluate`。
+
+### 点击选项与按住按键
+
+`browser_e2e_click` 的三个指针参数缺省时与单击完全一致，事件都来自 Playwright 的真实输入（`isTrusted=true`）：
+
+- `clickCount`（1-3，缺省 1）：`2` 为双击、`3` 为三击；`clickCount=N` 产生 N 组 mousedown / mouseup，`detail` 依次为 1..N，浏览器在第二组派发 `dblclick`。三击是否选中整行由页面决定。
+- `button`（`left` / `right` / `middle`，缺省 `left`）：右键触发页面 `contextmenu`，中键触发 `auxclick`。原生右键菜单与中键开新标签是浏览器行为，工具不负责关闭，也不保证新页进入标签页注册表；验证链接行为优先用左键。
+- `modifiers`（`Alt` / `Control` / `Meta` / `Shift` 数组，缺省不额外按）：在已按住的键之上再按住，点击后只释放本次按下的键。元素路径在 scrollIntoView 与 actionability 期间就已按住，依赖 hover 状态选择器的页面可能因此改变命中；需要严格先定位后按键时拆成 `press action=down` + 不带 `modifiers` 的 `click` + `press action=up`。
+- 摘要：缺省与旧版逐字一致（`点击 @3 (...)`）；双击 / 三击换动作词，右键 / 中键与修饰键在尾部追加括号，如 `双击 @3 (button "Submit")（右键，按住 Shift）`。
+
+`browser_e2e_press` 增加 `action`（`press` / `down` / `up`，缺省 `press`）与 `repeat`（1-100，缺省 1，只对 `action=press` 生效）：
+
+- `action=down` 只发 keydown 并保持按住，`action=up` 只发 keyup；`down` / `up` 只接受单个按键名（含 `Shift` / `Control` / `Alt` / `Meta` 本身），组合键字符串与 `repeat` 一律报错，组合键请用 `action=press`。
+- 按住的键按标签页记账（`heldKeys`），不跨 tab；`navigate` 在 `goto` 前逐个释放并清空。没有自动释放计时：忘记 `action=up` 时该键会一直影响后续 click / fill，直到释放、导航或关页。`action=up` 未按住的键仍发 keyup，返回 `held: false`。
+- 按住状态是真实浏览器行为，不是另一套状态机：随后不带 `modifiers` 的 `click` 会带上该修饰键，`fill` 的 `mode=keystrokes` 会输入被修饰键转换后的字符，`mode=insert` 不受影响。要排除已按住的键，先 `action=up` 释放。
 
 ### 剪贴板
 
@@ -434,6 +449,8 @@ npm run test:integration
 - **下载的边界** —— URL 模式把响应体整体读入内存（`APIResponse` 只有 `body()`），默认 100 MiB、硬上限 1 GiB 是内存风险边界，超大文件改用点击触发模式；URL 请求失败直接报错，不做导航捕获附件的回退；不支持取消、断点续传与重试；点击触发只接本次调用期间的第一个下载事件，`navigate` / `evaluate` 在工具调用之外触发的下载无法追溯；一次只处理一个文件；`Content-Disposition` 缺失且 URL 末段为空时文件名回退 `download`；不按扩展名过滤，也不解析 PDF / 压缩包。
 - **悬停与拖拽只作用于主 frame** —— `browser_e2e_hover` / `browser_e2e_drag` 与 `browser_e2e_click` 一致，只查主框架、不进入 iframe；坐标目标按视口 CSS 像素校验，元素目标不暴露 `force` / `sourcePosition` / `targetPosition`，被遮挡时报 Playwright 超时。拖拽中途页面导航会由 Playwright 报执行上下文销毁；HTML5 目标若不在 `dragover` 里 `preventDefault()`，浏览器会拒绝 drop，这是页面行为，不是工具失败。
 - **逐键输入（`mode=keystrokes`）的边界** —— 不支持坐标目标（无法可靠清空与校验可编辑性）；不支持真实 IME 与组合键，中文 / emoji 走 `Input.insertText`、不产生 keydown / keyup，`\t` 不会移动焦点；`\n` / `\r` 映射为 Enter，单行 input 里可能触发表单提交。工具在最后一个按键后立即返回，不等防抖落定；掩码与受控组件可能改写最终值，工具不回读。后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略按键（不做 focus emulation）。
+- **按住键会残留** —— `browser_e2e_press action=down` 按住的键没有自动释放计时，忘记 `action=up` 时它会一直影响后续 click / fill；`navigate` 前会自动释放，但页面自行导航（页面脚本跳转、链接点击）工具感知不到，需要显式 `action=up`。跨 tab 不自动释放，按住状态只属于按下时的标签页。
+- **右键与中键的浏览器行为** —— 右键会触发页面 `contextmenu`，但原生右键菜单是否弹出取决于模式与浏览器，工具不负责关闭，菜单可能遮挡后续输入（建议随后点击页面空白处）；中键在 isolated 下打开的新页不在本工具标签页注册表里，在 cdp 下会操作用户真实浏览器。验证链接行为优先用左键配页面事件。
 - **对话框处理是「先设策略、后触发」** —— `browser_e2e_dialog` 在对话框打开的事件回调里立即应答（不立即应答页面会冻结），所以无法「先读文案、再按文案决定接受 / 取消」：要验证文案用默认 `dismiss`（记录照写），要走确认分支必须先把 `policy` 设为 `accept` 再触发。策略与记录按标签页隔离，新标签页从 `dismiss` 开始；`beforeunload` 一律接受（与浏览器默认一致）；HTTP 认证、权限请求、`window.print()` 与页面自绘的 `<dialog>` 元素不在覆盖范围；跨源 iframe（OOPIF）里的对话框是否上报未验证。CDP 接管模式下设 `accept` 等于替用户在真实浏览器里点确定。
 - **evaluate 超时只中断当前脚本** —— `browser_e2e_evaluate` 的 `timeoutMs` 到点用 CDP 的 `Runtime.terminateExecution` 中断目标页主线程正在执行的脚本：只中断「正在执行」的那段，表达式返回永不 resolve 的 Promise 时页内等待仍会继续；Worker、跨源 iframe 与同源子 frame 内的死循环是否被中断未验证。中断可能打断页面自己的事件处理或框架渲染，DOM 会停在半完成状态，需要时重新 `browser_e2e_snapshot`。CDP 接管模式下这会打断用户浏览器里该页正在执行的脚本。若把 `DSH_BROWSER_IDLE_MS` 设得小于 `timeoutMs`，浏览器可能先被空闲回收，该次调用报「浏览器尚未启动」。
 - **剪贴板的边界** —— 只作用主 frame，iframe 内可编辑元素不支持；不提供真实快捷键粘贴（`method=system`）与剪贴板读回，验证复制按钮的推荐路径是「点击复制 → `action=paste` 回填 → 断言页面内容」；`sanitize: false` 只在 isolated 模式允许，且 `isolated` headed 下 `write` 改写的是用户真实系统剪贴板；`grantPermissions` 是整表授予，isolated 写入授予会替换此前的 `clipboard-read`，测试每次读回前需重新授予；非 https / localhost / file 的页面没有 `navigator.clipboard`，`write` 报固定错误而 `paste` 不受影响；后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略兜底插入。

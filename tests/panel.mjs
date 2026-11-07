@@ -180,6 +180,24 @@ let upgradeHandler = null
     return fill.required.includes('value') && ['ref', 'selector', 'x', 'y'].every((field) => field in fill.properties)
   })())
   check('browser_e2e_screenshot 参数含 clip/format/quality/scale', ['name', 'fullPage', 'clip', 'format', 'quality', 'scale'].every((k) => k in tools.get('browser_e2e_screenshot').parameters.properties))
+  check('browser_e2e_click / press 描述与参数声明指针和按住动作', (() => {
+    const clickTool = tools.get('browser_e2e_click')
+    const pressTool = tools.get('browser_e2e_press')
+    if (!clickTool || !pressTool) return false
+    const clickParams = clickTool.parameters
+    const pressParams = pressTool.parameters
+    return typeof clickTool.description === 'string' && clickTool.description.includes('clickCount')
+      && clickParams.additionalProperties === false
+      && clickParams.properties.clickCount?.type === 'integer'
+      && JSON.stringify(clickParams.properties.button?.enum) === JSON.stringify(['left', 'right', 'middle'])
+      && clickParams.properties.modifiers?.type === 'array'
+      && JSON.stringify(clickParams.properties.modifiers?.items?.enum) === JSON.stringify(['Alt', 'Control', 'Meta', 'Shift'])
+      && typeof pressTool.description === 'string' && pressTool.description.includes('action=press')
+      && pressParams.additionalProperties === false
+      && JSON.stringify(pressParams.required) === JSON.stringify(['key'])
+      && JSON.stringify(pressParams.properties.action?.enum) === JSON.stringify(['press', 'down', 'up'])
+      && pressParams.properties.repeat?.type === 'integer'
+  })())
   check('browser_e2e_start 的 mode 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode.enum)
     === JSON.stringify(['isolated', 'cdp']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')

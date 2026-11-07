@@ -693,6 +693,7 @@
       <tr><td>截图输出单边 / 总像素</td><td>8192 px / 4194304 px</td><td class="mono">capture.js MAX_SHOT_EDGE / MAX_SHOT_PIXELS</td></tr>
       <tr><td>投屏参数区间</td><td>quality 10-100，maxWidth/Height 100-4096，everyNthFrame 1-10</td><td class="mono">protocol.js PANEL_CONFIG_LIMITS</td></tr>
       <tr><td>面板动作提示</td><td>最近 5 条，新的在前</td><td class="mono">client/index.js ACTION_LIMIT</td></tr>
+      <tr><td>按住键（heldKeys）</td><td>按 tab 记账；navigate 前释放并清空，不设自动计时</td><td class="mono">page.js heldKeys</td></tr>
     </tbody>
   </table>
 </section>
@@ -847,7 +848,7 @@
 
       <!-- 1 -->
       <path d="M130,150 L380,150" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#flArrow)"></path>
-      <text x="255" y="140" font-size="11.5" fill="#334155" text-anchor="middle">browser_e2e_click { target, tab_id }</text>
+      <text x="255" y="140" font-size="11.5" fill="#334155" text-anchor="middle">browser_e2e_click { target, clickCount, button, modifiers, tab_id }</text>
       <text x="255" y="166" font-size="10.5" fill="#64748b" text-anchor="middle">exec.agent.id 即会话 key</text>
 
       <!-- 2 -->

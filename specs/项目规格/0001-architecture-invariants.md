@@ -100,7 +100,9 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | 字段 | 读写方（符号） |
 |---|---|
 | `id` / `page` / `loading` / `origin` | `session.js` 的 `tabs` / `listPanelTabs` 读；`capture.js` 的 `screenshot` 读 `tab.page` |
-| `refs` / `consoleRing` / `networkRing` / `networkByRequest` / `networkContext` / `nextNetworkSeq` / `snapshotBaselines` / `dialogRing` / `dialogPolicy` / `dialogPromptText` | `page.js` 内部读写（`addPage` / `attachPageHooks` / `clearRings` / `snapshot` / `click` / `fill` / `navigate` / `consoleEntries` / `networkEntries` / `networkDetail` / `setDialogPolicy` / `dialogEntries`），不跨模块读取 |
+| `refs` / `consoleRing` / `networkRing` / `networkByRequest` / `networkContext` / `nextNetworkSeq` / `snapshotBaselines` / `dialogRing` / `dialogPolicy` / `dialogPromptText` / `heldKeys` | `page.js` 内部读写（`addPage` / `attachPageHooks` / `clearRings` / `snapshot` / `click` / `fill` / `navigate` / `press` / `consoleEntries` / `networkEntries` / `networkDetail` / `setDialogPolicy` / `dialogEntries`），不跨模块读取；`heldKeys` 是跨调用按住的按键名集合，`navigate` 在 `goto` 前释放并清空 |
+
+`heldKeys` 只由 `press`（`action=down/up`）与 `navigate` 读写，按标签页隔离；页面对象关闭即消失，不参与会话状态机，也不作为不变量判据。
 
 #### 其他跨模块字段
 

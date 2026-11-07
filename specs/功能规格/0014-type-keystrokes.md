@@ -55,6 +55,7 @@
 - 防抖组件：工具在最后一个按键后立即返回，不等组件内部 debounce 落定；调用方需要时用 `browser_e2e_wait` 等目标状态。
 - 掩码输入的最终显示值可能与 value 不同，这是本工具不做读回校验的前提，不是失败。
 - 明确不做：真实 IME、组合键（Control+A 等用 `browser_e2e_press`）、Tab 键、坐标路径的逐键清空、后台标签页 focus emulation。
+- 当前按住的修饰键会作用于逐键输入（先 `browser_e2e_press` 的 `action=down` 按住 Shift，再 `mode=keystrokes` 会得到大写）；按住状态由 `0025-click-modifiers-double-press.md` 定义，本规格不复制释放时机；`mode=insert` 不受修饰键影响。
 
 ## 验收
 

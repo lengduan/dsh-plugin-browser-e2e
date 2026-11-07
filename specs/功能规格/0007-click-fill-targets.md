@@ -29,13 +29,14 @@
 
 ### 点击
 
+- 可选指针参数：`clickCount`（1-3 整数，缺省 1；2 为双击、3 为三击）、`button`（`left` / `right` / `middle`，缺省 `left`）、`modifiers`（`Alt` / `Control` / `Meta` / `Shift` 数组，缺省不额外按）。三者对三条目标路径都生效，目标解析、ref 查表 / 复验、坐标越界与失败文案不变；事件序列、摘要与错误文案见 `0025-click-modifiers-double-press.md`。
 - ref 路径：
   - `assertRefBelongsToTab(tab.refs, ref)` 取条目，不在本页 ref 表时报 `ref ${ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref`；
   - `revalidateRef` 在页面里按 `item.xpath` 用 `document.evaluate` 复验，结果交 `assertRefRevalidated`：未命中报 `ref ${ref} 已失效，请重新 browser_e2e_snapshot`，宽高非正报 `ref ${ref} 已失效（当前尺寸 ${Math.round(check.width)}x${Math.round(check.height)}，不可见），请重新 browser_e2e_snapshot`；
-  - 复验通过后 `page.locator('xpath=' + item.xpath)` 先 `scrollIntoViewIfNeeded()` 再 `click({ timeout: 10000 })`。
-- selector 路径：`page.locator(selector)` 先 `waitFor({ state: 'visible', timeout: 5000 })`，再 `click({ timeout: 10000 })`；等可见超时抛 Playwright 自身的超时错误，未改写成中文文案。
-- 坐标路径：`assertPointInViewport` 通过后 `page.mouse.click(x, y)`，是真实鼠标事件；点中哪个元素完全由页面决定，工具不做命中校验。
-- 返回：ref → `{ mode: 'ref', ref, tag, name, summary }`，摘要 `点击 ${ref} (${tag} "${name}")`；selector → `{ mode: 'selector', selector, summary }`，摘要 `点击 selector "${selector}"`；坐标 → `{ mode: 'point', x, y, summary }`，摘要 `点击坐标 (${x}, ${y})`。
+  - 复验通过后 `page.locator('xpath=' + item.xpath)` 先 `scrollIntoViewIfNeeded()` 再 `click({ timeout: 10000, clickCount, button })`；`modifiers` 用 `page.keyboard.down` / `up` 包裹这次点击。
+- selector 路径：`page.locator(selector)` 先 `waitFor({ state: 'visible', timeout: 5000 })`，再 `click({ timeout: 10000, clickCount, button })`；`modifiers` 同上；等可见超时抛 Playwright 自身的超时错误，未改写成中文文案。
+- 坐标路径：`assertPointInViewport` 通过后 `page.mouse.click(x, y, { clickCount, button })`，`modifiers` 用 `page.keyboard.down` / `up` 包裹；是真实鼠标事件；点中哪个元素完全由页面决定，工具不做命中校验。
+- 返回：ref → `{ mode: 'ref', ref, tag, name, summary }`，摘要 `点击 ${ref} (${tag} "${name}")`；selector → `{ mode: 'selector', selector, summary }`，摘要 `点击 selector "${selector}"`；坐标 → `{ mode: 'point', x, y, summary }`，摘要 `点击坐标 (${x}, ${y})`。三条路径都另带 `clickCount` / `button` / `modifiers`；摘要只在非缺省组合时变化，见 `0025-click-modifiers-double-press.md`。
 - 工具层输出在摘要后追加 `如需继续操作请重新 browser_e2e_snapshot。`。
 
 ### 填写
@@ -57,6 +58,9 @@
 - snapshot 之后元素被移除或变成零尺寸：复验报「已失效」。元素仍在但位置变了：复验只看 xpath 是否命中与宽高是否为正，不比对坐标，仍按 xpath 点击。
 - 组合边界：ref 与 selector 同时给 → 三选一报错；`x` 给而 `y` 缺 → 不算坐标目标；fill 的坐标分支不校验可填类型，点中 checkbox 的行为是点击切换，不会报「可切换控件」。
 - 越界校验依赖页面内尺寸度量：CDP 接管且 `page.evaluate` 抛错时 `viewportBounds` 返回 `null`，越界校验被跳过。
+- 双击 / 三击：`clickCount=N` 产生 N 组 mousedown / mouseup（`detail` 依次 1..N），浏览器在第二组派发一次 `dblclick`；三击是否选中整行由页面决定。
+- 右键 / 中键：页面 `contextmenu` / `auxclick` 会触发；原生右键菜单与中键开新标签是浏览器行为，工具不负责关闭，也不保证新页进入标签页注册表。
+- 修饰键叠加：`modifiers` 在已按住的键之上再按住，点击后只释放本次按下的键；`press action=down` 按住的键会继续影响后续 click / fill，需显式释放，`navigate` 前自动释放。
 
 ## 验收
 
@@ -71,3 +75,4 @@
 2. `node tests/multitab.mjs`：exit 0、无 FAIL。用例 3 的 `带 tab_id 点击 t1 生效`、`t1 的 ref 在 t2 上失效`；用例 6 的 `click 未知 tab 报错`。
 3. `node tests/invariants.mjs`：exit 0、无 FAIL。用例 C 的 `assertRefBelongsToTab 按页隔离：别的页 ref 不存在`、`assertRefRevalidated：未命中与零尺寸是两种文案`。
 4. 缺口（未验证，不据此判定通过）：坐标负数与超视口两侧文案、ref 与 selector 同时给、只给 `x` 或只给 `y`，测试文件里没有对应用例；这几条按 `assertPointInViewport` 与 `targetOf` 的实现口径描述。
+5. `node tests/click-press.mjs`：exit 0、无 FAIL，check 标签见 `0025-click-modifiers-double-press.md` 验收第 1 条；`node tests/tools.mjs` 用例 10 追加 `click 参数含 clickCount / button / modifiers` 与 `press 参数含 action / repeat`。

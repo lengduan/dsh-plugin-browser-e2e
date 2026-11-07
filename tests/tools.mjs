@@ -1533,6 +1533,23 @@ try {
     check('scroll 参数含 delta_x / delta_y / x / y / tab_id', ['delta_x', 'delta_y', 'x', 'y', 'tab_id'].every((field) => field in scrollTool.parameters.properties),
       JSON.stringify(Object.keys(scrollTool.parameters.properties)))
 
+    const clickTool = definitions.find((definition) => definition.name === 'browser_e2e_click')
+    check('click 参数含 clickCount / button / modifiers',
+      ['clickCount', 'button', 'modifiers'].every((field) => field in clickTool.parameters.properties)
+        && clickTool.parameters.properties.clickCount?.type === 'integer'
+        && JSON.stringify(clickTool.parameters.properties.button?.enum) === JSON.stringify(['left', 'right', 'middle'])
+        && clickTool.parameters.properties.modifiers?.type === 'array'
+        && JSON.stringify(clickTool.parameters.properties.modifiers?.items?.enum) === JSON.stringify(['Alt', 'Control', 'Meta', 'Shift'])
+        && clickTool.parameters.additionalProperties === false,
+      JSON.stringify(clickTool.parameters.properties))
+    const pressTool = definitions.find((definition) => definition.name === 'browser_e2e_press')
+    check('press 参数含 action / repeat',
+      JSON.stringify(pressTool.parameters.properties.action?.enum) === JSON.stringify(['press', 'down', 'up'])
+        && pressTool.parameters.properties.repeat?.type === 'integer'
+        && JSON.stringify(pressTool.parameters.required) === JSON.stringify(['key'])
+        && pressTool.parameters.additionalProperties === false,
+      JSON.stringify(pressTool.parameters))
+
     const clipboardTool = definitions.find((definition) => definition.name === 'browser_e2e_clipboard')
     check('clipboard 把 action 列为唯一必填参数且声明 write / paste 枚举',
       JSON.stringify(clipboardTool.parameters.required) === JSON.stringify(['action'])

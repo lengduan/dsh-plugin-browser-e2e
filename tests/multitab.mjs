@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, closeTab, launch, requireSession, tabs } = await import('../lib/session.js')
-const { click, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, snapshot } = await import('../lib/page.js')
+const { click, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, press, snapshot } = await import('../lib/page.js')
 
 const KEY = 'test-multitab-key'
 let session = null
@@ -62,12 +62,14 @@ const baseline = edgeRootCount()
 const server = createServer((req, res) => {
   if (req.url === '/a') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end('<!doctype html><html><head><title>page-a</title></head><body><button id="btn" onclick="window.__hit=\'a\'">A Button</button></body></html>')
+    res.end('<!doctype html><html><head><title>page-a</title></head><body><button id="btn" onclick="window.__hit=\'a\'">A Button</button>'
+      + '<script>window.__mods=[];document.addEventListener("click",function(e){window.__mods.push({shiftKey:e.shiftKey,ctrlKey:e.ctrlKey})})</script></body></html>')
     return
   }
   if (req.url === '/b') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end('<!doctype html><html><head><title>page-b</title></head><body><button id="btn" onclick="window.__hit=\'b\'">B Button</button></body></html>')
+    res.end('<!doctype html><html><head><title>page-b</title></head><body><button id="btn" onclick="window.__hit=\'b\'">B Button</button>'
+      + '<script>window.__mods=[];document.addEventListener("click",function(e){window.__mods.push({shiftKey:e.shiftKey,ctrlKey:e.ctrlKey})})</script></body></html>')
     return
   }
   res.writeHead(404, { 'content-type': 'text/plain' })
@@ -220,6 +222,27 @@ try {
         && Boolean(stuckMessage) && stuckMessage.includes('脚本执行超时')
         && session.pages.size >= 2,
       JSON.stringify({ other: other.value, otherElapsed, stuckMessage, pages: session.pages.size }))
+  }
+  console.log('== 用例 10：按住状态按 tab 隔离 ==')
+  {
+    const firstTab = (await tabs(KEY)).activeTabId
+    const down = await press(session, 'Shift', firstTab, { action: 'down' })
+    // 新建并导航第二个页：navigate 只释放目标页的按住状态。
+    const secondTab = (await navigate(session, `${base}/b`, 'load', { new_tab: true })).tabId
+    const firstHeld = session.pages.get(firstTab).heldKeys.has('Shift')
+    const secondHeld = session.pages.get(secondTab).heldKeys.size
+    await click(session, { selector: '#btn' })
+    const secondMods = (await evaluate(session, 'window.__mods', secondTab)).value
+    await click(session, { selector: '#btn' }, firstTab)
+    const firstMods = (await evaluate(session, 'window.__mods', firstTab)).value
+    const up = await press(session, 'Shift', firstTab, { action: 'up' })
+    check('按住键不跨 tab，navigate 只释放目标页',
+      down.held === true && firstHeld === true && secondHeld === 0
+        && secondMods?.length === 1 && secondMods[0].shiftKey === false
+        && firstMods?.length === 1 && firstMods[0].shiftKey === true
+        && up.held === false && session.pages.get(firstTab).heldKeys.size === 0,
+      JSON.stringify({ firstHeld, secondHeld, secondMods, firstMods }))
+    await closeTab(KEY, secondTab)
   }
 } finally {
   await closeAll()

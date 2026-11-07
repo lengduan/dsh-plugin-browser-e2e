@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, clipboard, dialogEntries, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, setDialogPolicy, upload } = await import('../lib/page.js')
+const { currentTab, clipboard, click, dialogEntries, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, press, setDialogPolicy, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
 
@@ -368,6 +368,60 @@ try {
       { action: 'paste', text: 'x', html: '<b>x</b>', sanitize: false }))
     check('CDP 接管下 sanitize=false 报错', Boolean(rawMessage)
       && rawMessage.includes('sanitize=false 只在 isolated 模式可用'), String(rawMessage))
+  }
+
+  console.log('== 用例 3H：CDP 接管下双击 / 右键 / 按住 Shift 点击 ==')
+  {
+    const html = '<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-click</title></head>'
+      + '<body style="margin:0"><button id="btn" style="position:fixed;left:100px;top:100px;'
+      + 'width:120px;height:40px">CDP Press Me</button>'
+      + '<script>window.__events=[];'
+      + '["mousedown","mouseup","click","dblclick","contextmenu","auxclick"].forEach(function(name){'
+      + 'document.addEventListener(name,function(event){'
+      + 'window.__events.push({type:name,detail:event.detail,button:event.button,'
+      + 'shiftKey:event.shiftKey,ctrlKey:event.ctrlKey})'
+      + '},true)})'
+      + '</script></body></html>'
+    await navigate(session, 'data:text/html;charset=utf-8,' + encodeURIComponent(html), 'load')
+    // CDP 接管的用户浏览器里，插件当前页不一定是窗口的前台 tab（前面的下载用例可能
+    // 让 Edge 自己开过内部页）；后台 tab 上 locator.click 会报 element is outside of the
+    // viewport。这里只把被测页切到前台，属于测试夹具准备，不改插件行为。
+    await currentTab(session).page.bringToFront()
+
+    await evaluate(session, 'window.__events = []')
+    const dbl = await click(session, { selector: '#btn', clickCount: 2 })
+    const dblEvents = (await evaluate(session, 'window.__events')).value
+    const dblClicks = dblEvents.filter((event) => event.type === 'click')
+    const dblDbl = dblEvents.filter((event) => event.type === 'dblclick')
+    await evaluate(session, 'window.__events = []')
+    const right = await click(session, { selector: '#btn', button: 'right' })
+    const rightEvents = (await evaluate(session, 'window.__events')).value
+    const rightClicks = rightEvents.filter((event) => event.type === 'click')
+    const rightMenus = rightEvents.filter((event) => event.type === 'contextmenu')
+    check('CDP 接管下双击与右键事件生效',
+      dbl.clickCount === 2 && dblClicks.length === 2
+        && dblClicks.map((event) => event.detail).join(',') === '1,2'
+        && dblDbl.length === 1
+        && right.button === 'right' && right.summary === '点击 selector "#btn"（右键）'
+        && rightMenus.length === 1 && rightClicks.length === 0,
+      JSON.stringify({ dbl, dblEvents, right, rightEvents }))
+
+    await evaluate(session, 'window.__events = []')
+    const down = await press(session, 'Shift', undefined, { action: 'down' })
+    const heldClick = await click(session, { selector: '#btn' })
+    const heldEvents = (await evaluate(session, 'window.__events')).value
+    const heldClicks = heldEvents.filter((event) => event.type === 'click')
+    const up = await press(session, 'Shift', undefined, { action: 'up' })
+    await evaluate(session, 'window.__events = []')
+    const plainClick = await click(session, { selector: '#btn' })
+    const plainEvents = (await evaluate(session, 'window.__events')).value
+    const plainClicks = plainEvents.filter((event) => event.type === 'click')
+    check('CDP 接管下按住 Shift 点击生效',
+      down.held === true && heldClick.summary === '点击 selector "#btn"'
+        && heldClicks.length === 1 && heldClicks[0].shiftKey === true
+        && up.held === false && plainClick.summary === '点击 selector "#btn"'
+        && plainClicks.length === 1 && plainClicks[0].shiftKey === false,
+      JSON.stringify({ down, up, heldClicks, plainClicks }))
   }
 
   console.log('== 用例 4：close 只断开连接 ==')
