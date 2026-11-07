@@ -189,6 +189,24 @@ console.log('== 用例 D：PanelHub 命令串行队列 ==')
   hub.dispose()
 }
 
+console.log('== 用例 E：configure 先重开投屏再广播状态 ==')
+{
+  const hub = new PanelHub()
+  const order = []
+  hub.restartScreencast = async () => { order.push('restart') }
+  hub.broadcastState = async () => { order.push('broadcast') }
+  const sent = []
+  const result = await hub.handleCommand({ send: (event) => sent.push(event) }, {
+    v: 1,
+    kind: 'configure',
+    config: { quality: 80 },
+  }, false)
+  check('configure 顺序为 restart -> broadcast', order.join(',') === 'restart,broadcast', order.join(','))
+  check('configure 返回 accept 且未回错误', result === 'accept' && sent.length === 0,
+    `${result} / ${JSON.stringify(sent)}`)
+  hub.dispose()
+}
+
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
 process.exit(fail === 0 ? 0 : 1)

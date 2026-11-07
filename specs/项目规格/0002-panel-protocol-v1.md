@@ -94,6 +94,9 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 
 - host：`mergeConfig`（用户当场操作，越界回 `invalid-config`）与 `initialConfigOf`（插件配置可能
   被手改脏，逐字段回退默认）都遍历 `PANEL_CONFIG_LIMITS`。
+- 设置变更的处理顺序：先按新参数重开投屏，再广播状态；socket 的 `configure` 与宿主侧
+  `applyConfig` 都按这个顺序。重开投屏失败由 `screencast-failed` 上报（`Screencast` 内部
+  回调错误并返回 false），广播失败则分别走 `command-failed` / `config-sync-failed`。
 - client：不手写区间、默认值与协议名；`scripts/build-client.mjs` 把 `PANEL_PROTOCOL_VERSION`、
   `PANEL_SOCKET_PATH`、`PANEL_CONFIG_LIMITS`、`DEFAULT_SCREENCAST_CONFIG` 与
   `PANEL_COMMANDS` / `PANEL_EVENTS` 生成常量块，
