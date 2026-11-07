@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：23 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：24 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 23 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 24 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-23 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+24 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -74,6 +74,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
 | `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
+| `browser_e2e_assert` | 一次判定多条断言并逐条给证据：`checks`（1-20 条）每项给 `selector`（配合 `state`，默认 visible）/ `text`（页面可见文本子串，区分大小写）/ `url`（配合 `urlMatch`）/ `expression`（同步表达式）之一；任一条未通过仍成功返回，`pass=false`，`checks[]` 给 index / kind / expected / pass / actual；不等待、不重试；只作用于主文档 |
 | `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装。`timeoutMs` 是执行上限（默认 30000，允许 1000-120000），到点中断页面内正在执行的脚本并报错，页面与标签页保持打开 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
@@ -172,6 +173,14 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - `response` 是页面级事件，子 frame 的请求也可能命中，不提供按 frame 过滤；`url` 只看主框架。
 - `url` 每约 100ms 轮询一次，短于轮询间隔的中间地址可能被跳过；`timeoutMs` 精度同样约 ±100ms。调用中没有取消入口，只能靠 `timeoutMs` 兜底。
 - 单次等待超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能在等待期间被空闲回收（见「进程回收」），长等待前把该值设 0 或调到大于单次等待。
+
+### 断言（browser_e2e_assert）
+
+`browser_e2e_assert` 判定「此刻」是否满足，不等待；需要「直到满足」用 `browser_e2e_wait`（超时仍抛运行时错误，两者是不同工具的不同口径）。一次调用按 `checks` 数组顺序判定 1-20 条，**不短路**：任一条未通过也继续执行，全部完成后统一返回。
+
+- 每条断言必须且只能给 `selector` / `text` / `url` / `expression` 之一（空串按未给处理）。`selector` 配合 `state`（`attached` / `visible` / `hidden` / `detached`，默认 `visible`；可见性口径与快照的 `visibleEnough` 一致，`opacity: 0` 算可见，不做遮挡检测）；`text` 匹配 `document.body.innerText`，区分大小写，`display: none` 的内容不匹配；`url` 匹配主框架完整地址，`urlMatch` 与 `browser_e2e_wait` 同一套 `includes` / `glob` / `regex`；`expression` 是页面内同步表达式，返回 Promise 视为真值、不 await。
+- 未通过不抛错：返回值 `pass=false`，`checks[]` 逐条给 `index` / `kind` / `expected` / `pass` / `actual`（`selector` 条目另带 `state`，`url` 条目另带 `urlMatch`），`summary` 单行列未通过条目号。入参非法（含 `selector` 语法非法）、浏览器未启动、`tab_id` 不存在、执行期间页面关闭才抛错；`expression` 的页面求值异常只让该条失败。
+- 只读：不写 ref 表、不写快照基线、不动事件环；只作用主文档，不穿透 shadow DOM、不含 iframe 子文档。无 `timeoutMs`、不重试、无取消入口；`expression` 在页面内死循环会挂住整次调用（与 `browser_e2e_evaluate` 的既有边界同源，evaluate 的超时上限不作用于本工具）。
 
 ### 截图
 
@@ -321,6 +330,7 @@ browser_e2e_dialog { limit: 20 }
 browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
 browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
+browser_e2e_assert { checks: [{ selector: "#ok", state: "visible" }, { text: "已提交" }, { url: "**/result", urlMatch: "glob" }] }
 browser_e2e_console { limit: 50 }
 browser_e2e_console { level: "error" }
 browser_e2e_network { limit: 20 }
@@ -371,6 +381,9 @@ node tests/download.mjs
 # wait 的 url / response 条件：真起无头 Edge + 本地 HTTP 夹具（不在 test:integration 聚合里，单独跑）
 node tests/wait.mjs
 
+# 断言工具：真起无头 Edge + 本地 HTTP 夹具（在 test:integration 聚合里，串行真起无头 Edge）
+node tests/assert.mjs
+
 # 文件上传：宿主侧路径校验 / ref、selector、坐标三条下发路径 / 覆盖与清空（真起无头 Edge）
 node tests/upload.mjs
 
@@ -392,7 +405,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（23 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（24 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -426,7 +439,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。23 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。24 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。

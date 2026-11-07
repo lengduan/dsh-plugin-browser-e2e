@@ -1641,7 +1641,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 23 个（含 read / dialog / clipboard）', table.length === 23 && names.length === 23, String(table.length))
+    check('工具表共 24 个（含 read / dialog / clipboard / assert）', table.length === 24 && names.length === 24, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
@@ -1704,6 +1704,19 @@ try {
         && clipboardTool.description.includes(String(CLIPBOARD_HTML_LIMIT))
         && CLIPBOARD_TEXT_LIMIT === 100000 && CLIPBOARD_HTML_LIMIT === 200000,
       JSON.stringify({ CLIPBOARD_TEXT_LIMIT, CLIPBOARD_HTML_LIMIT, description: clipboardTool.description }))
+
+    const assertTool = definitions.find((definition) => definition.name === 'browser_e2e_assert')
+    check('browser_e2e_assert 把 checks 列为唯一必填参数并声明四选一条件',
+      JSON.stringify(assertTool?.parameters.required) === JSON.stringify(['checks'])
+        && assertTool.parameters.additionalProperties === false
+        && assertTool.parameters.properties.checks?.type === 'array'
+        && assertTool.parameters.properties.checks?.items?.type === 'object'
+        && assertTool.parameters.properties.checks.items.additionalProperties === false
+        && ['selector', 'text', 'url', 'expression', 'state', 'urlMatch']
+          .every((field) => assertTool.parameters.properties.checks.items.properties?.[field]?.type === 'string')
+        && 'tab_id' in assertTool.parameters.properties
+        && assertTool.description.includes('pass=false'),
+      JSON.stringify(assertTool?.parameters))
 
     const downloadTool = definitions.find((definition) => definition.name === 'browser_e2e_download')
     check('download 参数含两种来源与完整性字段', ['url', 'ref', 'selector', 'x', 'y', 'filename',
