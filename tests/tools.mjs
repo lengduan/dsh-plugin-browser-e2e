@@ -11,6 +11,7 @@
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
+import { inflateSync } from 'node:zlib'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -59,6 +60,81 @@ function check(label, ok, detail) {
 function pngSize(file) {
   const buffer = readFileSync(file)
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
+}
+
+/** PNG 行滤波的 Paeth 预测（decodePng 用）。 */
+function paeth(a, b, c) {
+  const p = a + b - c
+  const pa = Math.abs(p - a)
+  const pb = Math.abs(p - b)
+  const pc = Math.abs(p - c)
+  if (pa <= pb && pa <= pc) return a
+  return pb <= pc ? b : c
+}
+
+/**
+ * 最小 PNG 解码：只支持 8 位非隔行的 RGB / RGBA（Playwright 与 CDP 截图都是这两种）。
+ * 返回 { width, height, pixel(x, y) }，供像素级断言使用。
+ */
+function decodePng(file) {
+  const buffer = readFileSync(file)
+  let offset = 8
+  let width = 0
+  let height = 0
+  let colorType = 0
+  let bitDepth = 0
+  const chunks = []
+  while (offset + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset)
+    const type = buffer.toString('ascii', offset + 4, offset + 8)
+    const data = buffer.subarray(offset + 8, offset + 8 + length)
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0)
+      height = data.readUInt32BE(4)
+      bitDepth = data[8]
+      colorType = data[9]
+    } else if (type === 'IDAT') {
+      chunks.push(data)
+    } else if (type === 'IEND') {
+      break
+    }
+    offset += 12 + length
+  }
+  const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : 0
+  if (bitDepth !== 8 || channels === 0) {
+    throw new Error(`不支持的 PNG：bitDepth=${bitDepth} colorType=${colorType}`)
+  }
+  const raw = inflateSync(Buffer.concat(chunks))
+  const stride = width * channels
+  const pixels = Buffer.alloc(height * stride)
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * (stride + 1)
+    const filter = raw[rowStart]
+    const line = raw.subarray(rowStart + 1, rowStart + 1 + stride)
+    const out = pixels.subarray(y * stride, (y + 1) * stride)
+    const prev = y > 0 ? pixels.subarray((y - 1) * stride, y * stride) : null
+    for (let i = 0; i < stride; i += 1) {
+      const left = i >= channels ? out[i - channels] : 0
+      const up = prev ? prev[i] : 0
+      const upLeft = prev && i >= channels ? prev[i - channels] : 0
+      let value
+      if (filter === 0) value = line[i]
+      else if (filter === 1) value = line[i] + left
+      else if (filter === 2) value = line[i] + up
+      else if (filter === 3) value = line[i] + Math.floor((left + up) / 2)
+      else if (filter === 4) value = line[i] + paeth(left, up, upLeft)
+      else throw new Error(`未知 PNG 行滤波 ${filter}`)
+      out[i] = value & 0xff
+    }
+  }
+  return {
+    width,
+    height,
+    pixel(x, y) {
+      const i = y * stride + x * channels
+      return { r: pixels[i], g: pixels[i + 1], b: pixels[i + 2] }
+    },
+  }
 }
 
 /** 期望某次调用抛错，返回错误信息（没抛错返回 null）。 */
@@ -343,6 +419,35 @@ try {
 
     const badClip = await expectThrow(() => screenshot(session, currentTab(session), { clip: { x: 1.5, y: 0, width: 10, height: 10 } }))
     check('非整数 clip 报错', Boolean(badClip) && badClip.includes('整数'), String(badClip))
+
+    // 滚动后：数值倍率路径必须按页面坐标截取（不能截到文档顶部），无 clip 时倍率要真实生效。
+    await navigate(session, 'data:text/html,<body style="margin:0">'
+      + '<div style="height:800px;background:rgb(255,0,0)"></div>'
+      + '<div style="height:1600px;background:rgb(0,0,255)"></div></body>', 'load')
+    await evaluate(session, 'window.scrollTo(0, 1000)')
+    await sleep(100)
+    const scrolledClip = { x: 0, y: 0, width: 100, height: 100 }
+    const cssShot = await screenshot(session, currentTab(session), { name: 'scroll-css', clip: scrolledClip, scale: 'css' })
+    const scaleOneShot = await screenshot(session, currentTab(session), { name: 'scroll-scale-1', clip: scrolledClip, scale: 1 })
+    const cssPixel = decodePng(cssShot.file).pixel(50, 50)
+    const scaleOnePixel = decodePng(scaleOneShot.file).pixel(50, 50)
+    check('滚动后 clip 取到视口内容（蓝色，不是白图）', cssPixel.b > 200 && cssPixel.r < 80, JSON.stringify(cssPixel))
+    check('滚动后 scale:1 与 scale:"css" 像素一致', JSON.stringify(cssPixel) === JSON.stringify(scaleOnePixel),
+      `css=${JSON.stringify(cssPixel)} scale1=${JSON.stringify(scaleOnePixel)}`)
+
+    const viewportScaled = await screenshot(session, currentTab(session), { name: 'viewport-scale-2', scale: 2 })
+    const viewportSize = pngSize(viewportScaled.file)
+    check('无 clip scale:2 输出 1600x1200（倍率真实生效）', viewportSize.width === 1600 && viewportSize.height === 1200
+      && viewportScaled.meta.scale === 2, `${JSON.stringify(viewportSize)} meta=${JSON.stringify(viewportScaled.meta)}`)
+    const tooBigPixels = await expectThrow(() => screenshot(session, currentTab(session), { scale: 3 }))
+    check('无 clip scale:3 输出 2400x1800 超像素上限报错', Boolean(tooBigPixels)
+      && tooBigPixels.includes('超出上限') && tooBigPixels.includes('4320000'), String(tooBigPixels))
+
+    const fullPageShot = await screenshot(session, currentTab(session), { name: 'full-scale-1', fullPage: true, scale: 1 })
+    const fullPageDecoded = decodePng(fullPageShot.file)
+    check('整页 scale:1 输出 800x2400 且上下两段颜色正确', fullPageDecoded.width === 800 && fullPageDecoded.height === 2400
+      && fullPageDecoded.pixel(10, 10).r > 200 && fullPageDecoded.pixel(10, 2390).b > 200,
+    `${fullPageDecoded.width}x${fullPageDecoded.height} top=${JSON.stringify(fullPageDecoded.pixel(10, 10))} bottom=${JSON.stringify(fullPageDecoded.pixel(10, 2390))}`)
   }
 
   console.log('== 用例 8：browser_e2e_wait ==')
