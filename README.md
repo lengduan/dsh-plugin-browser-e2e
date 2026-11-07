@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：24 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：25 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 24 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 25 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-24 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+25 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -75,6 +75,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
 | `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
 | `browser_e2e_assert` | 一次判定多条断言并逐条给证据：`checks`（1-20 条）每项给 `selector`（配合 `state`，默认 visible）/ `text`（页面可见文本子串，区分大小写）/ `url`（配合 `urlMatch`）/ `expression`（同步表达式）之一；任一条未通过仍成功返回，`pass=false`，`checks[]` 给 index / kind / expected / pass / actual；不等待、不重试；只作用于主文档 |
+| `browser_e2e_recipe` | 一次按顺序执行 1-20 个声明式步骤（`navigate` / `wait` / `click` / `fill` / `press` / `hover` / `scroll` / `extract`）：首个失败即停、已执行步骤不回滚，返回逐步 PASS / FAIL、失败步号与 `extract` 输出；步骤字段与对应工具同名，`wait` 步不接受 `expression`、没有 `evaluate` 步骤（不执行调用方脚本）；总预算 `timeoutMs` 默认 60000（1000-120000），只在步骤之间检查；全部输出合计上限 20000 字符 |
 | `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装。`timeoutMs` 是执行上限（默认 30000，允许 1000-120000），到点中断页面内正在执行的脚本并报错，页面与标签页保持打开 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
@@ -181,6 +182,18 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - 每条断言必须且只能给 `selector` / `text` / `url` / `expression` 之一（空串按未给处理）。`selector` 配合 `state`（`attached` / `visible` / `hidden` / `detached`，默认 `visible`；可见性口径与快照的 `visibleEnough` 一致，`opacity: 0` 算可见，不做遮挡检测）；`text` 匹配 `document.body.innerText`，区分大小写，`display: none` 的内容不匹配；`url` 匹配主框架完整地址，`urlMatch` 与 `browser_e2e_wait` 同一套 `includes` / `glob` / `regex`；`expression` 是页面内同步表达式，返回 Promise 视为真值、不 await。
 - 未通过不抛错：返回值 `pass=false`，`checks[]` 逐条给 `index` / `kind` / `expected` / `pass` / `actual`（`selector` 条目另带 `state`，`url` 条目另带 `urlMatch`），`summary` 单行列未通过条目号。入参非法（含 `selector` 语法非法）、浏览器未启动、`tab_id` 不存在、执行期间页面关闭才抛错；`expression` 的页面求值异常只让该条失败。
 - 只读：不写 ref 表、不写快照基线、不动事件环；只作用主文档，不穿透 shadow DOM、不含 iframe 子文档。无 `timeoutMs`、不重试、无取消入口；`expression` 在页面内死循环会挂住整次调用（与 `browser_e2e_evaluate` 的既有边界同源，evaluate 的超时上限不作用于本工具）。
+
+### 多步步骤（recipe）
+
+`browser_e2e_recipe` 把「登录 → 填表 → 提交」这类固定动作串成一次调用：`steps` 是 1-20 个声明式步骤，按数组顺序执行；首个失败即停，**已执行步骤不回滚**，返回值给出逐步 PASS / FAIL、失败步号与 `extract` 输出。整次调用只产生一条面板 `action` 事件，摘要取报告首行。
+
+- **步骤类型**：`navigate`（`url` / `waitUntil`）、`wait`（`selector` / `url` / `response` 三选一及其专属参数）、`click` / `fill` / `hover`（`ref` / `selector` / `x`+`y` 三选一）、`press`（`key`）、`scroll`（`delta_x` / `delta_y`）、`extract`（`selector` / `mode` / `attribute` / `limit`）。字段名与对应工具的顶层参数同名，参数语义与错误文案沿用该工具，不另立一套。
+- **不执行调用方脚本**：没有 `evaluate` 步骤，`wait` 步不接受 `expression` 条件；步骤是数据不是代码。需要页面内脚本请单独调用 `browser_e2e_evaluate`。
+- **校验先行**：条数、步骤对象、`type`、每类可用字段白名单、必填与枚举 / 区间、三选一、`wait` 条件与专属参数、`extract` 的 `mode` / `attribute` / `limit` 都在任何页面动作之前完成；不合法直接抛错，一个动作都不执行。`fill` 的 `mode` ↔ `delayMs` 耦合、坐标越界、selector 语法与 ref 失效等仍由被复用的能力函数在步骤执行时判定，表现为该步失败。
+- **总预算**：`timeoutMs` 默认 60000，允许 1000-120000，只在步骤之间检查；正在执行的 Playwright 动作无法中断，末步之后补一次检查并如实报超预算。`wait` 步的实际等待上限取「步 `timeoutMs`（1000-60000，默认 10000）」与剩余预算的较小值。
+- **结果形状**：全部完成 `recipe 完成：n/m 步…`；某步失败 `recipe 在第 i 步（type）失败…` 并附 `FAIL [i]` 行；超预算与标签页中途关闭各有专门摘要。步骤失败**不抛错**，由 `ok:false` 与失败步表达；只有一级校验、浏览器未启动、`tab_id` 不存在、入口时页面已关闭才抛错。
+- **`extract`**：`selector` 缺省 `body`，`mode` 为 `text` / `html` / `links` / `attribute`（默认 `text`；`attribute` 模式必填 `attribute`；`links` 取前 `limit` 条 `a[href]`，默认 100、上限 200）。只读主文档，不穿透 iframe 与 shadow DOM；所有输出合计上限 20000 字符，超出截断并标注。
+- **边界**：一个 recipe 只作用于一个标签页（`tab_id` 或 active tab），没有 `new_tab`、跨 tab 与嵌套；`navigate` 步沿用既有语义清空 ref 表，因此其后的 `ref` 步必然报 ref 不存在，改用 `selector` / `x`+`y`。没有分支 / 循环 / 变量 / 步骤间取值传递、失败重试、并行步骤与步骤级截图。
 
 ### 截图
 
@@ -331,6 +344,7 @@ browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
 browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
 browser_e2e_assert { checks: [{ selector: "#ok", state: "visible" }, { text: "已提交" }, { url: "**/result", urlMatch: "glob" }] }
+browser_e2e_recipe { steps: [{ type: "wait", selector: "#user" }, { type: "fill", selector: "#user", value: "demo" }, { type: "fill", selector: "#pass", value: "secret" }, { type: "click", selector: "#submit" }, { type: "wait", selector: "#result" }, { type: "extract", selector: "#result" }] }
 browser_e2e_console { limit: 50 }
 browser_e2e_console { level: "error" }
 browser_e2e_network { limit: 20 }
@@ -384,6 +398,9 @@ node tests/wait.mjs
 # 断言工具：真起无头 Edge + 本地 HTTP 夹具（在 test:integration 聚合里，串行真起无头 Edge）
 node tests/assert.mjs
 
+# 声明式多步步骤：纯校验 / 渲染组（不启动浏览器）+ 执行组（真起无头 Edge + 本地 HTTP 夹具）
+node tests/recipe.mjs
+
 # 文件上传：宿主侧路径校验 / ref、selector、坐标三条下发路径 / 覆盖与清空（真起无头 Edge）
 node tests/upload.mjs
 
@@ -405,7 +422,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（24 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（25 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -439,7 +456,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。24 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。25 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。

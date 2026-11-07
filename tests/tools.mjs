@@ -1641,7 +1641,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 24 个（含 read / dialog / clipboard / assert）', table.length === 24 && names.length === 24, String(table.length))
+    check('工具表共 25 个（含 read / dialog / clipboard / assert / recipe）', table.length === 25 && names.length === 25, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
@@ -1717,6 +1717,34 @@ try {
         && 'tab_id' in assertTool.parameters.properties
         && assertTool.description.includes('pass=false'),
       JSON.stringify(assertTool?.parameters))
+
+    const recipeTool = definitions.find((definition) => definition.name === 'browser_e2e_recipe')
+    check('browser_e2e_recipe 把 steps 列为唯一必填参数并声明 step 对象', (() => {
+      const parameters = recipeTool?.parameters
+      const item = parameters?.properties?.steps?.items
+      return parameters?.additionalProperties === false
+        && JSON.stringify(parameters.required) === JSON.stringify(['steps'])
+        && parameters.properties.steps?.type === 'array'
+        && item?.type === 'object' && item.additionalProperties === false
+        && JSON.stringify(item.required) === JSON.stringify(['type'])
+        && JSON.stringify(item.properties?.type?.enum)
+          === JSON.stringify(['navigate', 'wait', 'click', 'fill', 'press', 'hover', 'scroll', 'extract'])
+        && ['url', 'waitUntil', 'selector', 'state', 'response', 'urlMatch', 'responseMethod',
+          'statusMin', 'statusMax', 'includeBuffered', 'failOnRequestFailed', 'expression',
+          'ref', 'x', 'y', 'value', 'mode', 'delayMs', 'key', 'settleMs', 'delta_x', 'delta_y',
+          'attribute', 'limit', 'timeoutMs'].every((field) => field in item.properties)
+        && parameters.properties.timeoutMs?.type === 'integer'
+        && parameters.properties.tab_id?.type === 'string'
+    })(), JSON.stringify(recipeTool?.parameters))
+    check('browser_e2e_recipe 描述声明常量与不执行调用方脚本',
+      typeof recipeTool?.description === 'string'
+        && recipeTool.description.includes('1-20')
+        && recipeTool.description.includes('60000')
+        && recipeTool.description.includes('1000-120000')
+        && recipeTool.description.includes('20000')
+        && recipeTool.description.includes('不接受 expression 条件')
+        && recipeTool.description.includes('没有 evaluate 步骤'),
+      String(recipeTool?.description))
 
     const downloadTool = definitions.find((definition) => definition.name === 'browser_e2e_download')
     check('download 参数含两种来源与完整性字段', ['url', 'ref', 'selector', 'x', 'y', 'filename',
