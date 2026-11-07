@@ -315,6 +315,26 @@ try {
     check('ref 点击生效', flag.value === true, JSON.stringify(clicked))
   }
 
+  console.log('== 用例 4B：id 含引号时 label[for] 不破坏 snapshot ==')
+  {
+    // id 里带双引号：未转义时查询串变成 label[for="a"b"]，querySelector 抛 SyntaxError，
+    // 整次 snapshot 失败。这里验的是快照脚本对 id 做 CSS 转义。
+    const quotedHtml = '<body><label for=\'a"b\'>引号标签</label>'
+      + '<input id=\'a"b\' style="position:fixed;left:10px;top:10px;width:120px;height:24px"></body>'
+    await navigate(session, 'data:text/html;charset=utf-8,' + encodeURIComponent(quotedHtml), 'load')
+    let info = null
+    let snapshotError = null
+    try {
+      info = await snapshot(session)
+    } catch (error) {
+      snapshotError = error
+    }
+    check('id 含引号时 snapshot 不抛错', snapshotError === null, String(snapshotError))
+    const quoted = info?.nodes.find((node) => node.id === 'a"b')
+    check('id 含引号时仍能读到 label[for] 文本', quoted?.name === '引号标签',
+      JSON.stringify({ names: info?.nodes.map((node) => node.name) }))
+  }
+
   console.log('== 用例 5：selector 点击 / 坐标点击 ==')
   {
     await navigate(session, 'data:text/html,<button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button>', 'load')
