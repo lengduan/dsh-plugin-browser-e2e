@@ -19,7 +19,7 @@ import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
   tabs,
 } from '../lib/session.js'
-import { navigate } from '../lib/page.js'
+import { navigate, titleOf } from '../lib/page.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
   PANEL_PROTOCOL_VERSION, PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelErrorCode,
@@ -644,6 +644,45 @@ await check('复用分支与 close 并发：close 先生效时 launch 只能抛�
   assert.match(String(outcome.error?.message), /浏览器已关闭（(?:复用|启动)与关闭并发）/)
   assert.equal(session.state, 'closed')
   assert.equal(session.pages.size, 0, '补建出的页不应登记到已关闭的会话')
+})
+
+console.log('== 用例 I：page.js 标题兜底 ==')
+await check('titleOf：标题先返回时清掉 400ms 兜底定时器', async () => {
+  const cleared = []
+  const realClearTimeout = globalThis.clearTimeout
+  globalThis.clearTimeout = (timer) => {
+    cleared.push(timer)
+    return realClearTimeout(timer)
+  }
+  try {
+    assert.equal(await titleOf({ title: async () => '页面标题' }), '页面标题')
+    assert.equal(cleared.length, 1, '标题正常返回后应清掉兜底定时器')
+  } finally {
+    globalThis.clearTimeout = realClearTimeout
+  }
+})
+
+await check('titleOf：标题超时返回空串，同样清理定时器', async () => {
+  const cleared = []
+  const realClearTimeout = globalThis.clearTimeout
+  globalThis.clearTimeout = (timer) => {
+    cleared.push(timer)
+    return realClearTimeout(timer)
+  }
+  try {
+    const pending = new Promise(() => {})
+    // titleOf 的兜底定时器 unref 过，单独等它会让事件循环空转退出；
+    // 并行持一个 ref 的 500ms 定时器，保证 400ms 兜底分支真的被跑到。
+    let title
+    await Promise.all([
+      titleOf({ title: () => pending }).then((value) => { title = value }),
+      new Promise((resolve) => { setTimeout(resolve, 500) }),
+    ])
+    assert.equal(title, '')
+    assert.equal(cleared.length, 1, '超时分支也应清掉已触发的定时器句柄')
+  } finally {
+    globalThis.clearTimeout = realClearTimeout
+  }
 })
 
 await closeAll()
