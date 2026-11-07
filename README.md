@@ -68,7 +68,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
 | `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100） |
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
-| `browser_e2e_wait` | 等待条件：`selector`（配合 `state`：attached / visible / hidden / detached）或 `expression`（页面内 JS 表达式，返回真值即满足）二选一，`timeoutMs` 默认 10000，超时报实际等待时长 |
+| `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
 | `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
@@ -90,6 +90,26 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - `browser_e2e_navigate` 在调用 `page.goto` 之前还会主动清一次，保证导航失败时旧记录不会挂在本次导航结果上；新文档自身的请求会在 `request` 事件里重新登记，不会被这次清空误删。
 - 子 frame 导航只把该 frame 的增量基线标记失效（页面脚本注册表 epoch 变化时 delta 退化为全量），主文档基线不动。
 - 主框架开始导航时该页 `loading` 置为 true，`domcontentloaded` / `load` 后置 false，面板 tab 上显示「加载中」。
+
+### 等待 URL 与网络响应
+
+`browser_e2e_wait` 在 `selector` / `expression` 之外支持两类条件。四个条件必须且只能给一个；`state` 只对 selector、`urlMatch` 只对 url / response、response 专属参数只对 response 生效，错配直接报错：
+
+- `url`：等待主框架地址命中。匹配对象是 `page.url()`（含 hash；`pushState` / `replaceState` 也会更新）。调用开始先同步比对一次，命中则立即返回 `matchedCurrent: true`；未命中按约 100ms 轮询，命中时 `matchedCurrent: false`。只看地址，不等文档加载完成——文档生命周期留给 `browser_e2e_navigate` 的 `waitUntil`。超时错误带当前地址；等待期间关页立即报错。
+- `response`：等待匹配的响应。条件为 URL 匹配 + 可选 `responseMethod`（比较时两边转大写）+ `statusMin`~`statusMax`（100-599 整数，默认全区间）。`includeBuffered` 默认 true，会先按发生顺序回放该标签页 `networkRing` 里 `status > 0` 的记录并立即返回 `buffered: true`；缓冲窗口是「当前文档」，与「事件环重置」同一判据，上限 `RING_LIMIT` 条（500），CDP 接管模式只覆盖接管后挂上监听的记录。等待未来响应时临时监听 `response` / `requestfailed` / `close` / `crash`，结束即移除。`failOnRequestFailed` 默认 true，匹配 URL 与 method 的请求失败会立即报错；设为 false 则继续等待并把失败请求写进超时诊断。超时错误带条件、已缓冲条数、状态不符的响应与失败请求（各最多 3 条），并提示缓存 / Service Worker 响应可能不产生 `response` 事件。
+
+`url` 与 `response` 共用 `urlMatch`，匹配对象都是完整 URL 字符串、区分大小写：
+
+- `includes`（默认）：`url.includes(pattern)` 子串命中；
+- `glob`：整串匹配，`*` 匹配非 `/` 的任意个字符，`**` 匹配任意字符（含 `/`），`?` 匹配单个非 `/` 字符；
+- `regex`：`pattern` 当 JS 正则源（子串语义，不自动加 `^` / `$`），编译失败直接报错。
+
+边界与风险：
+
+- `includeBuffered: true` 会让等待前已完成的同 URL 响应立即命中。对同一 URL 周期性轮询的页面，等「点击后新发起的那一次」要传 `includeBuffered: false`，或用更精确的 URL / method / status 条件。
+- `response` 是页面级事件，子 frame 的请求也可能命中，不提供按 frame 过滤；`url` 只看主框架。
+- `url` 每约 100ms 轮询一次，短于轮询间隔的中间地址可能被跳过；`timeoutMs` 精度同样约 ±100ms。调用中没有取消入口，只能靠 `timeoutMs` 兜底。
+- 单次等待超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能在等待期间被空闲回收（见「进程回收」），长等待前把该值设 0 或调到大于单次等待。
 
 ### 截图
 
@@ -216,6 +236,8 @@ browser_e2e_drag { from: { ref: "@3" }, to: { ref: "@6" }, steps: 12 }
 browser_e2e_press { key: "Enter" }
 browser_e2e_upload { selector: "input[type=file]", files: "C:\\tmp\\report.pdf" }
 browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
+browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
+browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
 browser_e2e_console { limit: 50 }
 browser_e2e_network { limit: 20 }
 browser_e2e_screenshot { name: "result", fullPage: true }
@@ -258,6 +280,9 @@ node tests/reclaim.mjs
 
 # 工具能力：console / network / 全 DOM 快照与 4000 截断 / 三种点击 / fill 三种目标 / 悬停 / 拖拽 / scroll / 截图倍率 / wait
 node tests/tools.mjs
+
+# wait 的 url / response 条件：真起无头 Edge + 本地 HTTP 夹具（不在 test:integration 聚合里，单独跑）
+node tests/wait.mjs
 
 # 文件上传：宿主侧路径校验 / ref、selector、坐标三条下发路径 / 覆盖与清空（真起无头 Edge）
 node tests/upload.mjs

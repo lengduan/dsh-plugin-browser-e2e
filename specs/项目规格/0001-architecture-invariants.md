@@ -111,7 +111,10 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_snapshot`：`summary` / `url` / `tabId` / `text` / `mode` / `frame` / `baseline` / `added` / `changed` / `removed` / `matches` / `truncated` / `scanTruncated`（`mode` / `frame` / `scanTruncated` 各模式都返回；`baseline` / `added` / `changed` / `removed` 只在 delta，`matches` 只在 query）；
   - `browser_e2e_screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等）；
   - `browser_e2e_console` / `browser_e2e_network`：`summary` / `count` / `total` / `text`；
-  - `browser_e2e_wait`：`summary` / `state` / `timeoutMs`；
+  - `browser_e2e_wait`：`summary` / `mode` / `timeoutMs` / `elapsedMs`；
+    selector 条件另读 `state`；url 条件另读 `urlMatch` / `matchedUrl` / `matchedCurrent`；
+    response 条件另读 `urlMatch` / `responseMethod` / `statusMin` / `statusMax` / `includeBuffered` /
+    `matchedResponse`（`url` / `method` / `status` / `mimeType` / `at` / `buffered`）；
   - `browser_e2e_evaluate`：`summary` / `value`；
   - `browser_e2e_click` / `fill` / `hover` / `drag` / `scroll` / `press` / `close`：只读 `summary`；
   - `browser_e2e_upload`：`summary` / `multiple` / `accept` / `totalBytes` / `visible` / `replaced` / `selected`。
