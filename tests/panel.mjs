@@ -19,7 +19,7 @@ import { WebSocket } from 'ws'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { mergeConfig, PanelHub } = await import('../lib/panel.js')
-const { PANEL_STATE_PATH, PANEL_SOCKET_PATH, PANEL_PROTOCOL_VERSION } = await import('../lib/protocol.js')
+const { PANEL_STATE_PATH, PANEL_SOCKET_PATH, PANEL_PROTOCOL_VERSION, PANEL_COMMANDS, PANEL_EVENTS, PANEL_ERROR_CODES } = await import('../lib/protocol.js')
 const { isLoopbackRequest, isLoopbackAddress, isLoopbackHostname } = await import('../lib/fence.js')
 const { activeSessionKeys, closeAll, listPanelTabs } = await import('../lib/session.js')
 const { apply } = await import('../lib/index.js')
@@ -83,6 +83,16 @@ console.log('== 用例 B：设置合并 ==')
   error = null
   try { mergeConfig(null, base) } catch (e) { error = e.message }
   check('config 非对象报错', typeof error === 'string', String(error))
+}
+
+console.log('== 用例 C0：协议零改动（动作历史抽屉只改客户端，不新增命令 / 事件 / 错误码）==')
+{
+  const counts = [
+    Object.values(PANEL_COMMANDS).length,
+    Object.values(PANEL_EVENTS).length,
+    Object.values(PANEL_ERROR_CODES).length,
+  ]
+  check('命令 / 事件 / 错误码计数为 5 / 5 / 13', counts.join(' ') === '5 5 13', counts.join(' '))
 }
 
 console.log('== 用例 C：插件注册面（表驱动的工具契约）==')

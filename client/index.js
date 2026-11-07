@@ -39,8 +39,10 @@ window.__ModuleLoader__.load({
     const PLUGIN_TAG = "browser-e2e";
     /** tab 类型 id；tab 注册、pane.tab、pane.tab.title 三处共用。 */
     const TAB_ID = "dsh-browser-e2e";
-    /** 只保留最近这么多条动作提示（新的在前）。 */
+    /** 内联动作提示只保留最近这么多条（新的在前）。 */
     const ACTION_LIMIT = 5;
+    /** 历史抽屉保留的动作条数（新的在前），必须 ≥ ACTION_LIMIT。 */
+    const ACTION_HISTORY_LIMIT = 50;
     /** tab 类型 kind，供 openTabIn/openTab 按类型点名。 */
     const TAB_KIND = "browser-e2e";
     /** 重连退避起点与上限（毫秒）。 */
@@ -93,6 +95,11 @@ window.__ModuleLoader__.load({
       "配置尚未就绪": "Configuration is not ready",
       "宿主未提供这项配置": "The host does not expose this setting",
       "还没有动作": "No action yet",
+      "历史": "History",
+      "操作历史": "Action history",
+      "关闭": "Close",
+      "共 ": "Total ",
+      " 条": " items",
       "浏览器面板设置": "Browser panel settings",
       "插件设置": "Plugin settings",
       "浏览器端到端验证工具与实时面板": "Browser E2E tools with a live panel",
@@ -140,6 +147,14 @@ window.__ModuleLoader__.load({
       traceLine: { display: "flex", alignItems: "baseline", gap: 6, fontSize: "0.8em", opacity: 0.65, minWidth: 0 },
       traceTime: { flex: "0 0 auto", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },
       traceText: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      history: { flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px", background: "rgba(0,0,0,.06)", borderRadius: 8, boxSizing: "border-box" },
+      historyHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flex: "0 0 auto", fontSize: "0.86em" },
+      historyTitle: { fontWeight: 600 },
+      historyCount: { fontSize: "0.9em", opacity: 0.7 },
+      historyList: { flex: "1 1 auto", minHeight: 0, maxHeight: "100%", overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 },
+      historyItem: { display: "flex", alignItems: "baseline", gap: 6, fontSize: "0.8em", opacity: 0.75, minWidth: 0 },
+      historyEmpty: { flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9em", opacity: 0.65 },
+      historyClose: { border: "1px solid rgba(128,128,128,.35)", background: "transparent", borderRadius: 6, padding: "3px 10px", fontSize: "0.9em", cursor: "pointer", color: "inherit", flex: "0 0 auto", alignSelf: "flex-start" },
       formGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px 14px", padding: "4px 0 2px" },
       formWide: { gridColumn: "1 / -1" },
       formCard: { display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box", fontSize: "0.9em" },
@@ -323,8 +338,8 @@ window.__ModuleLoader__.load({
       if (event.kind === PANEL_EVENTS.action) {
         const trace = event.trace && typeof event.trace === "object" ? event.trace : null;
         if (!trace) return view;
-        // 新的在前，只保留最近 ACTION_LIMIT 条。
-        const actions = [trace].concat(Array.isArray(view.actions) ? view.actions : []).slice(0, ACTION_LIMIT);
+        // 新的在前，保留最近 ACTION_HISTORY_LIMIT 条；内联提示只渲染前 ACTION_LIMIT 条。
+        const actions = [trace].concat(Array.isArray(view.actions) ? view.actions : []).slice(0, ACTION_HISTORY_LIMIT);
         return Object.assign({}, view, { action: trace, actions });
       }
       return view;
@@ -533,6 +548,7 @@ window.__ModuleLoader__.load({
       const [view, setView] = React.useState(EMPTY_VIEW);
       const [settingsOpen, setSettingsOpen] = React.useState(false);
       const [draft, setDraft] = React.useState(null);
+      const [historyOpen, setHistoryOpen] = React.useState(false);
       const feedRef = React.useRef(null);
 
       React.useEffect(function () {
@@ -681,6 +697,15 @@ window.__ModuleLoader__.load({
           disabled: connection !== "open",
           onClick: function () { send({ v: PROTOCOL_VERSION, kind: PANEL_COMMANDS.requestFrame }); },
         }, t("刷新")),
+        el("button", {
+          type: "button",
+          style: st.btn,
+          "data-dsh-part": "history-toggle",
+          "aria-expanded": historyOpen ? "true" : "false",
+          title: t("操作历史"),
+          "aria-label": t("操作历史"),
+          onClick: function () { setHistoryOpen(!historyOpen); },
+        }, t("历史")),
       );
 
       const errorBanner = view.error
@@ -702,6 +727,35 @@ window.__ModuleLoader__.load({
             el("div", { style: st.placeholderTitle }, placeholderTitle),
             el("div", { style: st.placeholderHint }, placeholderHint),
           ),
+      );
+
+      // 历史抽屉：与画面二选一，保留最近 ACTION_HISTORY_LIMIT 条（新的在前）。
+      const historyActions = Array.isArray(view.actions) ? view.actions : [];
+      const historyDrawer = el("div", { style: st.history, "data-dsh-part": "history" },
+        el("div", { style: st.historyHead },
+          el("span", { style: st.historyTitle }, t("操作历史")),
+          el("span", { style: st.historyCount }, t("共 ") + historyActions.length + t(" 条")),
+        ),
+        historyActions.length === 0
+          ? el("div", { style: st.historyEmpty, "data-dsh-part": "history-empty" }, t("还没有动作"))
+          : el("div", { style: st.historyList }, historyActions.map(function (trace, index) {
+            const text = (trace.tool ? trace.tool + "：" : "") + (trace.summary || trace.tool || "");
+            return el("div", {
+              key: String(trace.at || "") + ":" + index,
+              style: st.historyItem,
+              title: text,
+              "data-dsh-part": "history-item",
+            },
+              el("span", { style: st.traceTime }, formatClock(trace.at)),
+              el("span", { style: st.traceText }, text),
+            );
+          })),
+        el("button", {
+          type: "button",
+          style: st.historyClose,
+          "data-dsh-part": "history-close",
+          onClick: function () { setHistoryOpen(false); },
+        }, t("关闭")),
       );
 
       const settings = el("div", { style: st.card, "data-dsh-part": "settings" },
@@ -760,7 +814,7 @@ window.__ModuleLoader__.load({
         tabBar,
         toolbar,
         errorBanner,
-        stage,
+        historyOpen ? historyDrawer : stage,
         settings,
         actionList,
       );

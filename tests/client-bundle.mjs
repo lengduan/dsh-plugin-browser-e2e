@@ -387,6 +387,81 @@ function renderChip(props) {
   }
 }
 
+/** 工具条里的历史切换按钮（data-dsh-part="history-toggle"）。 */
+function historyToggle(root) {
+  return findAll(findByPart(root, 'toolbar'), (node) => node.type === 'button'
+    && node.props && node.props['data-dsh-part'] === 'history-toggle')[0]
+}
+
+/** 历史抽屉里的条目行（data-dsh-part="history-item"），从新到旧。 */
+function historyItems(root) {
+  return findAll(findByPart(root, 'history'), (node) => node.props && node.props['data-dsh-part'] === 'history-item')
+}
+
+/** 造一条 action 事件（载荷形状见协议表 PANEL_EVENTS.action）。 */
+function actionEvent(tool, summary, at) {
+  return { v: 1, kind: 'action', trace: { tool, summary, at } }
+}
+
+/**
+ * 用独立的 hook 槽渲染一个全新面板实例：历史用例需要干净的动作数组，
+ * 而主实例到用例 5 时已累积了动作。与 renderChip 同理，退出时恢复主实例的 hook 槽。
+ */
+function withFreshPanel(fn) {
+  const saved = {
+    cursor: hooks.cursor,
+    states: hooks.states,
+    refs: hooks.refs,
+    effects: hooks.effects,
+    pending: hooks.pending,
+    dirty: hooks.dirty,
+  }
+  hooks.cursor = 0
+  hooks.states = []
+  hooks.refs = []
+  hooks.effects = {}
+  hooks.pending = []
+  hooks.dirty = false
+  try {
+    return fn()
+  } finally {
+    hooks.cursor = saved.cursor
+    hooks.states = saved.states
+    hooks.refs = saved.refs
+    hooks.effects = saved.effects
+    hooks.pending = saved.pending
+    hooks.dirty = saved.dirty
+  }
+}
+
+/**
+ * 在新的 hook 槽里渲染面板、连上它的 socket、点开历史抽屉。
+ * liveTitle 用独立桩，避免新实例把共享标题通道改写成空串、影响后续 chip 用例。
+ */
+function openFreshHistoryPanel() {
+  const freshLiveTitle = {
+    get() { return '' },
+    set() {},
+    subscribe() { return function () {} },
+  }
+  const freshProps = { sessionId: 'session-abc', liveTitle: freshLiveTitle }
+  let tree = renderPanel(panelComponent, freshProps)
+  const freshSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+  openSocket(freshSocket)
+  historyToggle(tree).props.onClick()
+  tree = renderPanel(panelComponent, freshProps)
+  return {
+    socket: freshSocket,
+    render() {
+      tree = renderPanel(panelComponent, freshProps)
+      return tree
+    },
+    push(tool, summary, at) {
+      pushEvent(freshSocket, actionEvent(tool, summary, at))
+    },
+  }
+}
+
 /** 打开最近创建的 WebSocket（模拟 onopen 前的 readyState）。 */
 function openSocket(socket) {
   socket.readyState = 1
@@ -415,6 +490,48 @@ check('首次渲染即按同源推导出 socket 并建立连接', () => {
   const socket = FakeWebSocket.instances[0]
   assert.equal(socket.url, 'ws://127.0.0.1:65301/api/dsh-browser-e2e/socket')
   assert.equal(findByPart(panelTree, 'toolbar').props['data-dsh-part'], 'toolbar')
+})
+
+// ── 历史抽屉：工具条入口、空态与开合（此时还没有任何 action 事件）──────
+check('历史抽屉：工具条有历史按钮', () => {
+  const toggle = historyToggle(panelTree)
+  assert.ok(toggle, '工具条应有 data-dsh-part="history-toggle" 的按钮')
+  assert.equal(toggle.type, 'button')
+  assert.ok(textOf(toggle).includes('历史'))
+  assert.equal(toggle.props.title, '操作历史')
+  assert.equal(toggle.props['aria-label'], '操作历史')
+  assert.equal(toggle.props['aria-expanded'], 'false')
+  assert.notEqual(toggle.props.disabled, true, '无动作时按钮不禁用')
+})
+
+check('历史抽屉：点击按钮展开抽屉', () => {
+  historyToggle(panelTree).props.onClick()
+  panelTree = render()
+  assert.ok(findByPart(panelTree, 'history'), '应出现 data-dsh-part="history" 的抽屉')
+  assert.equal(findByPart(panelTree, 'stage'), undefined, '抽屉打开时画面区应被替换')
+  assert.equal(historyToggle(panelTree).props['aria-expanded'], 'true')
+})
+
+check('历史抽屉：没有动作时显示空态', () => {
+  const history = findByPart(panelTree, 'history')
+  const empty = findByPart(history, 'history-empty')
+  assert.ok(empty, '无动作时应渲染 data-dsh-part="history-empty"')
+  assert.ok(textOf(empty).includes('还没有动作'))
+  assert.equal(historyItems(panelTree).length, 0)
+  assert.ok(textOf(history).includes('共 0 条'), textOf(history))
+  const close = findByPart(history, 'history-close')
+  assert.ok(close, '抽屉内应有 history-close 按钮')
+  assert.equal(close.type, 'button')
+  assert.ok(textOf(close).includes('关闭'))
+  assert.notEqual(close.props.disabled, true, '关闭按钮应可用')
+})
+
+check('历史抽屉：关闭后回到画面', () => {
+  findByPart(panelTree, 'history-close').props.onClick()
+  panelTree = render()
+  assert.equal(findByPart(panelTree, 'history'), undefined)
+  assert.ok(findByPart(panelTree, 'stage'))
+  assert.equal(historyToggle(panelTree).props['aria-expanded'], 'false')
 })
 
 const socket = FakeWebSocket.instances[0]
@@ -555,6 +672,64 @@ check('动作提示只保留最近 5 条，新的在前', () => {
   assert.equal(lines.length, 5)
   assert.ok(textOf(lines[0]).includes('动作5'))
   assert.ok(!textOf(findByPart(panelTree, 'actions')).includes('动作0'))
+})
+
+check('历史抽屉：第 6 条动作只在抽屉里可见', () => {
+  withFreshPanel(() => {
+    const panel = openFreshHistoryPanel()
+    for (let i = 1; i <= 6; i += 1) panel.push('browser_e2e_click', `第${i}条`, 1000 + i)
+    const tree = panel.render()
+    const inline = findAll(findByPart(tree, 'actions'), (node) => node.props && node.props['data-dsh-part'] === 'action')
+    assert.equal(inline.length, 5, '内联动作提示仍只渲染前 5 条')
+    const items = historyItems(tree)
+    assert.equal(items.length, 6, '抽屉应收下第 6 条')
+    assert.ok(!textOf(findByPart(tree, 'actions')).includes('第1条'), '最早的第 1 条不应出现在内联提示里')
+    assert.ok(textOf(items[0]).includes('第6条'))
+    assert.ok(textOf(items[5]).includes('第1条'))
+  })
+})
+
+check('历史抽屉：抽屉保留最近 50 条并丢弃最旧', () => {
+  withFreshPanel(() => {
+    const panel = openFreshHistoryPanel()
+    for (let i = 1; i <= 51; i += 1) panel.push('browser_e2e_click', `第${i}条`, 1000 + i)
+    const tree = panel.render()
+    const items = historyItems(tree)
+    assert.equal(items.length, 50, '条目上限为 50')
+    assert.ok(textOf(items[0]).includes('第51条'), '首条应是最新动作')
+    assert.ok(textOf(items[49]).includes('第2条'), '末条应是最旧一条保留的动作')
+    const drawerText = textOf(findByPart(tree, 'history'))
+    assert.ok(!drawerText.includes('第1条'), '最旧动作应被丢弃')
+    assert.ok(drawerText.includes('共 50 条'), drawerText)
+  })
+})
+
+check('历史抽屉：新的在前', () => {
+  withFreshPanel(() => {
+    const panel = openFreshHistoryPanel()
+    panel.push('browser_e2e_navigate', '打开首页', 1000)
+    panel.push('browser_e2e_click', '点击 @1', 2000)
+    const tree = panel.render()
+    const items = historyItems(tree)
+    assert.equal(items.length, 2)
+    assert.ok(textOf(items[0]).includes('browser_e2e_click'))
+    assert.ok(textOf(items[0]).includes('点击 @1'))
+    assert.equal(items[0].props.title, 'browser_e2e_click：点击 @1')
+    assert.ok(textOf(items[1]).includes('browser_e2e_navigate'))
+  })
+})
+
+check('历史抽屉：action 不带 trace 时不记录', () => {
+  withFreshPanel(() => {
+    const panel = openFreshHistoryPanel()
+    panel.push('browser_e2e_click', '点击 @1', 1000)
+    let tree = panel.render()
+    assert.equal(historyItems(tree).length, 1)
+    pushEvent(panel.socket, { v: 1, kind: 'action' })
+    tree = panel.render()
+    assert.equal(historyItems(tree).length, 1, '无 trace 的 action 不应进入历史')
+    assert.ok(textOf(findByPart(tree, 'history')).includes('共 1 条'))
+  })
 })
 
 check('tab chip 显示 active tab 的页面标题', () => {
