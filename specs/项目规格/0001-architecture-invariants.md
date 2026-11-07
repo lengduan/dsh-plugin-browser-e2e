@@ -343,6 +343,16 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 - 上述两条都是能力删除，不是零改动模块删除。
 - `invariants.js` 删除后约束会散回各能力函数（删除测试的反向判据）。
 
+## 已知结构性债务
+
+以下是独立复核确认、但本轮**未处置**的结构性项；处置时须先改本规格再动代码。
+
+| 项 | 现状 | 未处置理由 |
+|---|---|---|
+| `page.js` 粒度过大 | 约 840 行、27 个导出，混装：标签页注册表与生命周期、事件环（console/network 环形缓冲、ref 表）、snapshot 的 DOM→xpath/role/name 启发式、五种交互动作、视口度量、展示格式化。 | 拆分面覆盖所有页面能力，回归风险高；且本规格第 30-43 行的模块表把这几块整体划给 `page.js`，拆分须先改规格。建议拆为 `snapshot.js`（DOM 快照引擎）与 `observation.js`（事件环），交互与格式化留在 `page.js`。 |
+| 视口度量三份 | `page.js` 的 `viewportBounds`、`capture.js` 的 `viewportBounds`、`capture.js` 内联的 `innerWidth/innerHeight` 兜底。 | 收敛需要新建公共模块或调整依赖方向（`capture.js` 当前无内部依赖），会改动本规格的依赖图，故留待拆分 `page.js` 时一并处理。 |
+| client 死代码 | `client/index.js` 的 `BrowserE2EConfigForm`、`BrowserE2EPluginCard`、`PLUGIN_CONFIG_FIELDS` 无注册点（宿主按 Config 自行渲染设置页）。 | 属整洁度，不影响行为；删除需同步 `tests/client-bundle.mjs` 与功能规格 0001 的相关描述。 |
+
 ## 验收
 
 1. `npm run test:unit` 通过（脚本内容见 `package.json`：`node tests/invariants.mjs &&
