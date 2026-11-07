@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, closeTab, launch, requireSession, tabs } = await import('../lib/session.js')
-const { click, evaluate, navigate, snapshot } = await import('../lib/page.js')
+const { click, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, snapshot } = await import('../lib/page.js')
 
 const KEY = 'test-multitab-key'
 let session = null
@@ -195,6 +195,31 @@ try {
       JSON.stringify(results.map((item) => item.status)))
     check('并发关两页后仍有 1 页且 active 不为空',
       session.pages.size === 1 && session.activeTabId !== null, `${session.pages.size} / ${session.activeTabId}`)
+  }
+  console.log('== 用例 9：一个 tab 的 evaluate 超时不影响另一个 tab ==')
+  {
+    // 准备两个新页（都在同一浏览器上下文里），分别作为「死循环页」与「旁观页」。
+    const stuckTab = await navigate(session, `${base}/a`, 'load', { new_tab: true })
+    const otherTab = await navigate(session, `${base}/b`, 'load', { new_tab: true })
+    check('用例 9 前置：两个新页可分别求值',
+      stuckTab.tabId !== otherTab.tabId
+        && (await evaluate(session, 'document.title', stuckTab.tabId)).value === 'page-a'
+        && (await evaluate(session, 'document.title', otherTab.tabId)).value === 'page-b',
+      JSON.stringify({ stuckTab: stuckTab.tabId, otherTab: otherTab.tabId, pages: [...session.pages.keys()] }))
+
+    // 死在 stuckTab 上的求值不 await，先让另一个 tab 在它超时前完成求值。
+    const stuck = expectThrow(() => evaluate(session, 'while (true) {}', stuckTab.tabId,
+      { timeoutMs: MIN_EVALUATE_TIMEOUT_MS }))
+    await sleep(150)
+    const otherStart = Date.now()
+    const other = await evaluate(session, 'document.title', otherTab.tabId, { timeoutMs: 5000 })
+    const otherElapsed = Date.now() - otherStart
+    const stuckMessage = await stuck
+    check('一个 tab 的 evaluate 超时不影响另一个 tab',
+      other.value === 'page-b' && otherElapsed < MIN_EVALUATE_TIMEOUT_MS
+        && Boolean(stuckMessage) && stuckMessage.includes('脚本执行超时')
+        && session.pages.size >= 2,
+      JSON.stringify({ other: other.value, otherElapsed, stuckMessage, pages: session.pages.size }))
   }
 } finally {
   await closeAll()

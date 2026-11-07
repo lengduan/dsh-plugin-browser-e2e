@@ -679,7 +679,7 @@
     <thead><tr><th style="width:120px">类别</th><th>归属</th><th>例子</th></tr></thead>
     <tbody>
       <tr><td>单次入参</td><td>能力函数入口</td><td>clip 越界、selector 与 expression 同时给、非正整数超时、mode 非 isolated/cdp、端点非 loopback</td></tr>
-      <tr><td>运行时结果</td><td>能力函数里保留</td><td><code>browser_e2e_wait</code> 等待超时——是操作结果，不是状态损坏</td></tr>
+      <tr><td>运行时结果</td><td>能力函数里保留</td><td><code>browser_e2e_wait</code> 等待超时、<code>browser_e2e_evaluate</code> 页面脚本执行超时（中断走 <code>page.js interruptPageScript</code> 的 <code>Runtime.terminateExecution</code>）——是操作结果，不是状态损坏</td></tr>
     </tbody>
   </table>
 
@@ -1170,7 +1170,7 @@
       <tr><td class="mono">会话解析入口不统一</td><td>9 个工具用 <code>sessionOf</code>（会创建会话），console / network 用 <code>requireSession</code>，tabs / close_tab 经 <code>session.tabs</code> / <code>session.closeTab</code> 内的 <code>sessions.get</code>；未启动时报错文案不同</td><td>只影响未启动时的会话表残留与文案，统一需逐工具核对语义</td></tr>
       <tr><td class="mono">展示格式化四处</td><td><code>page.js</code> 的 timeOf/oneLine、<code>session.js</code> 的 tabs 文本、<code>tools.js</code> 的标题拼串、client 的 formatClock；timeOf 取 UTC、formatClock 用本地时区</td><td>上移会改动全部 22 个工具 <code>run</code> 的返回契约，属较大重构</td></tr>
       <tr><td class="mono">client 文案 / 样式孤儿键</td><td>删除死组件后留下 17 个无引用 EN 文案键（45 键中）与 9 个无引用样式键（44 键中）；规格基线记 9 + 8</td><td>整洁度问题，不影响行为；清理需与 client-bundle 文案断言一起核对</td></tr>
-      <tr><td class="mono">默认值散落</td><td><code>tools.js</code> 描述与 <code>page.js</code> 写死「默认 100」「默认 10000」，尚无单一来源</td><td>需新增常量并补规格的常量口径</td></tr>
+      <tr><td class="mono">默认值散落</td><td><code>tools.js</code> 描述与 <code>page.js</code> 写死「默认 100」「默认 10000」，尚无单一来源；evaluate 的默认 / 下限 / 上限已收敛为 <code>DEFAULT_EVALUATE_TIMEOUT_MS</code> / <code>MIN_EVALUATE_TIMEOUT_MS</code> / <code>MAX_EVALUATE_TIMEOUT_MS</code></td><td>需新增常量并补规格的常量口径</td></tr>
     </tbody>
   </table>
 

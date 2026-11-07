@@ -73,7 +73,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
 | `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
-| `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装 |
+| `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装。`timeoutMs` 是执行上限（默认 30000，允许 1000-120000），到点中断页面内正在执行的脚本并报错，页面与标签页保持打开 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
 ### 逐键输入（mode=keystrokes）
@@ -412,6 +412,7 @@ npm run test:integration
 - **悬停与拖拽只作用于主 frame** —— `browser_e2e_hover` / `browser_e2e_drag` 与 `browser_e2e_click` 一致，只查主框架、不进入 iframe；坐标目标按视口 CSS 像素校验，元素目标不暴露 `force` / `sourcePosition` / `targetPosition`，被遮挡时报 Playwright 超时。拖拽中途页面导航会由 Playwright 报执行上下文销毁；HTML5 目标若不在 `dragover` 里 `preventDefault()`，浏览器会拒绝 drop，这是页面行为，不是工具失败。
 - **逐键输入（`mode=keystrokes`）的边界** —— 不支持坐标目标（无法可靠清空与校验可编辑性）；不支持真实 IME 与组合键，中文 / emoji 走 `Input.insertText`、不产生 keydown / keyup，`\t` 不会移动焦点；`\n` / `\r` 映射为 Enter，单行 input 里可能触发表单提交。工具在最后一个按键后立即返回，不等防抖落定；掩码与受控组件可能改写最终值，工具不回读。后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略按键（不做 focus emulation）。
 - **对话框处理是「先设策略、后触发」** —— `browser_e2e_dialog` 在对话框打开的事件回调里立即应答（不立即应答页面会冻结），所以无法「先读文案、再按文案决定接受 / 取消」：要验证文案用默认 `dismiss`（记录照写），要走确认分支必须先把 `policy` 设为 `accept` 再触发。策略与记录按标签页隔离，新标签页从 `dismiss` 开始；`beforeunload` 一律接受（与浏览器默认一致）；HTTP 认证、权限请求、`window.print()` 与页面自绘的 `<dialog>` 元素不在覆盖范围；跨源 iframe（OOPIF）里的对话框是否上报未验证。CDP 接管模式下设 `accept` 等于替用户在真实浏览器里点确定。
+- **evaluate 超时只中断当前脚本** —— `browser_e2e_evaluate` 的 `timeoutMs` 到点用 CDP 的 `Runtime.terminateExecution` 中断目标页主线程正在执行的脚本：只中断「正在执行」的那段，表达式返回永不 resolve 的 Promise 时页内等待仍会继续；Worker、跨源 iframe 与同源子 frame 内的死循环是否被中断未验证。中断可能打断页面自己的事件处理或框架渲染，DOM 会停在半完成状态，需要时重新 `browser_e2e_snapshot`。CDP 接管模式下这会打断用户浏览器里该页正在执行的脚本。若把 `DSH_BROWSER_IDLE_MS` 设得小于 `timeoutMs`，浏览器可能先被空闲回收，该次调用报「浏览器尚未启动」。
 
 <a id="dev-note"></a>
 ### Dev Note

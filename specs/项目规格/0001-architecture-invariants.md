@@ -146,7 +146,10 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 - **跨调用**：违反条件来自跨多次调用积累的状态（会话状态机、标签页注册表、ref 表、投屏会话、
   连接生命周期），换一次调用不会自愈，必须修状态或重启。收敛进 `lib/invariants.js`。
 - **单次**：只由本次调用参数（以及当前页面的即时度量）决定，改参数重试即可。留在各能力函数入口。
-- **运行时**：既不是不变量也不是入参校验，是操作结果（如等待超时），留在能力函数里。
+- **运行时**：既不是不变量也不是入参校验，是操作结果（如等待超时、页面脚本执行超时），留在能力函数里。
+  页面脚本超时的中断走 `lib/page.js` 的 `interruptPageScript`（`page.context().newCDPSession(page)` 的
+  `Runtime.terminateExecution`）；中断失败同样只是操作结果，不代表会话或页面状态损坏，因此不进
+  `lib/invariants.js`。
 
 ### `lib/browser.js`
 
@@ -377,7 +380,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 | 会话解析入口不统一 | 9 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs`/`close_tab` 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
 | client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
-| 工具描述里的 limit / timeoutMs 默认值 | `lib/tools.js` 描述与 `lib/page.js` 写死「默认 100」「默认 10000」，与已收敛的视口 / 快照 / 截图 / 缓冲上限常量同类，但尚无单一来源。 | 需新增常量并补本规格的常量口径，属 11 条 P2 清单外的同类残留，留待后续。 |
+| 工具描述里的 limit / timeoutMs 默认值 | `lib/tools.js` 描述与 `lib/page.js` 写死「默认 100」「默认 10000」，与已收敛的视口 / 快照 / 截图 / 缓冲上限常量同类，但尚无单一来源。`browser_e2e_evaluate` 的默认 / 下限 / 上限已收敛为 `lib/page.js` 的 `DEFAULT_EVALUATE_TIMEOUT_MS` / `MIN_EVALUATE_TIMEOUT_MS` / `MAX_EVALUATE_TIMEOUT_MS`，工具描述与错误文案都从这三个常量派生；`wait` 的 10000 与 console / network 的 100 仍是字面量。 | 需新增常量并补本规格的常量口径，属 11 条 P2 清单外的同类残留，留待后续（evaluate 一项已收敛）。 |
 
 ## 验收
 

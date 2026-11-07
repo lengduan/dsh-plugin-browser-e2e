@@ -19,7 +19,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
-  attachPageHooks, clearRings, click, consoleEntries, drag, evaluate, fill, hover, navigate,
+  attachPageHooks, clearRings, click, consoleEntries, DEFAULT_EVALUATE_TIMEOUT_MS, drag, evaluate, fill, hover,
+  MAX_EVALUATE_TIMEOUT_MS, MIN_EVALUATE_TIMEOUT_MS, navigate,
   NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MAX_MS, NETWORK_BODY_TIMEOUT_MIN_MS, NETWORK_BODY_TIMEOUT_MS,
   networkDetail, networkEntries, RING_LIMIT, scroll, snapshot, waitFor,
 } = await import('../lib/page.js')
@@ -1354,6 +1355,112 @@ try {
     const invalidSelector = await expectThrow(() => waitFor(session, { selector: 'foo(', timeoutMs: 500 }))
     check('非法 selector 抛解析错误而不是「超时」文案',
       Boolean(invalidSelector) && !invalidSelector.includes('超时'), String(invalidSelector))
+  }
+
+  console.log('== 用例 8B：evaluate 超时（默认/边界/文案/超时后可用性）==')
+  {
+    // 常量与工具描述必须同源：描述里的默认值与区间都从三个导出常量插值。
+    const { buildToolTable } = await import('../lib/tools.js')
+    const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
+    const evaluateDefinition = table.find((definition) => definition.name === 'browser_e2e_evaluate')
+    const timeoutParam = evaluateDefinition?.parameters?.properties?.timeoutMs
+    check('evaluate 默认/下限/上限常量与工具描述一致',
+      DEFAULT_EVALUATE_TIMEOUT_MS === 30000 && MIN_EVALUATE_TIMEOUT_MS === 1000
+        && MAX_EVALUATE_TIMEOUT_MS === 120000
+        && evaluateDefinition?.description.includes(`默认 ${DEFAULT_EVALUATE_TIMEOUT_MS}`)
+        && evaluateDefinition.description.includes(`${MIN_EVALUATE_TIMEOUT_MS}-${MAX_EVALUATE_TIMEOUT_MS}`)
+        && timeoutParam?.type === 'integer'
+        && timeoutParam.description.includes(`${MIN_EVALUATE_TIMEOUT_MS}-${MAX_EVALUATE_TIMEOUT_MS}`)
+        && timeoutParam.description.includes(`默认 ${DEFAULT_EVALUATE_TIMEOUT_MS}`),
+      JSON.stringify({
+        DEFAULT_EVALUATE_TIMEOUT_MS, MIN_EVALUATE_TIMEOUT_MS, MAX_EVALUATE_TIMEOUT_MS,
+        description: evaluateDefinition?.description, timeoutParam,
+      }))
+
+    // 夹具：可读标题 + 每 50ms 自增的定时器，用于验证超时只打断当前脚本。
+    const timeoutHtml = '<!doctype html><html><head><title>evaluate-timeout</title></head><body>'
+      + '<h1 id="mark">超时夹具</h1>'
+      + '<script>window.__ticks = 0; setInterval(function () { window.__ticks += 1 }, 50)</script>'
+      + '</body></html>'
+    await navigate(session, dataUrl(timeoutHtml), 'load')
+    await sleep(100)
+
+    // 正常表达式：返回结果、elapsedMs 为整数且小于本次 timeoutMs。
+    const normal = await evaluate(session, '1 + 1', undefined, { timeoutMs: 2000 })
+    check('evaluate 正常表达式返回结果且不触发超时',
+      normal.value === 2 && Number.isInteger(normal.elapsedMs) && normal.elapsedMs < normal.timeoutMs
+        && normal.timeoutMs === 2000,
+      JSON.stringify(normal))
+
+    // 死循环：到点报超时，实际耗时落在 [1000, 5000]。
+    const timeoutStart = Date.now()
+    const timeoutMessage = await expectThrow(() => evaluate(session, 'while (true) {}', undefined, { timeoutMs: 1000 }))
+    const timeoutElapsed = Date.now() - timeoutStart
+    check('evaluate 死循环在 timeoutMs 到点返回超时错误',
+      Boolean(timeoutMessage) && timeoutMessage.includes('脚本执行超时')
+        && timeoutMessage.includes('实际执行')
+        && timeoutElapsed >= 1000 && timeoutElapsed <= 5000,
+      JSON.stringify({ timeoutElapsed, timeoutMessage }))
+
+    check('evaluate 超时文案包含已中断与页面保持打开',
+      Boolean(timeoutMessage) && timeoutMessage.includes('已中断页面主线程正在执行的脚本')
+        && timeoutMessage.includes('页面与标签页保持打开'),
+      String(timeoutMessage))
+
+    // 中断后页面不关闭：同一页可继续求值。
+    const titleAfterTimeout = await evaluate(session, 'document.title')
+    check('evaluate 超时后同一页面仍可继续求值',
+      titleAfterTimeout.value === 'evaluate-timeout' && typeof titleAfterTimeout.value === 'string',
+      JSON.stringify(titleAfterTimeout))
+
+    // 定时器仍在运行：超时只打断那段死循环，不冻结页面。
+    const ticksBefore = (await evaluate(session, 'window.__ticks')).value
+    await sleep(300)
+    const ticksAfter = (await evaluate(session, 'window.__ticks')).value
+    check('evaluate 超时后页面定时器仍在运行',
+      Number.isInteger(ticksBefore) && Number.isInteger(ticksAfter) && ticksAfter > ticksBefore,
+      JSON.stringify({ ticksBefore, ticksAfter }))
+
+    // 永不 resolve 的 Promise：宿主按时返回超时，外部保险计时器不得先触发。
+    let guardFired = false
+    const guard = setTimeout(() => { guardFired = true }, 8000)
+    const promiseStart = Date.now()
+    const promiseMessage = await expectThrow(() => evaluate(session, 'new Promise(function () {})', undefined, { timeoutMs: 1000 }))
+    const promiseElapsed = Date.now() - promiseStart
+    clearTimeout(guard)
+    check('evaluate 永不 resolve 的 await 按时返回超时错误',
+      Boolean(promiseMessage) && promiseMessage.includes('脚本执行超时')
+        && guardFired === false && promiseElapsed < 5000,
+      JSON.stringify({ promiseElapsed, guardFired, promiseMessage }))
+
+    // 非法值统一报错，不静默 clamp：低于下限 / 高于上限 / 非整数。
+    const belowMin = await expectThrow(() => evaluate(session, '1', undefined, { timeoutMs: MIN_EVALUATE_TIMEOUT_MS - 1 }))
+    const aboveMax = await expectThrow(() => evaluate(session, '1', undefined, { timeoutMs: MAX_EVALUATE_TIMEOUT_MS + 1 }))
+    const notInteger = await expectThrow(() => evaluate(session, '1', undefined, { timeoutMs: 1.5 }))
+    check('evaluate timeoutMs 低于下限/高于上限/非整数分别报错',
+      [belowMin, aboveMax, notInteger].every((message) =>
+        message?.includes('timeoutMs 必须是 1000 到 120000 之间的整数')),
+      JSON.stringify({ belowMin, aboveMax, notInteger }))
+
+    // 工具层：透传 timeoutMs 且 schema 声明 integer；required 仍只有 expression。
+    const registered = []
+    const { apply } = await import('../lib/index.js')
+    apply({
+      get: () => undefined,
+      tools: { register: (definition) => registered.push(definition) },
+      on: () => () => {},
+      effect: (factory) => { factory() },
+    })
+    const evaluateTool = registered.find((definition) => definition.name === 'browser_e2e_evaluate')
+    const exec = { agent: { id: KEY } }
+    const toolMessage = await expectThrow(() => evaluateTool.execute(
+      { expression: 'while (true) {}', timeoutMs: MIN_EVALUATE_TIMEOUT_MS }, exec))
+    check('browser_e2e_evaluate 工具透传 timeoutMs 并声明 integer 参数',
+      Boolean(toolMessage) && toolMessage.includes('脚本执行超时')
+        && toolMessage.includes(`上限 ${MIN_EVALUATE_TIMEOUT_MS}ms`)
+        && evaluateTool.parameters.properties.timeoutMs?.type === 'integer'
+        && JSON.stringify(evaluateTool.parameters.required) === JSON.stringify(['expression']),
+      JSON.stringify({ toolMessage, parameters: evaluateTool.parameters }))
   }
 
   console.log('== 用例 9：snapshot 全 DOM 的 4000 条截断 ==')

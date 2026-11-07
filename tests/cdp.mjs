@@ -24,7 +24,7 @@ import { pathToFileURL } from 'node:url'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, dialogEntries, evaluate, navigate, setDialogPolicy, upload } = await import('../lib/page.js')
+const { currentTab, dialogEntries, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, setDialogPolicy, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
 
@@ -293,6 +293,22 @@ try {
     check('CDP 下载不新建标签页', contentTabsAfter.length === contentTabsBefore.length
       && extraPages.every((tab) => String(tab.url).startsWith('edge://')),
     JSON.stringify({ before: tabsBefore.map((tab) => `${tab.tab_id}:${tab.url}`), after: tabsAfter.map((tab) => `${tab.tab_id}:${tab.url}`) }))
+  }
+
+  console.log('== 用例 3E：CDP 接管下 evaluate 死循环超时后页面仍可求值 ==')
+  {
+    await navigate(session, 'data:text/html,<title>cdp-evaluate-timeout</title><h1 id="h">cdp-timeout</h1>', 'load')
+    const started = Date.now()
+    const message = await expectThrow(() => evaluate(session, 'while (true) {}', undefined,
+      { timeoutMs: MIN_EVALUATE_TIMEOUT_MS }))
+    const elapsed = Date.now() - started
+    const after = await evaluate(session, 'document.title')
+    const alive = child.exitCode === null && !child.killed
+    check('CDP 模式 evaluate 死循环超时后页面仍可求值',
+      Boolean(message) && message.includes('脚本执行超时')
+        && elapsed >= MIN_EVALUATE_TIMEOUT_MS && elapsed <= 5000
+        && after.value === 'cdp-evaluate-timeout' && alive,
+      JSON.stringify({ elapsed, message, after: after.value, alive }))
   }
 
   console.log('== 用例 4：close 只断开连接 ==')
