@@ -357,6 +357,8 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
 | 会话解析入口不统一 | 8 个工具用 `sessionOf`（会创建会话对象），`console`/`network`/`tabs`/`close_tab` 用 `requireSession`/`sessions.get`（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 15 个 `run` 的返回契约，属较大重构，留待单独一轮。 |
+| client 文案 / 样式孤儿键 | 删除死组件后 `client/index.js` 新增 9 个无引用 EN 文案键与 8 个无引用 `st` 样式键（HEAD 另有 8 个 EN 孤儿键）。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
+| 工具描述里的 limit / timeoutMs 默认值 | `lib/tools.js` 描述与 `lib/page.js` 写死「默认 100」「默认 10000」，与已收敛的视口 / 快照 / 截图 / 缓冲上限常量同类，但尚无单一来源。 | 需新增常量并补本规格的常量口径，属 11 条 P2 清单外的同类残留，留待后续。 |
 
 ## 验收
 
