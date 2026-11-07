@@ -429,7 +429,208 @@ try {
     check('非数字 delta 报错', Boolean(badDelta) && badDelta.includes('必须是数字'), String(badDelta))
   }
 
-  console.log('== 用例 5E：hover（ref / selector / 坐标 / settleMs / 失效 ref / 非法输入）==')
+  console.log('== 用例 5E：fill 逐键模式（keystrokes / delayMs / 受控 / 掩码 / 防抖）==')
+  {
+    // 同一页放齐夹具：普通输入框、textarea、contenteditable、maxlength、防抖、受控、掩码，
+    // 以及 select / file 两个非文本目标；document 级监听统一记录 keydown / keyup / input。
+    const keystrokeHtml = '<!doctype html><html><body style="margin:0">'
+      + '<input id="k" value="old" style="position:fixed;left:20px;top:20px;width:240px;height:30px">'
+      + '<textarea id="ta" style="position:fixed;left:20px;top:70px;width:240px;height:60px"></textarea>'
+      + '<div id="ce" contenteditable="true" style="position:fixed;left:20px;top:150px;width:240px;height:40px;border:1px solid #999"></div>'
+      + '<input id="ml" maxlength="5" style="position:fixed;left:20px;top:210px;width:240px;height:30px">'
+      + '<input id="plain" style="position:fixed;left:20px;top:260px;width:240px;height:30px">'
+      + '<input id="deb" style="position:fixed;left:20px;top:310px;width:240px;height:30px">'
+      + '<input id="ctl" style="position:fixed;left:20px;top:360px;width:240px;height:30px">'
+      + '<input id="mask" style="position:fixed;left:20px;top:410px;width:240px;height:30px">'
+      + '<select id="sel" style="position:fixed;left:300px;top:20px;width:120px;height:30px"><option>one</option></select>'
+      + '<input id="file" type="file" style="position:fixed;left:300px;top:70px;width:200px;height:30px">'
+      + '<script>'
+      + 'window.__ev = { down: [], up: [], inputs: [] };'
+      + 'document.addEventListener("keydown", function (e) { window.__ev.down.push(e.key) });'
+      + 'document.addEventListener("keyup", function (e) { window.__ev.up.push(e.key) });'
+      + 'document.addEventListener("input", function (e) { window.__ev.inputs.push(e.target.value) });'
+      // 防抖：120ms 内的连续 input 只落一次结果，验证逐键路径确实逐字符进入组件。
+      + 'window.__debounceRuns = 0; window.__debounced = ""; var debTimer = null; var deb = document.getElementById("deb");'
+      + 'deb.addEventListener("input", function () { var v = deb.value; clearTimeout(debTimer);'
+      + ' debTimer = setTimeout(function () { window.__debounceRuns += 1; window.__debounced = v }, 120) });'
+      // 受控：只保留数字，组件在每次 input 里回写 value；插入式一次性写入只会产生一次 input。
+      + 'window.__ctlInputs = []; var ctl = document.getElementById("ctl");'
+      + 'ctl.addEventListener("input", function () { var raw = ctl.value; window.__ctlInputs.push(raw);'
+      + ' ctl.value = raw.replace(/[^0-9]/g, "") });'
+      // 掩码：每 3 位插一个连字符，最终显示值必然与传入 value 不同。
+      + 'window.__maskInputs = []; var mask = document.getElementById("mask");'
+      + 'mask.addEventListener("input", function () { var d = mask.value.replace(/[^0-9]/g, "").slice(0, 6);'
+      + ' var formatted = d.slice(0, 3) + (d.length > 3 ? "-" + d.slice(3) : "");'
+      + ' window.__maskInputs.push(formatted); mask.value = formatted });'
+      + '</script></body></html>'
+    await navigate(session, dataUrl(keystrokeHtml), 'load')
+    const resetEvents = () => evaluate(session, 'window.__ev = { down: [], up: [], inputs: [] }; true')
+    const eventLog = async () => (await evaluate(session, 'window.__ev')).value
+
+    // ref 路径：逐键写入替换旧值，返回形状与摘要都带 keystrokes 字段。
+    const keystrokeSnapshot = await snapshot(session)
+    const kNode = keystrokeSnapshot.nodes.find((node) => node.id === 'k')
+    const byRef = await fill(session, { ref: kNode?.ref }, 'new', undefined, { mode: 'keystrokes' })
+    const kValue = await evaluate(session, "document.getElementById('k').value")
+    check('keystrokes 逐键写入并替换旧值', byRef.mode === 'ref' && byRef.inputMode === 'keystrokes'
+      && byRef.chars === 3 && byRef.delayMs === 0 && byRef.value === 'new' && kValue.value === 'new'
+      && byRef.summary.startsWith(`逐键填写 ${kNode?.ref} `) && byRef.summary.includes('3 个字符')
+      && byRef.summary.includes('delayMs=0'),
+    JSON.stringify({ byRef, kValue: kValue.value, ref: kNode?.ref }))
+
+    // 每个 US 键盘可表达字符都产生 keydown / keyup（清空产生的那次 Delete 另算）。
+    await resetEvents()
+    await evaluate(session, "document.getElementById('k').value = 'OLD'")
+    const typed = await fill(session, { selector: '#k' }, 'ab12', undefined, { mode: 'keystrokes' })
+    const typedEvents = await eventLog()
+    check('keystrokes 每个字符产生 keydown / keyup',
+      [...'ab12'].every((ch) => typedEvents.down.includes(ch) && typedEvents.up.includes(ch))
+        && typed.chars === 4,
+      JSON.stringify({ down: typedEvents.down, up: typedEvents.up, chars: typed.chars }))
+
+    // 清空是「全选 + Delete」：非空输入框每次 keystrokes 填写固定产生 1 次 Delete。
+    await resetEvents()
+    await evaluate(session, "document.getElementById('k').value = 'OLD'")
+    await fill(session, { selector: '#k' }, 'z', undefined, { mode: 'keystrokes' })
+    const deleteEvents = await eventLog()
+    check('keystrokes 清空产生一次 Delete',
+      deleteEvents.down.filter((key) => key === 'Delete').length === 1,
+      JSON.stringify({ down: deleteEvents.down }))
+
+    // contenteditable：无 input/textarea 包装也能逐键写入。
+    await resetEvents()
+    const ceFill = await fill(session, { selector: '#ce' }, 'edit', undefined, { mode: 'keystrokes' })
+    const ceText = await evaluate(session, "document.getElementById('ce').textContent")
+    check('keystrokes 支持 contenteditable',
+      ceFill.inputMode === 'keystrokes' && ceFill.chars === 4 && ceText.value === 'edit',
+      JSON.stringify({ ceFill, ceText: ceText.value }))
+
+    // textarea 里的 \n 映射为 Enter 键，产生换行而不是插入字面量。
+    await resetEvents()
+    const taFill = await fill(session, { selector: '#ta' }, 'a\nb', undefined, { mode: 'keystrokes' })
+    const taValue = await evaluate(session, "document.getElementById('ta').value")
+    const enterDowns = (await eventLog()).down.filter((key) => key === 'Enter').length
+    check('keystrokes 在 textarea 中把 \\n 作为 Enter',
+      taFill.chars === 3 && taValue.value === 'a\nb' && enterDowns === 1,
+      JSON.stringify({ chars: taFill.chars, value: taValue.value, enterDowns }))
+
+    // delayMs 实际拉长耗时；同一页的防抖组件在最后一个按键后落定成完整值。
+    const fastStart = Date.now()
+    await fill(session, { selector: '#plain' }, 'abcdefghijklmnopqrst', undefined, { mode: 'keystrokes' })
+    const fastElapsed = Date.now() - fastStart
+    const slowStart = Date.now()
+    const slow = await fill(session, { selector: '#plain' }, 'abcdefghijklmnopqrst', undefined,
+      { mode: 'keystrokes', delayMs: 30 })
+    const slowElapsed = Date.now() - slowStart
+    await evaluate(session, 'window.__debounceRuns = 0; window.__debounced = ""')
+    const debouncedFill = await fill(session, { selector: '#deb' }, 'abcdef', undefined,
+      { mode: 'keystrokes', delayMs: 40 })
+    await sleep(400)
+    const debouncedState = await evaluate(session, '({ runs: window.__debounceRuns, value: window.__debounced })')
+    check('keystrokes 的 delayMs 拉长总耗时', slow.delayMs === 30 && slowElapsed >= fastElapsed + 300
+      && debouncedFill.inputMode === 'keystrokes' && debouncedState.value?.runs >= 1
+      && debouncedState.value?.value === 'abcdef',
+    JSON.stringify({ fastElapsed, slowElapsed, delayMs: slow.delayMs, debounced: debouncedState.value }))
+
+    // 受控组件：每次 input 都回写 value，4 个字符必须产生 4 次 input，最终值是被组件改写的 '12'。
+    const controlled = await fill(session, { selector: '#ctl' }, 'a1b2', undefined, { mode: 'keystrokes' })
+    const controlledState = await evaluate(session, "({ inputs: window.__ctlInputs, value: document.getElementById('ctl').value })")
+    check('keystrokes 逐字符触发受控输入', controlled.inputMode === 'keystrokes'
+      && controlledState.value?.inputs.length === 4 && controlledState.value?.inputs.includes('1b')
+      && controlledState.value?.value === '12',
+    JSON.stringify({ controlled, state: controlledState.value }))
+
+    // 掩码组件：逐字符进入后由组件重排为 123-456，证明每键都触发了 input。
+    const masked = await fill(session, { selector: '#mask' }, '123456', undefined, { mode: 'keystrokes' })
+    const maskedState = await evaluate(session, "({ inputs: window.__maskInputs, value: document.getElementById('mask').value })")
+    check('keystrokes 逐字符触发掩码输入', masked.inputMode === 'keystrokes'
+      && maskedState.value?.inputs.length === 6
+      && maskedState.value?.inputs.at(-1) === '123-456' && maskedState.value?.value === '123-456',
+    JSON.stringify({ masked, state: maskedState.value }))
+
+    // 不回读最终 value：maxlength 截断后 DOM 是 abcde，返回的 value 仍是传入的 abcdef。
+    await resetEvents()
+    const maxlength = await fill(session, { selector: '#ml' }, 'abcdef', undefined, { mode: 'keystrokes' })
+    const maxlengthValue = await evaluate(session, "document.getElementById('ml').value")
+    check('keystrokes 不回读最终 value', maxlength.value === 'abcdef' && maxlength.chars === 6
+      && maxlengthValue.value === 'abcde' && maxlength.summary.includes('"abcdef"'),
+    JSON.stringify({ maxlength, domValue: maxlengthValue.value }))
+
+    // 中文走 Input.insertText：每个码点一次 input，不产生对应 keydown。
+    await evaluate(session, "document.getElementById('k').value = ''")
+    await resetEvents()
+    const chinese = await fill(session, { selector: '#k' }, '中文', undefined, { mode: 'keystrokes' })
+    const chineseEvents = await eventLog()
+    const chineseValue = await evaluate(session, "document.getElementById('k').value")
+    check('keystrokes 中文走 insertText、不产生 keydown', chinese.chars === 2 && chineseValue.value === '中文'
+      && !chineseEvents.down.includes('中') && !chineseEvents.down.includes('文')
+      && chineseEvents.inputs.length === 2,
+    JSON.stringify({ chinese, value: chineseValue.value, down: chineseEvents.down, inputs: chineseEvents.inputs }))
+
+    // 坐标目标在点击前就被拒（无法可靠清空和校验可编辑性）。
+    const pointMessage = await expectThrow(() => fill(session, { x: 60, y: 35 }, 'x', undefined, { mode: 'keystrokes' }))
+    check('keystrokes 坐标目标报错', Boolean(pointMessage) && pointMessage.includes('需要 ref 或 selector')
+      && pointMessage.includes('坐标目标无法可靠清空'), String(pointMessage))
+
+    // select 与非文本 input 按各自文案拒绝，并提示改用路径。
+    const selectMessage = await expectThrow(() => fill(session, { selector: '#sel' }, 'x', undefined, { mode: 'keystrokes' }))
+    const fileMessage = await expectThrow(() => fill(session, { selector: '#file' }, 'x', undefined, { mode: 'keystrokes' }))
+    check('keystrokes 对 select / 非文本 input 报错',
+      Boolean(selectMessage) && selectMessage.includes('下拉选择控件 select') && selectMessage.includes('browser_e2e_press')
+        && Boolean(fileMessage) && fileMessage.includes('不是可逐键输入的文本目标')
+        && fileMessage.includes('input[type=file]'),
+      JSON.stringify({ selectMessage, fileMessage }))
+
+    // 参数校验：delayMs 只能配 keystrokes；mode 只接受两个枚举值。
+    const insertDelay = await expectThrow(() => fill(session, { selector: '#plain' }, 'x', undefined,
+      { mode: 'insert', delayMs: 10 }))
+    const implicitInsertDelay = await expectThrow(() => fill(session, { selector: '#plain' }, 'x', undefined, { delayMs: 10 }))
+    check('delayMs 只允许 keystrokes', Boolean(insertDelay)
+      && insertDelay.includes('delayMs 只对 mode=keystrokes 生效')
+      && Boolean(implicitInsertDelay) && implicitInsertDelay.includes('delayMs 只对 mode=keystrokes 生效'),
+    JSON.stringify({ insertDelay, implicitInsertDelay }))
+
+    const delayTooBig = await expectThrow(() => fill(session, { selector: '#plain' }, 'x', undefined,
+      { mode: 'keystrokes', delayMs: 1001 }))
+    const delayNegative = await expectThrow(() => fill(session, { selector: '#plain' }, 'x', undefined,
+      { mode: 'keystrokes', delayMs: -1 }))
+    const delayFraction = await expectThrow(() => fill(session, { selector: '#plain' }, 'x', undefined,
+      { mode: 'keystrokes', delayMs: 1.5 }))
+    check('delayMs 越界报错', Boolean(delayTooBig) && delayTooBig.includes('delayMs 必须是 0-1000 的整数，收到 1001')
+      && Boolean(delayNegative) && delayNegative.includes('收到 -1')
+      && Boolean(delayFraction) && delayFraction.includes('收到 1.5'),
+    JSON.stringify({ delayTooBig, delayNegative, delayFraction }))
+
+    const badMode = await expectThrow(() => fill(session, { selector: '#plain' }, 'x', undefined, { mode: 'typing' }))
+    check('mode 非法报错', Boolean(badMode) && badMode.includes('mode 只支持 insert / keystrokes')
+      && badMode.includes('"typing"'), String(badMode))
+
+    const tooLong = await expectThrow(() => fill(session, { selector: '#plain' }, 'x'.repeat(2001), undefined,
+      { mode: 'keystrokes' }))
+    check('keystrokes 超过 2000 字符报错', Boolean(tooLong)
+      && tooLong.includes('一次最多 2000 个字符') && tooLong.includes('收到 2001'), String(tooLong))
+
+    // 时间预算文案按规格固定：delayMs × 字符数，500 × 100 = 50000 ms 超过 30000 ms。
+    const overBudget = await expectThrow(() => fill(session, { selector: '#plain' }, 'x'.repeat(100), undefined,
+      { mode: 'keystrokes', delayMs: 500 }))
+    check('delayMs × 字符数超过 30000ms 报错', Boolean(overBudget)
+      && overBudget.includes('不能超过 30000 ms') && overBudget.includes('500 × 100') && overBudget.includes('50000'),
+    String(overBudget))
+
+    // 缺省 insert：一次写入、不产生任何按键事件，返回形状与旧版逐字段一致。
+    await evaluate(session, "document.getElementById('plain').value = ''")
+    await resetEvents()
+    const inserted = await fill(session, { selector: '#plain' }, 'inserted')
+    const insertedEvents = await eventLog()
+    const insertedValue = await evaluate(session, "document.getElementById('plain').value")
+    check('mode 缺省为 insert 且不产生按键事件', inserted.inputMode === undefined && inserted.mode === 'selector'
+      && insertedValue.value === 'inserted' && insertedEvents.down.length === 0 && insertedEvents.up.length === 0
+      && insertedEvents.inputs.length === 1
+      && inserted.summary === '填写 selector "#plain" <- "inserted"',
+    JSON.stringify({ inserted, domValue: insertedValue.value, down: insertedEvents.down, inputs: insertedEvents.inputs }))
+  }
+
+  console.log('== 用例 5F：hover（ref / selector / 坐标 / settleMs / 失效 ref / 非法输入）==')
   {
     // ref 悬停：CSS :hover 展开子菜单，证明是真实鼠标移动而不是合成事件。
     const menuHtml = '<!doctype html><html><head><style>'
@@ -508,7 +709,7 @@ try {
     JSON.stringify({ noTarget, blankTarget, twoTargets }))
   }
 
-  console.log('== 用例 5F：drag（元素到元素 / 坐标 / steps / 失效目标 / 越界 / 非法输入）==')
+  console.log('== 用例 5G：drag（元素到元素 / 坐标 / steps / 失效目标 / 越界 / 非法输入）==')
   {
     // HTML5 draggable 列表：拖 A 到 C 之后，验证原生 dragstart / dragover / drop 与重排。
     const listHtml = '<!doctype html><html><head><style>'
@@ -820,6 +1021,10 @@ try {
     check('fill 把 value 列为必填并提供四种目标参数', fillTool.parameters.required.includes('value')
       && ['ref', 'selector', 'x', 'y', 'tab_id'].every((field) => field in fillTool.parameters.properties),
     JSON.stringify(fillTool.parameters))
+    check('fill 参数含 mode 枚举与 delayMs', JSON.stringify(fillTool.parameters.properties.mode?.enum) === JSON.stringify(['insert', 'keystrokes'])
+      && 'delayMs' in fillTool.parameters.properties && fillTool.parameters.properties.delayMs?.type === 'integer'
+      && fillTool.parameters.required.includes('value'),
+    JSON.stringify({ mode: fillTool.parameters.properties.mode, delayMs: fillTool.parameters.properties.delayMs, required: fillTool.parameters.required }))
     const scrollTool = definitions.find((definition) => definition.name === 'browser_e2e_scroll')
     check('scroll 参数含 delta_x / delta_y / x / y / tab_id', ['delta_x', 'delta_y', 'x', 'y', 'tab_id'].every((field) => field in scrollTool.parameters.properties),
       JSON.stringify(Object.keys(scrollTool.parameters.properties)))

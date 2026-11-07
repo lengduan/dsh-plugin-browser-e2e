@@ -43,8 +43,9 @@
 - ref 与 selector 路径都先 `assertFillable(locator, label)`：`locator.evaluate` 读 `tagName` 与 `type`，元素是 `input[type=checkbox|radio]` 时抛 `${label} 是可切换控件 input[type=${info.type}]，填写不会改变勾选状态；请改用 browser_e2e_click 切换`，`label` 为 `ref ${ref}` 或 `selector "${selector}"`；`evaluate` 失败（返回 null）时跳过该校验。
 - ref 路径：ref 表查找与 `revalidateRef` 复验同 click → `scrollIntoViewIfNeeded()` → `assertFillable` → `click({ timeout: 10000 })` → `fill(value, { timeout: 10000 })`；返回 `{ mode: 'ref', ref, tag, label: item.name, value, summary }`，摘要 `填写 ${ref} (${tag} "${name}") <- "${value}"`。
 - selector 路径：`waitFor({ state: 'visible', timeout: 5000 })` → `assertFillable` → `click({ timeout: 10000 })` → `fill(value, { timeout: 10000 })`；返回 `{ mode: 'selector', selector, value, summary }`。
-- 坐标路径：`assertPointInViewport` → `page.mouse.click(x, y)` → `page.keyboard.type(value)`。这条路径不经过 `assertFillable`（没有 locator），也不清空原值，`type` 只在光标处追加。
-- 写入语义：ref / selector 用 Playwright 的 `locator.fill`，会替换输入框现有内容并触发 input 事件；能力层接受空串（等价于清空），但工具层 `requireString` 要求非空，空值在工具入口就被拒。
+- 坐标路径：`assertPointInViewport` → `page.mouse.click(x, y)` → `page.keyboard.type(value)`。这条路径不经过 `assertFillable`（没有 locator），也不清空原值，`type` 只在光标处追加；`mode=keystrokes` 不支持坐标目标，在点击前报错，见 `0014-type-keystrokes.md`。
+- 写入语义（`mode=insert`，缺省）：ref / selector 用 Playwright 的 `locator.fill`，会替换输入框现有内容并触发 input 事件；能力层接受空串（等价于清空），但工具层 `requireString` 要求非空，空值在工具入口就被拒。
+- 写入语义（`mode=keystrokes`）：ref / selector 在 click 与可填校验后先 `locator.fill('')` 清空（产生 1 次 Delete 与 1 次 input），再 `locator.pressSequentially(value, { delay, timeout: 10000 })` 逐字符输入；只支持 ref / selector，目标限文本 input / textarea / contenteditable；最终值可能被组件改写，工具不回读。参数、按键序列与错误文案见 `0014-type-keystrokes.md`。
 - 工具层输出只取 `info.summary`。
 
 ## 边界
@@ -65,7 +66,8 @@
    - 用例 5B：`ref 写入生效`、`selector 写入生效`、`坐标写入生效`、`三种目标都不给时报错`。
    - 用例 5D：`checkbox 用 ref 填写报「可切换控件」并提示改用 click`、`radio 用 ref 填写报「可切换控件」`、`fill 后 checkbox / radio 勾选状态未变`、`随后用 click 能正常切换 checkbox`、`同页文本框 fill 仍生效`。
    - 用例 6：`失效 ref 报「已失效，请重新 snapshot」`、`失效 ref 的 fill 同样报「已失效」而不是点空`。
-   - 用例 10：`fill 把 value 列为必填并提供四种目标参数`。
+   - 用例 10：`fill 把 value 列为必填并提供四种目标参数`、`fill 参数含 mode 枚举与 delayMs`。
+   - 用例 5E：按 `0014-type-keystrokes.md` 验收第 1 条的全部 check 标签。
 2. `node tests/multitab.mjs`：exit 0、无 FAIL。用例 3 的 `带 tab_id 点击 t1 生效`、`t1 的 ref 在 t2 上失效`；用例 6 的 `click 未知 tab 报错`。
 3. `node tests/invariants.mjs`：exit 0、无 FAIL。用例 C 的 `assertRefBelongsToTab 按页隔离：别的页 ref 不存在`、`assertRefRevalidated：未命中与零尺寸是两种文案`。
 4. 缺口（未验证，不据此判定通过）：坐标负数与超视口两侧文案、ref 与 selector 同时给、只给 `x` 或只给 `y`，测试文件里没有对应用例；这几条按 `assertPointInViewport` 与 `targetOf` 的实现口径描述。
