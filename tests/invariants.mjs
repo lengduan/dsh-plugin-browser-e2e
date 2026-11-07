@@ -17,7 +17,9 @@ import {
 } from '../lib/invariants.js'
 import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
+  tabs,
 } from '../lib/session.js'
+import { navigate } from '../lib/page.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
   PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
@@ -280,10 +282,20 @@ await check('默认 CDP 端点宿主侧取自 lib/defaults.js（session / index 
 
 console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 Edge）==')
 
-/** 假 page：接口满足 addPage / attachPageHooks / reuseInfo 的最小需求。 */
+/**
+ * 假 page：接口满足 addPage / attachPageHooks / reuseInfo 的最小需求。
+ * on / emit 让测试能触发页面层监听（例如 page.on('close')），与真实事件回调一致。
+ */
 function fakePage(overrides = {}) {
+  const handlers = new Map()
   return {
-    on() {},
+    handlers,
+    on(event, handler) {
+      handlers.set(event, handler)
+    },
+    emit(event, ...args) {
+      handlers.get(event)?.(...args)
+    },
     close: async () => {},
     evaluate: async () => 'complete',
     url: () => 'about:blank',
@@ -544,6 +556,76 @@ await check('只剩一页时并发 closeTab 同一页：至少一个 rejected，
 // 清空会话注册表，避免假会话影响后续用例与进程退出。
 await closeAll()
 await check('用例 G 结束：会话注册表已清空', () => {
+  assert.deepEqual(activeSessionKeys(), [])
+})
+
+console.log('== 用例 H：ready 允许 0 页（方案 C）与复用分支并发 close ==')
+await check('关闭唯一页后：state 仍 ready、pages 为 0，tabs / navigate 报「尚未启动」，复用 start 补建一页', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-ready-zero-page', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-ready-zero-page')
+  const firstPage = session.pages.get('t1')?.page
+  assert.ok(firstPage, '启动后应有标签页 t1')
+  // 走页面层真实的 close 回调：只 removePage，不写 session.state。
+  firstPage.emit('close')
+  assert.equal(session.pages.size, 0)
+  assert.equal(session.activeTabId, null)
+  assert.equal(session.state, 'ready', '标签页归零不改会话状态')
+  await assert.rejects(() => tabs('g-ready-zero-page'), /浏览器尚未启动，请先调用 browser_e2e_start/)
+  await assert.rejects(
+    () => navigate(session, 'about:blank'),
+    /浏览器尚未启动，请先调用 browser_e2e_start/,
+  )
+  // 复用路径（隔离模式）补建一页后成功返回，浏览器没有被收掉。
+  const result = await launch('g-ready-zero-page')
+  assert.equal(result.reused, true)
+  assert.equal(result.tabs, 1)
+  assert.equal(session.pages.size, 1)
+  assert.ok(session.pages.has(session.activeTabId), 'activeTabId 应指向补建出的页')
+  assert.equal(session.state, 'ready')
+  assert.equal(browser.closeCalls, 0)
+})
+
+await check('复用分支与 close 并发：close 先生效时 launch 只能抛并发关闭错误，不返回 reused:true', async () => {
+  let releaseNewPage = () => {}
+  const newPageGate = new Promise((resolve) => {
+    releaseNewPage = resolve
+  })
+  let newPageCalls = 0
+  const browser = fakeBrowser({
+    newPage: async () => {
+      newPageCalls += 1
+      // 首次启动直接返回页；复用分支的补建页停在 gate 上，制造「补建中」的窗口。
+      if (newPageCalls > 1) await newPageGate
+      return fakePage()
+    },
+  })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-reuse-close-race', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-reuse-close-race')
+  session.pages.clear()
+  session.activeTabId = null
+  // 复用分支进入补建页的 await；落定信号此时已建立。
+  const launchOutcome = launch('g-reuse-close-race').then(
+    (value) => ({ status: 'fulfilled', value }),
+    (error) => ({ status: 'rejected', error }),
+  )
+  const closePromise = close('g-reuse-close-race')
+  // close 的同步段已把会话从 registry 摘除，而 launch 还没返回。
+  assert.ok(!activeSessionKeys().includes('g-reuse-close-race'))
+  releaseNewPage()
+  const outcome = await launchOutcome
+  await closePromise
+  // 接受的结果只有一种：rejected（并发关闭错误）。fulfilled（reused:true）即假成功。
+  assert.equal(outcome.status, 'rejected', `close 生效后 launch 不得成功返回：${JSON.stringify(outcome.value)}`)
+  assert.match(String(outcome.error?.message), /浏览器已关闭（(?:复用|启动)与关闭并发）/)
+  assert.equal(session.state, 'closed')
+  assert.equal(session.pages.size, 0, '补建出的页不应登记到已关闭的会话')
+})
+
+await closeAll()
+await check('用例 H 结束：会话注册表已清空', () => {
   assert.deepEqual(activeSessionKeys(), [])
 })
 

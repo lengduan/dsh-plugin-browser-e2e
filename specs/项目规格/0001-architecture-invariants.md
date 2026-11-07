@@ -226,7 +226,7 @@ HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型�
 
 | 函数 | 判据 | 错误信息（保持原口径） |
 |---|---|---|
-| `assertBrowserRunning(session)` | 会话存在且至少一个标签页 | 浏览器尚未启动，请先调用 browser_e2e_start |
+| `assertBrowserRunning(session)` | 会话存在且至少一个标签页（0 页按「尚未启动」处理） | 浏览器尚未启动，请先调用 browser_e2e_start |
 | `assertCurrentTabAvailable(session)` | 会话存在、`activeTabId` 非 null/undefined，且该 id 在 `pages` 里 | 浏览器尚未启动或没有可用标签页，请先 browser_e2e_start |
 | `assertTabExists(session, tabId)` | `tabId` 在该会话 `pages` 里 | tab {id} 不存在，请先 browser_e2e_tabs 获取最新 tab_id |
 | `assertCanCloseLastTab(session)` | 会话标签页数 > 1 | 这是最后一个标签页，不能关闭；如需结束整个浏览器请用 browser_e2e_close |
@@ -282,7 +282,14 @@ closed：终态，任何事件非法
   `tests/invariants.mjs` 覆盖全部合法 / 非法组合。
 - `closing` 期间到达的 `launchSettled` 必须走 `closeSettled`：启动中被 close 时，启动收尾负责
   拆掉已建立的浏览器，不留半初始化会话与孤儿进程。
-- `ready` 只表示浏览器与至少一个标签页可用；标签页增删不改状态。
+- `ready` 表示「浏览器可用」，允许 0 个标签页；标签页增删不改会话状态，0 页是可恢复态：
+  页面工具（`assertBrowserRunning` / `assertCurrentTabAvailable`）仍报「浏览器尚未启动」，
+  `browser_e2e_start` 的复用路径按模式处理 —— 隔离模式补建一页后返回复用结果，CDP 模式报
+  「CDP 浏览器已没有打开的标签页」的可诊断错误。`page.on('close')` / `page.on('crash')` 只调
+  `removePage`，不写 `session.state`；浏览器是否关闭只由 `close` 决定（`ready --close--> closing`）。
+- 复用分支（已有浏览器）同样建立落定信号（`launchingPromise` / `launchTask`），并发 `close` 等它
+  走完再关浏览器、并发 `launch` 等它落定；返回成功前复查会话仍在 registry 里且不是
+  `closing` / `closed`，不满足就抛并发关闭错误，不返回假的 `reused: true`。
 - 并发 launch：后到者等待同一个落定 Promise，不另起浏览器；等待期间被 close 走
   `assertNotClosedDuringLaunch`，落定后仍无浏览器走 `assertLaunchSettled`。
 - 计时口径：`idle/ready` 才装空闲计时器；`launching/closing/closed` 不装（`touch` 跳过），
