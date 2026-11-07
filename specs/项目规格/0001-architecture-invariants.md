@@ -52,7 +52,7 @@ panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js
 auth.js → fence.js
-screencast.js → protocol.js / invariants.js
+screencast.js → protocol.js
 capture.js → （无内部依赖）
 protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
 ```
