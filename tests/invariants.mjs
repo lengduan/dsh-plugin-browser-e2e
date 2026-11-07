@@ -21,8 +21,9 @@ import {
 } from '../lib/session.js'
 import { navigate } from '../lib/page.js'
 import {
-  DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
-  PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
+  DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
+  PANEL_PROTOCOL_VERSION, PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelErrorCode,
+  isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
 } from '../lib/protocol.js'
 import { HEADER, injectProtocol, readSource } from '../scripts/protocol-inject.mjs'
 import { DEFAULT_CDP_ENDPOINT } from '../lib/defaults.js'
@@ -212,6 +213,27 @@ await check('命令表与事件表是协议的唯一来源', () => {
   assert.equal(isPanelCommand('no-such-command'), false)
   assert.equal(isPanelEvent('frame'), true)
   assert.equal(isPanelEvent('no-such-event'), false)
+})
+await check('错误码表是 error.code 的唯一来源，isPanelErrorCode 只认表内 code', () => {
+  assert.deepEqual(Object.values(PANEL_ERROR_CODES).sort(), [
+    'capture-failed', 'close-tab-failed', 'command-failed', 'config-sync-failed', 'invalid-command',
+    'invalid-config', 'invalid-payload', 'last-tab', 'no-active-tab', 'protocol-mismatch',
+    'screencast-failed', 'state-failed', 'unknown-tab',
+  ])
+  for (const code of Object.values(PANEL_ERROR_CODES)) {
+    assert.equal(isPanelErrorCode(code), true, `${code} 应在表内`)
+  }
+  assert.equal(isPanelErrorCode('no-such-code'), false)
+  assert.equal(isPanelErrorCode(''), false)
+  assert.equal(isPanelErrorCode(undefined), false)
+})
+await check('host 源码不手写错误码字面量（panel.js / session.js / screencast.js）', () => {
+  const quoted = new RegExp(`['"\`](${Object.values(PANEL_ERROR_CODES).join('|')})['"\`]`)
+  for (const file of ['panel.js', 'session.js', 'screencast.js']) {
+    const source = readFileSync(new URL(`../lib/${file}`, import.meta.url), 'utf8')
+    assert.ok(!quoted.test(source), `lib/${file} 不应手写错误码字面量（应从 PANEL_ERROR_CODES 取）`)
+    assert.ok(source.includes('PANEL_ERROR_CODES'), `lib/${file} 应从 protocol.js 取错误码`)
+  }
 })
 await check('协议版本与路径', () => {
   assert.equal(isSupportedProtocol(PANEL_PROTOCOL_VERSION), true)

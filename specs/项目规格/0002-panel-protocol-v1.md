@@ -51,11 +51,13 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 | `state` | `{state}` |
 | `frame` | `{tabId, seq, width, height, data}`（base64 JPEG，seq 单调递增，client 丢弃旧帧） |
 | `action` | `{trace:{tool, summary, at}}` |
-| `error` | `{code, message}` |
+| `error` | `{code, message}`（`code` 取自 `PANEL_ERROR_CODES`） |
 
 ### 错误码表
 
-`code` 的取值以 `lib/panel.js` 的 `sendError` / `reportError` 调用点为准：
+错误码的唯一来源是 `lib/protocol.js` 的 `PANEL_ERROR_CODES`：host 侧（`lib/panel.js`、
+`lib/session.js`）从表取值，不在调用点写 code 字面量；`tests/invariants.mjs` 断言表内取值
+与预期一致，并断言两份 host 源文件里不出现这些 code 的字面量。
 
 | code | 触发条件 | 是否关闭连接 |
 |---|---|---|
