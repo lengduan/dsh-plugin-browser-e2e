@@ -1,8 +1,8 @@
 /**
  * 跨调用不变量与纯状态机的单元测试（不启动浏览器）。
  *
- * 覆盖：lib/invariants.js 的全部断言、lib/session.js 的状态转移表、
- * lib/protocol.js 的 panelTabId 组合规则与投屏设置单一来源、
+ * 覆盖：lib/invariants.js 的全部断言、lib/session.js 的状态转移表与 launch 落定/失败清理
+ * （用假 chromium 注入，不启动浏览器）、lib/protocol.js 的 panelTabId 组合规则与投屏设置单一来源、
  * lib/client.js 注入块与协议表一致。
  *
  * 运行：node tests/invariants.mjs
@@ -15,7 +15,7 @@ import {
   assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled, assertModeNotHotSwitched,
   assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated, assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
-import { nextSessionState, SESSION_STATES } from '../lib/session.js'
+import { nextSessionState, SESSION_STATES, activeSessionKeys, closeAll, launch, sessionOf } from '../lib/session.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
   PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
@@ -24,10 +24,10 @@ import {
 let pass = 0
 let fail = 0
 
-/** 跑一个用例：异常计 FAIL 并继续，保证一次跑完所有断言。 */
-function check(name, fn) {
+/** 跑一个用例：异常计 FAIL 并继续，保证一次跑完所有断言；用例可以是 async。 */
+async function check(name, fn) {
   try {
-    fn()
+    await fn()
     pass += 1
     console.log(`  PASS  ${name}`)
   } catch (error) {
@@ -52,16 +52,16 @@ function makeSession(overrides = {}) {
 }
 
 console.log('== 用例 A：会话与标签页不变量 ==')
-check('有标签页时 assertBrowserRunning 通过', () => {
+await check('有标签页时 assertBrowserRunning 通过', () => {
   const session = makeSession()
   session.pages.set('t1', { id: 't1' })
   assert.doesNotThrow(() => assertBrowserRunning(session))
 })
-check('没有会话时 assertBrowserRunning 报「尚未启动」', () => {
+await check('没有会话时 assertBrowserRunning 报「尚未启动」', () => {
   assert.throws(() => assertBrowserRunning(undefined), /浏览器尚未启动，请先调用 browser_e2e_start/)
   assert.throws(() => assertBrowserRunning(makeSession()), /浏览器尚未启动，请先调用 browser_e2e_start/)
 })
-check('assertCurrentTabAvailable：active 存在才通过', () => {
+await check('assertCurrentTabAvailable：active 存在才通过', () => {
   const session = makeSession({ activeTabId: 't1' })
   assert.throws(() => assertCurrentTabAvailable(session), /没有可用标签页/)
   session.pages.set('t1', { id: 't1' })
@@ -69,14 +69,14 @@ check('assertCurrentTabAvailable：active 存在才通过', () => {
   session.activeTabId = 't2'
   assert.throws(() => assertCurrentTabAvailable(session), /没有可用标签页/)
 })
-check('assertTabExists 返回条目，缺失时报「不存在」', () => {
+await check('assertTabExists 返回条目，缺失时报「不存在」', () => {
   const session = makeSession()
   const entry = { id: 't1', page: {} }
   session.pages.set('t1', entry)
   assert.equal(assertTabExists(session, 't1'), entry)
   assert.throws(() => assertTabExists(session, 't9'), /tab t9 不存在/)
 })
-check('assertCanCloseLastTab：只剩一个时报错', () => {
+await check('assertCanCloseLastTab：只剩一个时报错', () => {
   const session = makeSession()
   session.pages.set('t1', { id: 't1' })
   assert.throws(() => assertCanCloseLastTab(session), /最后一个标签页/)
@@ -85,30 +85,30 @@ check('assertCanCloseLastTab：只剩一个时报错', () => {
 })
 
 console.log('== 用例 B：启动/关闭状态不变量 ==')
-check('assertNotClosedDuringLaunch：closing / closed 报并发关闭', () => {
+await check('assertNotClosedDuringLaunch：closing / closed 报并发关闭', () => {
   assert.doesNotThrow(() => assertNotClosedDuringLaunch(makeSession({ state: 'launching' })))
   assert.doesNotThrow(() => assertNotClosedDuringLaunch(makeSession({ state: 'ready' })))
   assert.throws(() => assertNotClosedDuringLaunch(makeSession({ state: 'closing' })), /启动与关闭并发/)
   assert.throws(() => assertNotClosedDuringLaunch(makeSession({ state: 'closed' })), /启动与关闭并发/)
 })
-check('assertLaunchSettled：没有浏览器时报启动失败', () => {
+await check('assertLaunchSettled：没有浏览器时报启动失败', () => {
   assert.doesNotThrow(() => assertLaunchSettled(makeSession({ browser: {} })))
   assert.throws(() => assertLaunchSettled(makeSession({ browser: null })), /并发启动未成功/)
 })
-check('assertModeNotHotSwitched：不一致的两个方向都报错', () => {
+await check('assertModeNotHotSwitched：不一致的两个方向都报错', () => {
   assert.doesNotThrow(() => assertModeNotHotSwitched('isolated', 'isolated'))
   assert.doesNotThrow(() => assertModeNotHotSwitched('cdp', 'cdp'))
   assert.throws(() => assertModeNotHotSwitched('isolated', 'cdp'), /如需切换为 cdp 模式请先 browser_e2e_close/)
   assert.throws(() => assertModeNotHotSwitched('cdp', 'isolated'), /如需切换为 isolated 模式请先 browser_e2e_close/)
 })
-check('assertEndpointNotHotSwitched：端点不一致报错并带两端点', () => {
+await check('assertEndpointNotHotSwitched：端点不一致报错并带两端点', () => {
   assert.doesNotThrow(() => assertEndpointNotHotSwitched('http://127.0.0.1:9222', 'http://127.0.0.1:9222'))
   assert.throws(
     () => assertEndpointNotHotSwitched('http://127.0.0.1:9222', 'http://127.0.0.1:9333'),
     /CDP 端点 http:\/\/127\.0\.0\.1:9222.*http:\/\/127\.0\.0\.1:9333/,
   )
 })
-check('CDP 三条不变量各自报原文案', () => {
+await check('CDP 三条不变量各自报原文案', () => {
   assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} })))
   assert.throws(() => assertCdpConnected(makeSession({ context: null })), /CDP 浏览器连接已失效/)
   assert.doesNotThrow(() => assertCdpContext({}))
@@ -118,28 +118,28 @@ check('CDP 三条不变量各自报原文案', () => {
 })
 
 console.log('== 用例 C：ref 表不变量 ==')
-check('assertRefBelongsToTab 按页隔离：别的页 ref 不存在', () => {
+await check('assertRefBelongsToTab 按页隔离：别的页 ref 不存在', () => {
   const refsA = new Map([['@0', { xpath: '/html/body/button[1]' }]])
   const item = assertRefBelongsToTab(refsA, '@0')
   assert.equal(item.xpath, '/html/body/button[1]')
   const refsB = new Map()
   assert.throws(() => assertRefBelongsToTab(refsB, '@0'), /ref @0 不存在/)
 })
-check('assertRefRevalidated：未命中与零尺寸是两种文案', () => {
+await check('assertRefRevalidated：未命中与零尺寸是两种文案', () => {
   assert.doesNotThrow(() => assertRefRevalidated('@1', { found: true, width: 10, height: 20 }))
   assert.throws(() => assertRefRevalidated('@1', { found: false, width: 0, height: 0 }), /ref @1 已失效，请重新 browser_e2e_snapshot/)
   assert.throws(() => assertRefRevalidated('@1', { found: true, width: 0, height: 20 }), /不可见.*请重新 browser_e2e_snapshot/)
 })
-check('assertSingleScreencast：已有 CDP 会话时报串台', () => {
+await check('assertSingleScreencast：已有 CDP 会话时报串台', () => {
   assert.doesNotThrow(() => assertSingleScreencast(null))
   assert.throws(() => assertSingleScreencast({}), /只能有一个投屏会话/)
 })
 
 console.log('== 用例 D：会话状态机（纯转移函数）==')
-check('状态全集为 idle / launching / ready / closing / closed', () => {
+await check('状态全集为 idle / launching / ready / closing / closed', () => {
   assert.equal(JSON.stringify(SESSION_STATES), JSON.stringify(['idle', 'launching', 'ready', 'closing', 'closed']))
 })
-check('合法转移逐条命中', () => {
+await check('合法转移逐条命中', () => {
   const legal = [
     ['idle', 'launch', 'launching'],
     ['idle', 'close', 'closed'],
@@ -153,7 +153,7 @@ check('合法转移逐条命中', () => {
     assert.equal(nextSessionState(from, event), to, `${from} --${event}--> ${to}`)
   }
 })
-check('非法转移抛错（含终态 closed）', () => {
+await check('非法转移抛错（含终态 closed）', () => {
   const illegal = [
     ['idle', 'launchSettled'],
     ['idle', 'launchFailed'],
@@ -173,19 +173,19 @@ check('非法转移抛错（含终态 closed）', () => {
     assert.throws(() => nextSessionState(from, event), /非法会话状态转移/, `${from} --${event} 应非法`)
   }
 })
-check('未知状态报错', () => {
+await check('未知状态报错', () => {
   assert.throws(() => nextSessionState('booting', 'launch'), /未知会话状态 booting/)
 })
 
 console.log('== 用例 E：面板协议契约（protocol.js 单一来源）==')
-check('panelTabId 组合与拆分可往返', () => {
+await check('panelTabId 组合与拆分可往返', () => {
   assert.equal(panelTabId('session-a', 't1'), 'session-a#t1')
   assert.deepEqual(parsePanelTabId('session-a#t1'), { key: 'session-a', tabId: 't1' })
   // 以最后一个分隔符为界：key 自身含分隔符也能正确拆分（tabId 不含分隔符）。
   assert.deepEqual(parsePanelTabId('a#b#t1'), { key: 'a#b', tabId: 't1' })
   assert.deepEqual(parsePanelTabId(panelTabId('k#x', 't1')), { key: 'k#x', tabId: 't1' })
 })
-check('panelTabId 非法格式返回 null', () => {
+await check('panelTabId 非法格式返回 null', () => {
   assert.equal(parsePanelTabId('#t1'), null)
   assert.equal(parsePanelTabId('session-a#'), null)
   assert.equal(parsePanelTabId('no-separator'), null)
@@ -193,7 +193,7 @@ check('panelTabId 非法格式返回 null', () => {
   assert.equal(parsePanelTabId(undefined), null)
   assert.equal(parsePanelTabId(123), null)
 })
-check('命令表与事件表是协议的唯一来源', () => {
+await check('命令表与事件表是协议的唯一来源', () => {
   assert.deepEqual(Object.values(PANEL_COMMANDS).sort(), ['attach', 'close-tab', 'configure', 'request-frame', 'select-tab'])
   assert.deepEqual(Object.values(PANEL_EVENTS).sort(), ['action', 'error', 'frame', 'hello', 'state'])
   assert.equal(isPanelCommand('attach'), true)
@@ -202,14 +202,14 @@ check('命令表与事件表是协议的唯一来源', () => {
   assert.equal(isPanelEvent('frame'), true)
   assert.equal(isPanelEvent('no-such-event'), false)
 })
-check('协议版本与路径', () => {
+await check('协议版本与路径', () => {
   assert.equal(isSupportedProtocol(PANEL_PROTOCOL_VERSION), true)
   assert.equal(isSupportedProtocol(PANEL_PROTOCOL_VERSION + 1), false)
   assert.equal(isSupportedProtocol('1'), false)
   assert.equal(PANEL_SOCKET_PATH, '/api/dsh-browser-e2e/socket')
   assert.equal(PANEL_STATE_PATH, '/api/dsh-browser-e2e/state')
 })
-check('投屏区间与默认值自洽（默认值逐项落在区间内）', () => {
+await check('投屏区间与默认值自洽（默认值逐项落在区间内）', () => {
   for (const [field, [min, max]] of Object.entries(PANEL_CONFIG_LIMITS)) {
     const value = DEFAULT_SCREENCAST_CONFIG[field]
     assert.ok(Number.isInteger(value) && value >= min && value <= max, `${field}=${value} 不在 [${min}, ${max}]`)
@@ -220,14 +220,14 @@ check('投屏区间与默认值自洽（默认值逐项落在区间内）', () =
 console.log('== 用例 F：client bundle 的协议常量由 protocol.js 注入 ==')
 const clientSource = readFileSync(new URL('../client/index.js', import.meta.url), 'utf8')
 const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
-check('client 源文件只留注入标记，不手写区间与默认值', () => {
+await check('client 源文件只留注入标记，不手写区间与默认值', () => {
   assert.ok(clientSource.includes('/* @inject:panel-protocol:start */'))
   assert.ok(clientSource.includes('/* @inject:panel-protocol:end */'))
   assert.ok(!clientSource.includes('/api/dsh-browser-e2e/socket'), 'client 源文件不应手写 socket 路径')
   assert.ok(!/const PROTOCOL_VERSION = \d+;/.test(clientSource), 'client 源文件不应手写协议版本')
   assert.ok(!/const DEFAULT_CONFIG = \{/.test(clientSource), 'client 源文件不应手写投屏默认值')
 })
-check('生成的 bundle 常量与 protocol.js 逐字段一致', () => {
+await check('生成的 bundle 常量与 protocol.js 逐字段一致', () => {
   const readBlock = (pattern) => {
     const match = pattern.exec(bundle)
     assert.ok(match, 'bundle 缺少常量：' + pattern)
@@ -238,6 +238,142 @@ check('生成的 bundle 常量与 protocol.js 逐字段一致', () => {
   assert.deepEqual(JSON.parse(readBlock(/const PANEL_CONFIG_LIMITS = (\{.*?\});/)), PANEL_CONFIG_LIMITS)
   assert.deepEqual(JSON.parse(readBlock(/const DEFAULT_CONFIG = (\{.*?\});/)), DEFAULT_SCREENCAST_CONFIG)
   assert.ok(bundle.startsWith('/* 由 scripts/build-client.mjs 生成，勿手改'))
+})
+
+console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 Edge）==')
+
+/** 假 page：接口满足 addPage / attachPageHooks / reuseInfo 的最小需求。 */
+function fakePage(overrides = {}) {
+  return {
+    on() {},
+    evaluate: async () => 'complete',
+    url: () => 'about:blank',
+    title: async () => '',
+    viewportSize: () => ({ width: 1600, height: 900 }),
+    context: () => ({ newCDPSession: async () => ({}) }),
+    ...overrides,
+  }
+}
+
+/** 假 browser：version / process / close 供 reuseInfo 与清理路径使用，closeCalls 记录关闭次数。 */
+function fakeBrowser(overrides = {}) {
+  const browser = {
+    closeCalls: 0,
+    version: () => '0.0.0-fake',
+    process: () => ({ kill() {} }),
+    close: async () => {
+      browser.closeCalls += 1
+    },
+    ...overrides,
+  }
+  return browser
+}
+
+/** 假 chromium：只实现 launch / connectOverCDP 两个入口。 */
+function fakeChromium({ launch, connectOverCDP } = {}) {
+  return {
+    launch: async () => launch(),
+    connectOverCDP: async () => connectOverCDP(),
+  }
+}
+
+/** 假 CDP context：pages() 与 on() 供接管路径使用。 */
+function fakeContext(pages) {
+  return { pages: () => pages, on() {} }
+}
+
+await check('隔离模式 newPage 抛错：launch 失败、状态回 idle 并关闭浏览器', async () => {
+  const browser = fakeBrowser({
+    newPage: async () => {
+      throw new Error('newPage 失败（模拟）')
+    },
+  })
+  const chromium = fakeChromium({ launch: () => browser })
+  await assert.rejects(
+    () => launch('g-isolated-fail', {}, undefined, {}, { chromium }),
+    /newPage 失败（模拟）/,
+  )
+  const session = sessionOf('g-isolated-fail')
+  assert.equal(session.state, 'idle')
+  assert.equal(session.browser, null)
+  assert.equal(session.pages.size, 0)
+  assert.equal(browser.closeCalls, 1)
+})
+await check('失败后同一 key 换正常 chromium 可重新启动到 ready', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  const result = await launch('g-isolated-fail', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-isolated-fail')
+  assert.equal(session.state, 'ready')
+  assert.equal(session.pages.size, 1)
+  assert.equal(result.reused, false)
+  assert.equal(result.tabs, 1)
+})
+await check('CDP 模式没有 context：报错、回 idle 并断开连接', async () => {
+  const browser = fakeBrowser({ contexts: () => [] })
+  const chromium = fakeChromium({ connectOverCDP: () => browser })
+  await assert.rejects(
+    () => launch('g-cdp-no-context', { mode: 'cdp' }, undefined, {}, { chromium }),
+    /没有可用的 context/,
+  )
+  const session = sessionOf('g-cdp-no-context')
+  assert.equal(session.state, 'idle')
+  assert.equal(session.browser, null)
+  assert.equal(browser.closeCalls, 1)
+})
+await check('CDP 模式没有已打开标签页：报错、回 idle 并断开连接', async () => {
+  const browser = fakeBrowser({ contexts: () => [fakeContext([])] })
+  const chromium = fakeChromium({ connectOverCDP: () => browser })
+  await assert.rejects(
+    () => launch('g-cdp-no-pages', { mode: 'cdp' }, undefined, {}, { chromium }),
+    /没有已打开的标签页/,
+  )
+  const session = sessionOf('g-cdp-no-pages')
+  assert.equal(session.state, 'idle')
+  assert.equal(session.browser, null)
+  assert.equal(browser.closeCalls, 1)
+})
+await check('隔离模式正常启动：ready + 1 个标签页', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  const result = await launch('g-isolated-ok', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-isolated-ok')
+  assert.equal(session.state, 'ready')
+  assert.equal(session.pages.size, 1)
+  assert.equal(result.tabs, 1)
+})
+await check('复用路径 0 标签页（isolated）：自动补建一页并返回成功', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-reuse-isolated', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-reuse-isolated')
+  session.pages.clear()
+  session.activeTabId = null
+  const result = await launch('g-reuse-isolated')
+  assert.equal(result.reused, true)
+  assert.ok(result.tabs >= 1, `tabs=${result.tabs}`)
+  assert.equal(session.pages.size, 1)
+  assert.equal(session.state, 'ready')
+  assert.equal(browser.closeCalls, 0)
+})
+await check('复用路径 0 标签页（cdp）：抛可诊断错误而不是静默成功', async () => {
+  const browser = fakeBrowser({ contexts: () => [fakeContext([fakePage()])] })
+  const chromium = fakeChromium({ connectOverCDP: () => browser })
+  await launch('g-reuse-cdp', { mode: 'cdp' }, undefined, {}, { chromium })
+  const session = sessionOf('g-reuse-cdp')
+  session.pages.clear()
+  session.activeTabId = null
+  await assert.rejects(
+    () => launch('g-reuse-cdp'),
+    /CDP 浏览器已没有打开的标签页，请在浏览器里新建标签页，或先 browser_e2e_close 再重新 browser_e2e_start/,
+  )
+  assert.equal(session.state, 'ready')
+})
+
+// 清空会话注册表，避免假会话影响后续用例与进程退出。
+await closeAll()
+await check('用例 G 结束：会话注册表已清空', () => {
+  assert.deepEqual(activeSessionKeys(), [])
 })
 
 console.log('')
