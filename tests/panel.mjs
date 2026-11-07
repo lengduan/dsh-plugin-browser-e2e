@@ -269,6 +269,8 @@ panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'close-tab', tab
 const lastTabError = await waitFor(() => panel.events.slice(eventsBeforeLastClose)
   .find((event) => event.kind === 'error' && event.code === 'last-tab'))
 check('最后一个 tab 关闭回 error（last-tab）', Boolean(lastTabError), JSON.stringify(panel.events.filter((e) => e.kind === 'error')))
+check('last-tab 错误文案来自 panel 判据（不是 session 抛的文案）',
+  lastTabError?.message === '最后一个标签页不能关闭', String(lastTabError?.message))
 
 // 多会话：判据是目标 tab 所属会话的页数，别的会话还有页不能让它误判成可关闭。
 const KEY2 = 'panel-test-key2'
@@ -281,6 +283,7 @@ panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'close-tab', tab
 const key2Error = await waitFor(() => panel.events.slice(eventsBeforeKey2Close)
   .find((event) => event.kind === 'error'))
 check('关闭另一会话的唯一页回 last-tab（不是 close-tab-failed）', key2Error?.code === 'last-tab', JSON.stringify(key2Error))
+check('跨会话 last-tab 走 panel 判据文案', key2Error?.message === '最后一个标签页不能关闭', String(key2Error?.message))
 const key2TabsAfter = await listPanelTabs()
 check('last-tab 后该会话的页仍在', key2TabsAfter.some((tab) => tab.id === key2PanelTab), JSON.stringify(key2TabsAfter.map((tab) => tab.id)))
 // 收尾：关掉第二个会话，后续断言仍按单会话状态进行。
@@ -300,6 +303,10 @@ check('非法设置回 error 事件', Boolean(configError), JSON.stringify(panel
 panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'select-tab', tabId: 'no-such-tab' }))
 const tabError = await waitFor(() => panel.events.find((event) => event.kind === 'error' && event.code === 'unknown-tab'))
 check('未知 tab 回 error 事件', Boolean(tabError), JSON.stringify(panel.events.filter((e) => e.kind === 'error')))
+
+panel.ws.send(JSON.stringify({ v: PANEL_PROTOCOL_VERSION, kind: 'no-such-command' }))
+const invalidCommand = await waitFor(() => panel.events.find((event) => event.kind === 'error' && event.code === 'invalid-command'))
+check('未知命令 kind 回 invalid-command 错误事件', Boolean(invalidCommand), JSON.stringify(invalidCommand))
 
 const stateResponse = await fetch(`http://${origin}${PANEL_STATE_PATH}`)
 const stateBody = await stateResponse.json()

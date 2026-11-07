@@ -18,7 +18,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
 const {
-  click, consoleEntries, evaluate, fill, navigate, networkEntries, scroll, snapshot, waitFor,
+  attachPageHooks, click, consoleEntries, evaluate, fill, navigate, networkEntries, RING_LIMIT, scroll, snapshot,
+  waitFor,
 } = await import('../lib/page.js')
 const { currentTab } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
@@ -254,6 +255,41 @@ try {
       JSON.stringify(afterNetwork.entries.map((e) => ({ url: e.url, status: e.status }))))
   }
 
+  console.log('== 用例 3C：网络记录上限（request 事件淘汰最旧）==')
+  {
+    const handlers = {}
+    const fakePageObj = {
+      on: (event, handler) => {
+        handlers[event] = handler
+      },
+      mainFrame: () => ({}),
+      evaluate: async () => 'complete',
+      viewportSize: () => ({ width: 800, height: 600 }),
+    }
+    const entry = {
+      id: 'fake',
+      page: fakePageObj,
+      refs: new Map(),
+      consoleRing: [],
+      networkRing: [],
+      networkByRequest: new Map(),
+      loading: false,
+      origin: 'created',
+    }
+    attachPageHooks({ key: 'fake-session', hookedPages: new WeakSet(), emit: () => {} }, entry)
+    for (let i = 0; i < RING_LIMIT + 100; i += 1) {
+      handlers.request({
+        url: () => `http://127.0.0.1/x/${i}`,
+        method: () => 'GET',
+        isNavigationRequest: () => false,
+      })
+    }
+    check('网络 event Map 不超过 RING_LIMIT', entry.networkByRequest.size === RING_LIMIT, String(entry.networkByRequest.size))
+    const oldest = entry.networkByRequest.keys().next().value
+    check('淘汰的是最旧请求（保留最后 RING_LIMIT 条）', oldest?.url() === 'http://127.0.0.1/x/100', String(oldest?.url()))
+    check('网络 ring 同样只保留 RING_LIMIT 条', entry.networkRing.length === RING_LIMIT, String(entry.networkRing.length))
+  }
+
   console.log('== 用例 4：snapshot 的 box / role / depth ==')
   {
     await navigate(session, 'data:text/html,<body><div style="padding:20px"><button id="btn" style="position:fixed;left:100px;top:100px;width:100px;height:40px" onclick="window.__clicked=true">Click Me</button></div><input id="chk" type="checkbox" style="position:fixed;left:10px;top:10px"></body>', 'load')
@@ -420,6 +456,21 @@ try {
     const badClip = await expectThrow(() => screenshot(session, currentTab(session), { clip: { x: 1.5, y: 0, width: 10, height: 10 } }))
     check('非整数 clip 报错', Boolean(badClip) && badClip.includes('整数'), String(badClip))
 
+    // name 消毒：路径穿越与分隔符拒绝，合法同名两次落不同文件。
+    const traversal = await expectThrow(() => screenshot(session, currentTab(session), { name: '..\\..\\outside' }))
+    check('name 含路径穿越被拒', Boolean(traversal) && traversal.includes('name'), String(traversal))
+    const slashName = await expectThrow(() => screenshot(session, currentTab(session), { name: 'a/b' }))
+    check('name 含路径分隔符被拒', Boolean(slashName) && slashName.includes('name'), String(slashName))
+    for (const badName of ['', ' ', '.', '..']) {
+      const badNameMessage = await expectThrow(() => screenshot(session, currentTab(session), { name: badName }))
+      check(`显式传 name ${JSON.stringify(badName)} 被拒且文案带 name`,
+        Boolean(badNameMessage) && badNameMessage.includes('name'), String(badNameMessage))
+    }
+    const dupA = await screenshot(session, currentTab(session), { name: 'dup-name' })
+    const dupB = await screenshot(session, currentTab(session), { name: 'dup-name' })
+    check('同名截图不覆盖且都落盘', dupA.file !== dupB.file && existsSync(dupA.file) && existsSync(dupB.file),
+      `${dupA.file} / ${dupB.file}`)
+
     // 滚动后：数值倍率路径必须按页面坐标截取（不能截到文档顶部），无 clip 时倍率要真实生效。
     await navigate(session, 'data:text/html,<body style="margin:0">'
       + '<div style="height:800px;background:rgb(255,0,0)"></div>'
@@ -527,6 +578,15 @@ try {
     const content = screenshotTool.output.render({}, value)
     check('附件服务可用时 render 返回文本 + image 块', content.length === 2 && content[1].type === 'image' && content[1].attachment.attachmentId === 'att-1', JSON.stringify(content))
     check('图片实际存入附件服务', saved.length === 1 && saved[0].bytes > 0, JSON.stringify(saved))
+
+    // close_tab 工具：新开一页再按 tab_id 关闭，active tab 提示跟随剩余页。
+    const closeTabTool = definitions.find((definition) => definition.name === 'browser_e2e_close_tab')
+    const extraTab = await navigate(session, 'data:text/html,<h1>close-me</h1>', 'load', { new_tab: true })
+    check('close_tab 前置：新开第二个页', session.pages.size === 2, String(session.pages.size))
+    const closeTabResult = await closeTabTool.execute({ tab_id: extraTab.tabId }, exec)
+    check('browser_e2e_close_tab 关闭指定页并提示下一个 active', session.pages.size === 1
+      && !session.pages.has(extraTab.tabId) && typeof closeTabResult === 'string'
+      && closeTabResult.includes('关闭标签页') && closeTabResult.includes(extraTab.tabId), String(closeTabResult))
 
     // 附件服务不可用时只返回文本路径。
     const noAttachmentDefs = []

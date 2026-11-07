@@ -166,12 +166,17 @@ await check('非法转移抛错（含终态 closed）', () => {
     ['launching', 'closeSettled'],
     ['ready', 'launch'],
     ['ready', 'launchSettled'],
+    ['ready', 'launchFailed'],
     ['ready', 'closeSettled'],
     ['closing', 'close'],
     ['closing', 'launch'],
+    ['closing', 'launchSettled'],
+    ['closing', 'launchFailed'],
     ['closed', 'launch'],
     ['closed', 'close'],
     ['closed', 'closeSettled'],
+    ['closed', 'launchSettled'],
+    ['closed', 'launchFailed'],
   ]
   for (const [from, event] of illegal) {
     assert.throws(() => nextSessionState(from, event), /非法会话状态转移/, `${from} --${event} 应非法`)
@@ -262,6 +267,15 @@ await check('默认 CDP 端点单源：bundle 注入值等于 lib/defaults.js，
   assert.ok(injected, 'bundle 缺少 DEFAULT_CDP_ENDPOINT')
   assert.equal(JSON.parse(injected[1]), DEFAULT_CDP_ENDPOINT)
   assert.ok(!clientSource.includes('9222'), 'client 源文件不应手写默认 CDP 端点')
+})
+await check('默认 CDP 端点宿主侧取自 lib/defaults.js（session / index 不各写一份）', () => {
+  const sessionSource = readFileSync(new URL('../lib/session.js', import.meta.url), 'utf8')
+  const indexSource = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+  assert.ok(sessionSource.includes("from './defaults.js'"), 'session.js 应从 defaults.js 取默认端点')
+  assert.ok(indexSource.includes("from './defaults.js'"), 'index.js 应从 defaults.js 取默认端点')
+  assert.ok(!sessionSource.includes('127.0.0.1:9222'), 'session.js 不应手写默认端点')
+  assert.ok(!indexSource.includes('127.0.0.1:9222'), 'index.js 不应手写默认端点（含描述文案）')
+  assert.ok(indexSource.includes('DEFAULT_CDP_ENDPOINT'), 'index.js 的 Config 默认值应使用常量')
 })
 
 console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 Edge）==')
@@ -446,7 +460,8 @@ await check('失败清理期间被 close：终态 closed，不被启动落定覆
   await closePromise
   assert.equal(session.state, 'closed')
 })
-await check('已广播 opened 后启动失败：补广播同 key 的 closed 事件', async () => {  const events = []
+await check('已广播 opened 后启动失败：补广播同 key 的 closed 事件', async () => {
+  const events = []
   const unsubscribe = subscribePanelEvents((event) => events.push(event))
   try {
     const browser = fakeBrowser({

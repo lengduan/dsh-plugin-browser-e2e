@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS ??= '8000'
 
 const {
-  activeSessionKeys, close, closeBySessionId, launch, requireSession,
+  activeSessionKeys, close, closeAll, closeBySessionId, launch, requireSession,
 } = await import('../lib/session.js')
 const { navigate } = await import('../lib/page.js')
 
@@ -44,6 +44,9 @@ async function waitUntil(fn, timeoutMs = 15000, stepMs = 250) {
     await sleep(stepMs)
   }
 }
+
+// 主流程整体包 try/finally：任一用例失败也保证收掉可能残留的浏览器，不把进程留给下一个测试。
+try {
 
 console.log('== 用例 A：空闲超时自动回收（DSH_BROWSER_IDLE_MS=8000）==')
 {
@@ -151,13 +154,32 @@ console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
   check('后到的一次按复用返回同一实例', a.reused === false && b.reused === true,
     JSON.stringify({ aReused: a.reused, bReused: b.reused }))
   check('会话只有一个标签页', a.tabs === 1 && b.tabs === 1, JSON.stringify({ aTabs: a.tabs, bTabs: b.tabs }))
-  const single = await waitUntil(() => edgeRootCount() <= before + 1, 10000)
-  check('只新增一个 Edge 主进程', single && edgeRootCount() === before + 1, `before=${before} now=${edgeRootCount()}`)
+  // pwsh 查进程一次约 2-2.7s，8s 空闲时限可能在等待期间被回收；查询前后都刷新空闲计时。
+  // 会话若已被回收（单次查询 > 8s 的极端情况），返回一个不可能满足的大数，让 waitUntil 继续等而不是抛错崩溃。
+  const countWithTouch = () => {
+    let session
+    try {
+      session = requireSession('test-key-concurrent')
+    } catch {
+      return Number.MAX_SAFE_INTEGER
+    }
+    session.touch()
+    const count = edgeRootCount()
+    session.touch()
+    return count
+  }
+  const single = await waitUntil(() => countWithTouch() <= before + 1, 10000)
+  check('只新增一个 Edge 主进程', single && countWithTouch() === before + 1, `before=${before} now=${countWithTouch()}`)
+  requireSession('test-key-concurrent').touch()
   const blank = await navigate(requireSession('test-key-concurrent'), 'about:blank', 'load')
   check('并发启动后浏览器可正常导航', blank.url === 'about:blank', JSON.stringify(blank))
   await close('test-key-concurrent')
   const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
   check('关闭后 Edge 主进程回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
+}
+
+} finally {
+  await closeAll()
 }
 
 console.log('')

@@ -130,6 +130,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 - `scale` 三种形态：`css` / `device` 透传 Playwright 的 `page.screenshot`；整数 `1` / `2` / `3` 是倍率，改走 CDP `Page.captureScreenshot` 的 `clip.scale`。
 - `fullPage` + 数值倍率：显式给出 `{x: 0, y: 0, width: 整页宽, height: 整页高, scale: 倍率}` 的 clip，并置 `captureBeyondViewport: true`；不整页的数值倍率用 `captureBeyondViewport: false`，有 clip 按 clip 截、无 clip 只截视口。
 - 整页宽高取 `document.documentElement.scrollWidth/scrollHeight` 与 `document.body` 的较大值；CDP 接管模式没有固定视口，非整页截图按 `window.innerWidth/innerHeight` 兜底。
+- `name` 是文件名前缀，只允许字母、数字、`.`、`_`、`-`，不能含 `..` 或路径分隔符（`/`、`\`、`:`），否则在截图前就报错；落盘时会追加「时间戳 + 自增序号」的唯一后缀，所以实际文件名形如 `<name>-<后缀>.png`，同一名字连续截图不会互相覆盖。缺省用 `shot-<时间戳>`。
 
 ## 进程回收
 
@@ -211,6 +212,10 @@ node tests/reclaim.mjs
 
 # 工具能力验证：console / network / 全 DOM snapshot 与 4000 截断 / 三种点击 / fill 三种目标 / scroll / 截图倍率 / wait
 node tests/tools.mjs
+
+# 分层聚合：单元测试（invariants + client-bundle，纯函数）/ 集成测试（真起无头 Edge，脚本串行）
+npm run test:unit
+npm run test:integration
 ```
 
 宿主半区是纯 JS；客户端 bundle 手写（不引入打包器），`scripts/build-client.mjs` 只做语法校验、协议常量与命令 / 事件名注入、落盘。`package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，测试脚本、`client/`、`scripts/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
