@@ -57,7 +57,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
 | `browser_e2e_tabs` | 列出本会话标签页：`tab_id` / url / title / active / `loading` / `origin`（`created` 本会话新建 / `adopted` CDP 接管） |
 | `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭，结束整个浏览器用 `browser_e2e_close` |
-| `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数 |
+| `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数。`delta: true` 只返回自上次快照以来的新增 / 变化 / 移除（与 `query` 互斥，默认 ref 继续有效）；`query`（`text` / `selector` / `role`，可加 `limit` 与 `includeHidden`）定位元素并返回可直接点击的 `selector`，不写快照基线；`frame` 读取指定同源 iframe（整数索引或 name / url 子串），子 frame 只读、不分配 ref |
 | `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一 |
 | `browser_e2e_fill` | 向 input / textarea / contenteditable 填入文本：`ref` / `selector` / `x`+`y` 三选一，`value` 必填 |
 | `browser_e2e_hover` | 悬停：`ref` / `selector` / `x`+`y` 三选一，用真实鼠标移动触发 CSS `:hover` 与 mouseover / mouseenter；`settleMs`（0-5000，默认 300）是悬停后等待页面反应的时长，`0` 表示不等待 |
@@ -83,11 +83,12 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 事件环重置
 
-每个标签页各有一份控制台记录、网络记录（环形 500 条，按发生顺序，`limit` 取尾部）和 ref 表。页面换文档后旧记录必须失效，实际判据如下：
+每个标签页各有一份控制台记录、网络记录（环形 500 条，按发生顺序，`limit` 取尾部）、ref 表与快照增量基线。页面换文档后旧记录必须失效，实际判据如下：
 
-- 在 Playwright 的 `request` 事件里判断：`request.isNavigationRequest()` 为真且 `request.frame() === page.mainFrame()` 时，视为该页主框架的新文档请求，在登记本次请求之前清空该页的 console / network 记录与 ref 表。
-- Playwright 的 Page 事件不暴露 `loaderId`，因此用「主框架导航请求」作为等价判据：`goto` 同一地址、`reload` 都会发出主框架 document 请求，所以同 URL 重新加载同样会重置；hash 变化与 SPA 路由不产生新文档请求，保留原有记录。
+- 在 Playwright 的 `request` 事件里判断：`request.isNavigationRequest()` 为真且 `request.frame() === page.mainFrame()` 时，视为该页主框架的新文档请求，在登记本次请求之前清空该页的 console / network 记录、ref 表，并把快照增量基线标记失效（丢弃 key 与 ref，保留 `delta` 报 `reset` 的判定依据）。
+- Playwright 的 Page 事件不暴露 `loaderId`，因此用「主框架导航请求」作为等价判据：`goto` 同一地址、`reload` 都会发出主框架 document 请求，所以同 URL 重新加载同样会重置；hash 变化与 SPA 路由不产生新文档请求，保留原有记录与增量基线。
 - `browser_e2e_navigate` 在调用 `page.goto` 之前还会主动清一次，保证导航失败时旧记录不会挂在本次导航结果上；新文档自身的请求会在 `request` 事件里重新登记，不会被这次清空误删。
+- 子 frame 导航只把该 frame 的增量基线标记失效（页面脚本注册表 epoch 变化时 delta 退化为全量），主文档基线不动。
 - 主框架开始导航时该页 `loading` 置为 true，`domcontentloaded` / `load` 后置 false，面板 tab 上显示「加载中」。
 
 ### 截图
@@ -324,7 +325,9 @@ npm run test:integration
 <a id="known-limitations-and-deferred-work"></a>
 
 - **同一会话的并发启动** —— 同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例，不会并行拉起第二个浏览器；若等待期间会话被 close，后到者收到「浏览器已关闭（启动与关闭并发）」并提示重新启动。
-- **快照 4000 上限的体积** —— 全 DOM 逐节点返回并附一行缩进文本，上限 4000 条。实测 4100 个简单 div 的页面返回 4000 条，模型可见文本 193,317 字节（约 189 KB）；DOM 更复杂时体积更大，会明显占用上下文。
+- **快照 4000 上限的体积** —— 全 DOM 逐节点返回并附一行缩进文本，上限 4000 条。实测 4100 个简单 div 的页面返回 4000 条，模型可见文本 193,317 字节（约 189 KB）；DOM 更复杂时体积更大，会明显占用上下文。`delta: true` 与 `query` 可压缩模型可见文本，但 delta 只对比前 4000 个可见节点，4000 条以外的节点不参与对比也不进基线；delta 与 query 的正文各 20000 字符上限，delta 的 removed 列表最多逐条列 200 个。
+- **快照脚本 15 秒超时不可终止** —— 单次快照的页面脚本在宿主侧有 15000ms 超时，超时后本次调用报错，但页面脚本本身无法被终止，可能继续占用页面线程并让后续 `evaluate` 排队；遇到同步死循环页面请稍后重试或改用 `browser_e2e_evaluate` 小范围读取。扫描上限 20000 个元素，超过时 `scanTruncated` 为真且 `total` 表示已扫描到的可见元素数。
+- **快照只读同源 iframe** —— `frame` 参数只接受同源 iframe（空 url / `about:blank` / `about:srcdoc` 视为同源），跨源 iframe 直接报错；子 frame 只读，节点不分配 ref、不写主文档 ref 表，子 frame 内的元素操作（`f<N>@M` 之类）留给 P1-9。快照增量基线保存在会话内存中，不持久化、不跨会话复用。
 - **多标签页测试的进程计数是观察项** —— `tests/multitab.mjs` 收尾只打印剩余 msedge 主进程数与启动前基线，不据此断言；`tests/reclaim.mjs` 末尾打印的「应为 0」同样只是观察，真正的断言是「回落到 before 基线」——本机若已开着 Edge，基线不是 0，绝对值不可比。
 - **profile 里的版本是 git 快照** —— `dsh plugin add` 装的是指定 commit 的快照，改完源码必须 commit + push，再在 profile 里重新解析，否则跑的还是旧提交。
 - **插件卡片座位不注册** —— 客户端暂不注册 `web-ui.plugin.item` / `plugins.bundle.config`；在当前桌面宿主上注册会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），插件行改由宿主按 `Config` 自动渲染。

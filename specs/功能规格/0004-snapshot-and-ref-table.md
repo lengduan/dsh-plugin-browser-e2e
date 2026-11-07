@@ -12,11 +12,11 @@
 
 ### 入口与返回
 
-- 工具 `browser_e2e_snapshot` 只接受 `tab_id`（缺省 active tab），能力函数是 `lib/page.js` 的 `snapshot(session, tabId)`；目标页由 `currentTab` 解析，未知 tab 报 `tab <id> 不存在，请先 browser_e2e_tabs 获取最新 tab_id`。
-- `snapshot` 在页面上下文执行 `snapshotScript(SNAPSHOT_LIMIT)`，`SNAPSHOT_LIMIT` 为 4000。
-- 返回 `{ tabId, url, count, total, truncated, nodes, text, summary }`：
+- 工具 `browser_e2e_snapshot` 接受 `tab_id`（缺省 active tab）与可选的 `delta` / `query` / `frame`（后三者见 `0012-snapshot-delta-query-frame.md`）；能力函数是 `lib/page.js` 的 `snapshot(session, tabId, options)`；目标页由 `currentTab` 解析，未知 tab 报 `tab <id> 不存在，请先 browser_e2e_tabs 获取最新 tab_id`。
+- `snapshot` 在页面上下文执行 `snapshotScript({ limit: SNAPSHOT_LIMIT, ... })`，`SNAPSHOT_LIMIT` 为 4000；页面脚本另受扫描上限 20000 约束。
+- 返回 `{ tabId, url, mode, frame, count, total, truncated, nodes, text, summary, scanTruncated }`；delta / query 的返回形状见 `0012-snapshot-delta-query-frame.md`：
   - `nodes` 每项为 `{ ref, tag, id, classes, role, name, text, box, depth, xpath }`；`ref` 为 `@N`，按本次返回顺序从 0 起编号；`classes` 是字符串数组；`box` 为 `{ x, y, width, height }`，视口相对 CSS 像素、四值取整；`depth` 为到 `body` 的层级（`body` 的直接子元素为 1）。
-  - `count` 为本次返回条数，`total` 为页面中实际判定为可见的节点总数；`truncated` 为 `total > SNAPSHOT_LIMIT`。
+  - `count` 为本次返回条数，`total` 为本次已扫描到的可见节点数（扫描上限 20000，`scanTruncated` 为真时它等于扫描上限而不是页面真实总数）；`truncated` 为 `total > SNAPSHOT_LIMIT`。
   - `text` 为可读行文本，每行形如 `<缩进>[N] <tag>#<id>.<classes> "<name>" box(x,y,w,h)`（`#<id>` 与 `.<classes>` 只在有值时出现，`N` 为去掉 `@` 的 ref），缩进为 `depth` 个两空格；无可见元素时为 `（未发现可见元素）`；截断时在末尾追加 `（已截断：共 <total> 个可见元素，只返回前 4000 个）`。
   - `summary` 为 `快照 <count> 个可见元素`，截断时追加 `（共 <total> 个，已截断到 4000 个）`。
 - 工具层把结果拼成 `<summary>\n当前页面：<url>（标签页 <tabId>）\n\n<text>` 返回；该次调用的 `summary` 同时进入面板 `action` 事件。
@@ -36,7 +36,8 @@
 ### ref 生命周期
 
 - ref 表挂在标签页条目上（`tab.refs`，`Map<ref, node>`），按页隔离。
-- 每次 `snapshot` 先 `tab.refs.clear()`，再按返回顺序逐条 `set(ref, item)`：ref 表始终只含本次返回的节点。
+- 全量 `snapshot` 先 `tab.refs.clear()`，再按返回顺序逐条 `set(ref, item)`：ref 表只含本次返回的节点。
+- delta `snapshot` 不清空 ref 表：仍在的元素沿用基线 ref，变化元素更新表项内容但 ref 不变，新增元素从基线 `nextRef` 递增分配，被移除元素的 ref 删除。全量快照仍会重置编号并使旧 ref 失效。
 - 导航清空 ref 表：`navigate` 在 `goto` 前清一次、认证补票重试后再清一次；页面内主框架新文档请求（`isNewDocumentRequest` 命中）也会清空，因此同 URL reload 与 `goto` 同地址这类新文档同样让旧 ref 失效，hash 变化与 SPA 路由不触发该判据。
 - 使用 ref：`click` / `fill` 先 `assertRefBelongsToTab(tab.refs, ref)` 查表，再 `revalidateRef`（页面内用 `document.evaluate` 按 xpath 取节点并读 `getBoundingClientRect`），最后 `assertRefRevalidated` 判定；两处都通过才按 `xpath=` locator 操作。
 - 复验失败文案（`lib/invariants.js`）：
@@ -53,6 +54,9 @@
 - id 含引号等选择器元字符时，`label[for]` 查询经 `CSS.escape` 转义，不会让整次快照因 `SyntaxError` 失败。
 - 快照脚本的 `cap` 只在入参为非正数 / 非整数时回退 4000，正常路径由调用方传 `SNAPSHOT_LIMIT`。
 - 不处理的场景：`text` 取 `textContent`，会包含隐藏后代的文本，仅作展示用（代码注释已明示）。
+- delta 无基线（首次快照 / 新文档 / 注册表 epoch 变化）时退化为全量，`baseline` 字段说明原因，不抛错。
+- frame 非 0 时快照只读：节点不分配 ref、不写 `tab.refs`，跨源 iframe 报错（P1-9 处理）。
+- query 不建立 delta 基线、不修改 `tab.refs`。
 
 ## 验收
 
@@ -63,3 +67,4 @@
    - 用例 9 的 `truncated 为 true`、`只返回 4000 条`、`total 记录实际可见节点数`、`文本尾部有截断提示`、`截断后的 ref 点击仍生效`。
 2. `node tests/multitab.mjs` 退出码 0 且无 FAIL：用例 3 的 `t1 快照拿到 A 按钮 ref`、`带 tab_id 点击 t1 生效`、`t1 的 ref 在 t2 上失效`、`t2 快照是 B 按钮`；用例 4 的 `缺省快照作用于 active（t2）`、`active 切换后缺省快照跟到 t1`；用例 6 的 `snapshot 未知 tab 报错`；用例 7 的 `恢复后可 snapshot`。
 3. `node tests/invariants.mjs` 退出码 0 且无 FAIL：用例 C 的 `assertRefBelongsToTab 按页隔离：别的页 ref 不存在`、`assertRefRevalidated：未命中与零尺寸是两种文案`。
+4. `node tests/snapshot.mjs` 退出码 0 且无 FAIL：delta / query / frame 用例（见 `0012-snapshot-delta-query-frame.md`）。
