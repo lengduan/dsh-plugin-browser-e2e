@@ -689,6 +689,7 @@
     <tbody>
       <tr><td>console / network 环形缓冲</td><td>每个 tab 各 500 条</td><td class="mono">page.js RING_LIMIT</td></tr>
       <tr><td>单条 console 文本</td><td>2000 字符截断</td><td class="mono">page.js CONSOLE_TEXT_LIMIT</td></tr>
+      <tr><td>console 级别过滤</td><td>debug &lt; log &lt; info &lt; warning &lt; error（warn 等同 warning）；不可判级类型恒保留</td><td class="mono">page.js CONSOLE_LEVELS / CONSOLE_LEVEL_ALIASES</td></tr>
       <tr><td>snapshot 条数</td><td>4000 个可见元素（超出截断并标注）</td><td class="mono">page.js SNAPSHOT_LIMIT</td></tr>
       <tr><td>截图输出单边 / 总像素</td><td>8192 px / 4194304 px</td><td class="mono">capture.js MAX_SHOT_EDGE / MAX_SHOT_PIXELS</td></tr>
       <tr><td>投屏参数区间</td><td>quality 10-100，maxWidth/Height 100-4096，everyNthFrame 1-10</td><td class="mono">protocol.js PANEL_CONFIG_LIMITS</td></tr>

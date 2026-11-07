@@ -180,6 +180,16 @@ let upgradeHandler = null
     return fill.required.includes('value') && ['ref', 'selector', 'x', 'y'].every((field) => field in fill.properties)
   })())
   check('browser_e2e_screenshot 参数含 clip/format/quality/scale', ['name', 'fullPage', 'clip', 'format', 'quality', 'scale'].every((k) => k in tools.get('browser_e2e_screenshot').parameters.properties))
+  check('browser_e2e_console 的 level 参数声明枚举', (() => {
+    const consoleTool = tools.get('browser_e2e_console')
+    if (!consoleTool) return false
+    const parameters = consoleTool.parameters
+    const levels = parameters.properties.level?.enum ?? []
+    return parameters.properties.level?.type === 'string'
+      && ['debug', 'log', 'info', 'warning', 'error', 'warn'].every((level) => levels.includes(level))
+      && 'limit' in parameters.properties
+      && 'tab_id' in parameters.properties
+  })())
   check('browser_e2e_click / press 描述与参数声明指针和按住动作', (() => {
     const clickTool = tools.get('browser_e2e_click')
     const pressTool = tools.get('browser_e2e_press')

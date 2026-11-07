@@ -34,7 +34,7 @@
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
-| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate/snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/evaluate/consoleEntries/networkEntries/networkDetail`、对话框策略与记录（`dialogPolicy` / `dialogPromptText` / `dialogRing`、`setDialogPolicy` / `dialogEntries`）、`titleOf` | 落盘、协议、面板连接、结构化读取（`lib/read.js`） |
+| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate/snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/evaluate/consoleEntries`（含 `CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES` / `normalizeConsoleLevel` / `consoleLevelRank` 的级别过滤视图）`/networkEntries/networkDetail`、对话框策略与记录（`dialogPolicy` / `dialogPromptText` / `dialogRing`、`setDialogPolicy` / `dialogEntries`）、`titleOf` | 落盘、协议、面板连接、结构化读取（`lib/read.js`） |
 | `lib/read.js` | 结构化页面读取：页内扫描 controls / links / tables / forms，唯一 CSS selector 生成与校验，记录整形与文本预算（`readStructured`） | 生命周期、事件环、ref 表、交互动作、截图、面板 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
@@ -117,7 +117,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_snapshot`：`summary` / `url` / `tabId` / `text` / `mode` / `frame` / `baseline` / `added` / `changed` / `removed` / `matches` / `truncated` / `scanTruncated`（`mode` / `frame` / `scanTruncated` 各模式都返回；`baseline` / `added` / `changed` / `removed` 只在 delta，`matches` 只在 query）；
   - `browser_e2e_read`：`summary` / `url` / `tabId` / `text` / `mode` / `sections` / `truncated` / `scanTruncated`；
   - `browser_e2e_screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等）；
-  - `browser_e2e_console` / `browser_e2e_network`：`summary` / `count` / `total` / `text`；
+  - `browser_e2e_console`：`summary` / `total` / `matched` / `count` / `level` / `text`；
+  - `browser_e2e_network`：`summary` / `count` / `total` / `text`；
   - `browser_e2e_network_detail`：`summary` / `text`；
   - `browser_e2e_wait`：`summary` / `mode` / `timeoutMs` / `elapsedMs`；
     selector 条件另读 `state`；url 条件另读 `urlMatch` / `matchedUrl` / `matchedCurrent`；

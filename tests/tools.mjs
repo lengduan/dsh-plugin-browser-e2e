@@ -19,7 +19,7 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
-  attachPageHooks, clearRings, CLIPBOARD_HTML_LIMIT, CLIPBOARD_TEXT_LIMIT, click, consoleEntries,
+  attachPageHooks, clearRings, CLIPBOARD_HTML_LIMIT, CLIPBOARD_TEXT_LIMIT, click, CONSOLE_LEVELS, consoleEntries,
   DEFAULT_EVALUATE_TIMEOUT_MS, drag, evaluate, fill, hover,
   MAX_EVALUATE_TIMEOUT_MS, MIN_EVALUATE_TIMEOUT_MS, navigate,
   NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MAX_MS, NETWORK_BODY_TIMEOUT_MIN_MS, NETWORK_BODY_TIMEOUT_MS,
@@ -326,6 +326,141 @@ try {
     check('捕获到 console.warn', /warn-msg/.test(text), text)
     check('捕获到 pageerror', text.includes('boom-pageerror'), text)
     check('条目结构含 level / text / at', info.entries.every((e) => typeof e.level === 'string' && typeof e.text === 'string' && typeof e.at === 'string'), JSON.stringify(info.entries))
+  }
+
+  console.log('== 用例 2B：console 级别过滤 ==')
+  {
+    // 夹具：五级各一条 + 四种不可判级类型（dir / table / assert / trace）+ 一条未捕获异常。
+    // 记录顺序即事件顺序，pageerror 最后到达，用于验证「先过滤后截尾」取的是尾部。
+    const levelsHtml = '<!doctype html><html><body><script>'
+      + "console.debug('lv-debug');console.log('lv-log');console.info('lv-info');"
+      + "console.warn('lv-warn');console.error('lv-error');"
+      + "console.dir({ mark: 'lv-dir' });console.table([{ mark: 'lv-table' }]);"
+      + "console.assert(false, 'lv-assert');console.trace('lv-trace');"
+      + "setTimeout(function(){ throw new Error('lv-pageerror') }, 50)"
+      + '</script></body></html>'
+    await navigate(session, dataUrl(levelsHtml), 'load')
+    const allArrived = await waitUntil(async () => {
+      const info = await consoleEntries(session, RING_LIMIT)
+      return ['lv-debug', 'lv-log', 'lv-info', 'lv-warn', 'lv-error', 'lv-pageerror']
+        .every((mark) => info.entries.some((entry) => entry.text.includes(mark)))
+    })
+    const all = await consoleEntries(session, RING_LIMIT)
+    // Playwright 五级之外的记录类型：rank 为 -1，任何 level 下都必须保留。
+    const unranked = new Set(['dir', 'table', 'assert', 'trace'])
+    check('debug / log / info / warn / error 五级全部记录',
+      allArrived
+        && CONSOLE_LEVELS.every((level) => all.entries.some((entry) => entry.level === level))
+        && all.entries.find((entry) => entry.text.includes('lv-warn'))?.level === 'warning'
+        && all.entries.find((entry) => entry.text.includes('lv-pageerror'))?.level === 'error'
+        && !all.entries.some((entry) => entry.level === 'warn'),
+      JSON.stringify(all.entries.map((entry) => ({ level: entry.level, text: entry.text }))))
+
+    const errorOnly = await consoleEntries(session, RING_LIMIT, undefined, { level: 'error' })
+    check('level=error 只回 error（含 pageerror）',
+      errorOnly.entries.every((entry) => entry.level === 'error' || unranked.has(entry.level))
+        && errorOnly.entries.some((entry) => entry.text.includes('lv-error'))
+        && errorOnly.entries.some((entry) => entry.text.includes('lv-pageerror'))
+        && !errorOnly.entries.some((entry) => /lv-(debug|log|info|warn)/.test(entry.text)),
+      JSON.stringify(errorOnly.entries.map((entry) => ({ level: entry.level, text: entry.text }))))
+
+    const warnLevel = await consoleEntries(session, RING_LIMIT, undefined, { level: 'warn' })
+    const warnUpper = await consoleEntries(session, RING_LIMIT, undefined, { level: ' WARN ' })
+    check('level=warn 等同 warning（含 warning 与 error）',
+      warnLevel.level === 'warning'
+        && warnUpper.level === 'warning'
+        && warnUpper.matched === warnLevel.matched
+        && warnLevel.entries.some((entry) => entry.text.includes('lv-warn'))
+        && warnLevel.entries.some((entry) => entry.text.includes('lv-error'))
+        && !warnLevel.entries.some((entry) => /lv-(debug|log|info)/.test(entry.text))
+        && warnLevel.matched === warnLevel.entries.length,
+      JSON.stringify({ level: warnLevel.level, matched: warnLevel.matched, entries: warnLevel.entries.map((entry) => entry.text) }))
+
+    const debugLevel = await consoleEntries(session, RING_LIMIT, undefined, { level: 'debug' })
+    check('level=debug 不过滤（matched 等于 total）',
+      debugLevel.level === 'debug' && debugLevel.matched === debugLevel.total
+        && debugLevel.total === all.total && debugLevel.count === all.count,
+      JSON.stringify({ total: debugLevel.total, matched: debugLevel.matched, count: debugLevel.count }))
+
+    check('不可判级类型在 level=error 下仍保留',
+      [...unranked].every((type) => errorOnly.entries.some((entry) => entry.level === type))
+        && errorOnly.entries.length > 0,
+      JSON.stringify(errorOnly.entries.map((entry) => entry.level)))
+
+    // limit 与 level 组合：take=3 时 count 被截到尾 3 条，matched 仍是命中总数；
+    // limit=0 按既有口径回退 100，count 等于 matched。
+    const tail = await consoleEntries(session, 3, undefined, { level: 'debug' })
+    const fallbackLimit = await consoleEntries(session, 0, undefined, { level: 'error' })
+    check('先过滤后截尾（matched 大于 count，只回最新 count 条）',
+      tail.matched === all.total && tail.matched > tail.count && tail.count === 3
+        && tail.entries.length === 3
+        && tail.entries[2].text.includes('lv-pageerror')
+        && tail.entries.some((entry) => entry.text.includes('lv-assert'))
+        && !tail.entries.some((entry) => entry.text.includes('lv-debug'))
+        && fallbackLimit.count === fallbackLimit.matched && fallbackLimit.matched > 0,
+      JSON.stringify({
+        tail: { total: tail.total, matched: tail.matched, count: tail.count, texts: tail.entries.map((entry) => entry.text) },
+        fallback: { matched: fallbackLimit.matched, count: fallbackLimit.count },
+      }))
+
+    const nullLevel = await consoleEntries(session, RING_LIMIT, undefined, { level: null })
+    const blankLevel = await consoleEntries(session, RING_LIMIT, undefined, { level: '' })
+    check('返回含 total / matched / count / level',
+      ['total', 'matched', 'count', 'level'].every((field) => field in all)
+        && Number.isInteger(all.total) && Number.isInteger(all.matched) && Number.isInteger(all.count)
+        && all.level === null && all.matched === all.total && all.count === all.entries.length
+        && nullLevel.level === null && nullLevel.matched === nullLevel.total
+        && blankLevel.level === null && blankLevel.matched === blankLevel.total
+        && errorOnly.level === 'error' && errorOnly.total === all.total
+        && errorOnly.count === errorOnly.entries.length
+        && all.summary === `控制台记录 ${all.count} 条`
+        && all.text.split('\n')[0] === `${all.entries[0].at.slice(11, 23)} ${all.entries[0].level} ${all.entries[0].text.replace(/\r?\n/g, ' ')}`,
+      JSON.stringify({
+        all: { total: all.total, matched: all.matched, count: all.count, level: all.level, summary: all.summary },
+        errorOnly: { total: errorOnly.total, matched: errorOnly.matched, count: errorOnly.count, level: errorOnly.level },
+        nullLevel: nullLevel.level, blankLevel: blankLevel.level,
+      }))
+
+    // 摘要与工具层 note：level 生效时摘要写命中 / 缓冲，matched > count 时 note 写只取尾部。
+    const { buildToolTable } = await import('../lib/tools.js')
+    const consoleTool = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
+      .find((definition) => definition.name === 'browser_e2e_console')
+    const toolFirstLine = (await consoleTool.run({ level: 'debug', limit: 3 }, { agent: { id: KEY } })).split('\n')[0]
+    check('level 生效时摘要写明命中与缓冲',
+      errorOnly.summary === `控制台记录 ${errorOnly.count} 条（level ≥ error，命中 ${errorOnly.matched} 条 / 缓冲 ${errorOnly.total} 条）`
+        && toolFirstLine === `控制台记录 3 条（level ≥ debug，命中 ${tail.matched} 条 / 缓冲 ${tail.total} 条）`
+          + `（命中 ${tail.matched} 条，只取尾部 3 条）`,
+      JSON.stringify({ summary: errorOnly.summary, toolFirstLine }))
+
+    const beforeInvalid = await consoleEntries(session, RING_LIMIT)
+    const invalidMessage = await expectThrow(() => consoleEntries(session, 100, undefined, { level: 'fatal' }))
+    const afterInvalid = await consoleEntries(session, RING_LIMIT)
+    check('非法 level 报错且不改记录',
+      invalidMessage === 'level 只支持 debug / log / info / warning / error（warn 等同 warning），收到 "fatal"；不传 level 则返回全部记录'
+        && afterInvalid.total === beforeInvalid.total
+        && afterInvalid.matched === beforeInvalid.matched
+        && afterInvalid.count === beforeInvalid.count
+        && afterInvalid.text === beforeInvalid.text
+        && JSON.stringify(afterInvalid.entries) === JSON.stringify(beforeInvalid.entries),
+      JSON.stringify({
+        invalidMessage,
+        before: { total: beforeInvalid.total, count: beforeInvalid.count },
+        after: { total: afterInvalid.total, count: afterInvalid.count },
+      }))
+
+    // 两种空文案：缓冲非空但无命中 vs 缓冲为空。
+    const lowOnlyHtml = '<!doctype html><html><body><h1>only-low</h1><script>console.log("lv-only-low")</script></body></html>'
+    await navigate(session, dataUrl(lowOnlyHtml), 'load')
+    await waitUntil(async () => (await consoleEntries(session, RING_LIMIT)).total > 0)
+    const noMatch = await consoleEntries(session, RING_LIMIT, undefined, { level: 'error' })
+    await navigate(session, dataUrl('<!doctype html><html><body><h1>empty</h1></body></html>'), 'load')
+    const empty = await consoleEntries(session, RING_LIMIT, undefined, { level: 'error' })
+    check('无命中文案与暂无记录文案可区分',
+      noMatch.total > 0 && noMatch.matched === 0 && noMatch.count === 0
+        && noMatch.text === `（缓冲 ${noMatch.total} 条记录，没有 level ≥ error 的条目）`
+        && empty.total === 0 && empty.matched === 0 && empty.text === '（暂无控制台记录）'
+        && noMatch.text !== empty.text,
+      JSON.stringify({ noMatch: { total: noMatch.total, matched: noMatch.matched, text: noMatch.text }, empty: { total: empty.total, text: empty.text } }))
   }
 
   console.log('== 用例 3：network 捕获（含 status）==')

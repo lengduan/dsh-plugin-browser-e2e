@@ -70,7 +70,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
 | `browser_e2e_download` | 下载并校验完整性：`url`（HTTP(S) 直接经当前浏览器上下文取回，共享 Cookie / 登录态）或 `ref` / `selector` / `x`+`y`（点击触发 download 事件）二选一；`filename` 覆盖服务器建议名，`maxBytes` 默认 100 MiB（上限 1 GiB），`expectedSha256` 可选强校验，`timeoutMs` 默认 60000；落盘到产物目录的 `downloads/` 子目录（`DSH_BROWSER_DOWNLOAD_DIR` 覆盖），返回路径、字节数与 SHA-256，同名不覆盖 |
 | `browser_e2e_dialog` | 读取页面弹出的 alert / confirm / prompt 记录（类型、文案、prompt 默认值、实际应答），并按 `tab_id` 设置后续对话框的应答策略：`policy`（`dismiss` 默认 / `accept`，不传表示只读）、`prompt_text`（仅 accept 时可用，缺省用页面默认值）、`limit`（默认 20，最多 50）；对话框在打开时立即按策略应答并记录，策略必须在触发动作前设好 |
-| `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100） |
+| `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100）；`level` 只看不低于该严重级别的记录（`debug` < `log` < `info` < `warning` < `error`，`warn` 等同 `warning`），不可判级的记录类型（`table` / `assert` 等）始终保留 |
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
 | `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
@@ -322,6 +322,7 @@ browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
 browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
 browser_e2e_console { limit: 50 }
+browser_e2e_console { level: "error" }
 browser_e2e_network { limit: 20 }
 browser_e2e_screenshot { name: "result", fullPage: true }
 browser_e2e_close
@@ -427,7 +428,7 @@ npm run test:integration
 
 模型侧只看到工具，不看到面板。23 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
-- **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
+- **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
 - **KV cache 影响**：工具结果以普通工具结果追加进会话日志（append-only），不替换系统提示与既有历史；快照、console / network 输出体积较大，会持续增长上下文，大页面建议直接用 `selector` 操作而不做全量快照。
 

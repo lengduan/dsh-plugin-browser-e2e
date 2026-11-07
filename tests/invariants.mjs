@@ -19,7 +19,9 @@ import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
   tabs,
 } from '../lib/session.js'
-import { createPage, navigate, titleOf } from '../lib/page.js'
+import {
+  consoleLevelRank, CONSOLE_LEVELS, createPage, navigate, normalizeConsoleLevel, titleOf,
+} from '../lib/page.js'
 import { captureJpeg } from '../lib/capture.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
@@ -757,8 +759,44 @@ await check('tools.js 的工具描述从常量插值，不写死默认值', () =
   for (const name of [
     'DEFAULT_VIEWPORT.width', 'DEFAULT_VIEWPORT.height', 'DEFAULT_CDP_ENDPOINT',
     'SNAPSHOT_LIMIT', 'MAX_SHOT_EDGE', 'MAX_SHOT_PIXELS', 'RING_LIMIT',
+    'CONSOLE_LEVELS', 'CONSOLE_LEVEL_ALIASES',
   ]) {
     assert.ok(source.includes(name), `tools.js 应引用 ${name}`)
+  }
+})
+
+console.log('== 用例 L：console 级别归一与排序 ==')
+await check('normalizeConsoleLevel 归一大小写与 warn 别名', () => {
+  // 规范名与别名等价，大小写与首尾空白一并归一。
+  assert.equal(normalizeConsoleLevel('warn'), 'warning')
+  assert.equal(normalizeConsoleLevel('WARN'), 'warning')
+  assert.equal(normalizeConsoleLevel(' Warning '), 'warning')
+  assert.equal(normalizeConsoleLevel('warning'), 'warning')
+  assert.equal(normalizeConsoleLevel('DEBUG'), 'debug')
+  assert.equal(normalizeConsoleLevel(' log '), 'log')
+  assert.equal(normalizeConsoleLevel('Info'), 'info')
+  assert.equal(normalizeConsoleLevel(' error '), 'error')
+})
+await check('normalizeConsoleLevel 拒绝未识别值', () => {
+  for (const value of ['fatal', 'verbose', 'errorr', 'warn2', 42]) {
+    assert.throws(() => normalizeConsoleLevel(value), (error) =>
+      error.message === `level 只支持 debug / log / info / warning / error（warn 等同 warning），收到 ${JSON.stringify(value)}；不传 level 则返回全部记录`)
+  }
+})
+await check('consoleLevelRank 对五级递增、对不可判级类型返回 -1', () => {
+  assert.deepEqual(CONSOLE_LEVELS, ['debug', 'log', 'info', 'warning', 'error'])
+  assert.deepEqual(CONSOLE_LEVELS.map((level) => consoleLevelRank(level)), [0, 1, 2, 3, 4])
+  for (let i = 1; i < CONSOLE_LEVELS.length; i += 1) {
+    assert.ok(consoleLevelRank(CONSOLE_LEVELS[i]) > consoleLevelRank(CONSOLE_LEVELS[i - 1]),
+      `${CONSOLE_LEVELS[i]} 的位次应大于 ${CONSOLE_LEVELS[i - 1]}`)
+  }
+  // 记录侧走同一归一路径：别名与大小写不另起一套比较。
+  assert.equal(consoleLevelRank('warn'), 3)
+  assert.equal(consoleLevelRank(' WARN '), 3)
+  // Playwright 五级之外的记录类型无法判级，一律 -1（任何 level 下都保留）。
+  for (const type of ['dir', 'dirxml', 'table', 'trace', 'clear', 'startGroup', 'startGroupCollapsed',
+    'endGroup', 'assert', 'profile', 'profileEnd', 'count', 'time', 'timeEnd', 'fatal']) {
+    assert.equal(consoleLevelRank(type), -1, `${type} 应返回 -1`)
   }
 })
 
