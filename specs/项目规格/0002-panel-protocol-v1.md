@@ -2,16 +2,18 @@
 
 状态: 已实现
 关联: 0001-architecture-invariants.md（架构约束、panelTabId 规则、投屏设置单一来源）
-代码: lib/protocol.js / lib/panel.js / client/index.js / scripts/build-client.mjs / tests/invariants.mjs
+代码: lib/protocol.js / lib/panel.js / client/index.js / scripts/build-client.mjs /
+scripts/protocol-inject.mjs / tests/invariants.mjs
 
 ## 需求
 
 面板协议原来有三处描述（`README.md`、`lib/panel.js` 头注释、`client/index.js` 头注释）与两处
 版本常量，改一处会与其它处漂移。本文与 `lib/protocol.js` 把命令、事件、版本、路由路径、
-投屏设置区间与默认值、`panelTabId` 组合规则收敛成一份契约；客户端所需的常量由
-`scripts/build-client.mjs` 在构建时从 `lib/protocol.js` 注入。
+投屏设置区间与默认值、`panelTabId` 组合规则收敛成一份契约；客户端所需的常量与命令 / 事件表由
+`scripts/build-client.mjs`（复用 `scripts/protocol-inject.mjs`）在构建时从 `lib/protocol.js` 注入。
 
-收益：改协议只改 `lib/protocol.js`，host 与 client 的校验都从表派生。
+收益：改协议只改 `lib/protocol.js`，host 与 client 都从表派生；client 不再手写协议名，
+`tests/invariants.mjs` 用同一注入模块断言源码 ↔ 产物一致。
 
 ## 契约
 
@@ -67,11 +69,13 @@
 
 - host：`mergeConfig`（用户当场操作，越界回 `invalid-config`）与 `initialConfigOf`（插件配置可能
   被手改脏，逐字段回退默认）都遍历 `PANEL_CONFIG_LIMITS`。
-- client：不手写区间与默认值；`scripts/build-client.mjs` 把 `PANEL_PROTOCOL_VERSION`、
-  `PANEL_SOCKET_PATH`、`PANEL_CONFIG_LIMITS`、`DEFAULT_SCREENCAST_CONFIG` 生成常量块，
+- client：不手写区间、默认值与协议名；`scripts/build-client.mjs` 把 `PANEL_PROTOCOL_VERSION`、
+  `PANEL_SOCKET_PATH`、`PANEL_CONFIG_LIMITS`、`DEFAULT_SCREENCAST_CONFIG` 与
+  `PANEL_COMMANDS` / `PANEL_EVENTS` 生成常量块，
   替换 `client/index.js` 里的 `/* @inject:panel-protocol:start|end */` 标记。
 - `tests/invariants.mjs` 校验生成的 `lib/client.js` 常量块与 `lib/protocol.js` 逐字段相等，
-  并断言 `client/index.js` 里不再手写这些值。
+  断言 `client/index.js` 里不再手写这些值与命令 / 事件名，并用同一个
+  `scripts/protocol-inject.mjs` 断言「源码注入结果 + 头注释」与 `lib/client.js` 全文一致。
 
 ### `panelTabId`
 

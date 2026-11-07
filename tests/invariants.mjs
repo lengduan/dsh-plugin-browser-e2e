@@ -20,6 +20,7 @@ import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
   PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
 } from '../lib/protocol.js'
+import { HEADER, injectProtocol, readSource } from '../scripts/protocol-inject.mjs'
 
 let pass = 0
 let fail = 0
@@ -227,6 +228,13 @@ await check('client 源文件只留注入标记，不手写区间与默认值', 
   assert.ok(!/const PROTOCOL_VERSION = \d+;/.test(clientSource), 'client 源文件不应手写协议版本')
   assert.ok(!/const DEFAULT_CONFIG = \{/.test(clientSource), 'client 源文件不应手写投屏默认值')
 })
+await check('client 源文件不手写命令 / 事件名', () => {
+  assert.ok(!/kind:\s*["'](attach|select-tab|close-tab|request-frame|configure)["']/.test(clientSource),
+    'client 源文件不应手写命令名')
+  assert.ok(!/kind:\s*["'](hello|state|frame|action|error)["']/.test(clientSource),
+    'client 源文件不应手写事件名')
+  assert.ok(!/event\.kind\s*===\s*["']/.test(clientSource), 'client 源文件不应手写事件名比较')
+})
 await check('生成的 bundle 常量与 protocol.js 逐字段一致', () => {
   const readBlock = (pattern) => {
     const match = pattern.exec(bundle)
@@ -237,7 +245,14 @@ await check('生成的 bundle 常量与 protocol.js 逐字段一致', () => {
   assert.equal(JSON.parse(readBlock(/const WS_PATH = ("[^"]*");/)), PANEL_SOCKET_PATH)
   assert.deepEqual(JSON.parse(readBlock(/const PANEL_CONFIG_LIMITS = (\{.*?\});/)), PANEL_CONFIG_LIMITS)
   assert.deepEqual(JSON.parse(readBlock(/const DEFAULT_CONFIG = (\{.*?\});/)), DEFAULT_SCREENCAST_CONFIG)
+  assert.deepEqual(JSON.parse(readBlock(/const PANEL_COMMANDS = Object\.freeze\((\{.*?\})\);/)), PANEL_COMMANDS)
+  assert.deepEqual(JSON.parse(readBlock(/const PANEL_EVENTS = Object\.freeze\((\{.*?\})\);/)), PANEL_EVENTS)
   assert.ok(bundle.startsWith('/* 由 scripts/build-client.mjs 生成，勿手改'))
+})
+await check('源码 ↔ 产物一致：injectProtocol(readSource()) 即 lib/client.js 全文', () => {
+  const expected = HEADER + injectProtocol(readSource())
+  const normalized = expected.endsWith('\n') ? expected : expected + '\n'
+  assert.equal(bundle, normalized)
 })
 
 console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 Edge）==')

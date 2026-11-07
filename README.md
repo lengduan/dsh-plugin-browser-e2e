@@ -87,8 +87,9 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 ### 协议与路由
 
 协议契约的单一来源是 `lib/protocol.js`：路由路径、版本、关闭码、命令表、事件表、投屏设置区间与
-默认值、`panelTabId` 组合规则都在那里；host 与 client 的校验从表派生，客户端所需常量由
-`scripts/build-client.mjs` 在构建时注入到 `lib/client.js`（详见 `specs/项目规格/0002-panel-protocol-v1.md`）。
+默认值、`panelTabId` 组合规则都在那里；host 与 client 的校验从表派生。客户端所需常量（含命令 /
+事件表）由 `scripts/build-client.mjs` 在构建时注入到 `lib/client.js`，源码↔产物一致由
+`tests/invariants.mjs` 守护（详见 `specs/项目规格/0002-panel-protocol-v1.md`）。
 
 | 路径 | 作用 |
 |---|---|
@@ -175,7 +176,7 @@ git 依赖是快照，锁在指定 commit：改完源码要 commit + push，再�
 - `invariants.js` 只放「违反=跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。
 - `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收。
 - `page.js` 持标签页、事件环与 ref 表；`capture.js` 持截图与产物目录；`auth.js` 可整体删除。
-- 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。
+- 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端（命令 / 事件名也由构建注入，client 里不手写）。
 - 不变量、状态机与协议契约的完整清单见 `specs/项目规格/0001-architecture-invariants.md`。
 
 ## 开发
@@ -209,4 +210,4 @@ node tests/reclaim.mjs
 node tests/tools.mjs
 ```
 
-宿主半区是纯 JS；客户端 bundle 手写（不引入打包器），`scripts/build-client.mjs` 只做语法校验与落盘。`package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，测试脚本、`client/`、`scripts/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
+宿主半区是纯 JS；客户端 bundle 手写（不引入打包器），`scripts/build-client.mjs` 只做语法校验、协议常量与命令 / 事件名注入、落盘。`package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，测试脚本、`client/`、`scripts/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。

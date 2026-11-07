@@ -4,8 +4,8 @@
  * 入口是右侧栏的 tab 类型 "dsh-browser-e2e"（kind "browser-e2e"）：agent 调用
  * browser_* 工具时，host 半区把当前页面推成 JPEG 帧，这里在右侧栏里实时显示。
  *
- * 协议 v1（契约单一来源 lib/protocol.js；本文件所需的常量由 scripts/build-client.mjs
- * 在构建时注入，不要手写区间与默认值）：
+ * 协议 v1（契约单一来源 lib/protocol.js；本文件所需的常量与命令 / 事件表由
+ * scripts/build-client.mjs 在构建时注入，不要手写协议名、区间与默认值）：
  *
  * 在线协议：
  *   客户端命令：attach{sessionId?} / select-tab{tabId} / close-tab{tabId} /
@@ -304,12 +304,12 @@ window.__ModuleLoader__.load({
      */
     function reduceEvent(view, event) {
       if (!event || typeof event !== "object") return view;
-      if (event.kind === "hello" || event.kind === "state") {
+      if (event.kind === PANEL_EVENTS.hello || event.kind === PANEL_EVENTS.state) {
         const state = normalizeState(event.state);
         if (!state) return view;
         return Object.assign({}, view, { state });
       }
-      if (event.kind === "frame") {
+      if (event.kind === PANEL_EVENTS.frame) {
         const tabId = typeof event.tabId === "string" && event.tabId.length > 0 ? event.tabId : null;
         const seq = Number(event.seq);
         if (!tabId || !isFinite(seq)) return view;
@@ -327,12 +327,12 @@ window.__ModuleLoader__.load({
         };
         return Object.assign({}, view, { frame, seqs });
       }
-      if (event.kind === "error") {
+      if (event.kind === PANEL_EVENTS.error) {
         const code = typeof event.code === "string" && event.code.length > 0 ? event.code : "error";
         const message = typeof event.message === "string" ? event.message : "";
         return Object.assign({}, view, { error: { code, message } });
       }
-      if (event.kind === "action") {
+      if (event.kind === PANEL_EVENTS.action) {
         const trace = event.trace && typeof event.trace === "object" ? event.trace : null;
         if (!trace) return view;
         // 新的在前，只保留最近 ACTION_LIMIT 条。
@@ -401,7 +401,7 @@ window.__ModuleLoader__.load({
           if (closed || socket !== next) return;
           attempt = 0;
           onStatus("open");
-          send({ v: PROTOCOL_VERSION, kind: "attach", sessionId });
+          send({ v: PROTOCOL_VERSION, kind: PANEL_COMMANDS.attach, sessionId });
         };
         next.onmessage = function (messageEvent) {
           if (closed || socket !== next) return;
@@ -799,7 +799,7 @@ window.__ModuleLoader__.load({
         const next = Object.assign({}, config);
         next[field.key] = clampNumber(value, field.min, field.max, config[field.key]);
         setDraft(next);
-        send({ v: PROTOCOL_VERSION, kind: "configure", config: next });
+        send({ v: PROTOCOL_VERSION, kind: PANEL_COMMANDS.configure, config: next });
       };
 
       let placeholderTitle;
@@ -827,7 +827,7 @@ window.__ModuleLoader__.load({
               title: tab.title || tab.url || tab.id,
               "data-dsh-active": active ? "true" : "false",
               onClick: function () {
-                send({ v: PROTOCOL_VERSION, kind: "select-tab", tabId: tab.id });
+                send({ v: PROTOCOL_VERSION, kind: PANEL_COMMANDS.selectTab, tabId: tab.id });
               },
             },
               el("span", { style: st.tabText }, tab.title || t("浏览器画面")),
@@ -840,7 +840,7 @@ window.__ModuleLoader__.load({
                 "data-dsh-part": "tab-close",
                 onClick: function (event) {
                   event.stopPropagation();
-                  send({ v: PROTOCOL_VERSION, kind: "close-tab", tabId: tab.id });
+                  send({ v: PROTOCOL_VERSION, kind: PANEL_COMMANDS.closeTab, tabId: tab.id });
                 },
               }, "×"),
             );
@@ -881,7 +881,7 @@ window.__ModuleLoader__.load({
           type: "button",
           style: st.btn,
           disabled: connection !== "open",
-          onClick: function () { send({ v: PROTOCOL_VERSION, kind: "request-frame" }); },
+          onClick: function () { send({ v: PROTOCOL_VERSION, kind: PANEL_COMMANDS.requestFrame }); },
         }, t("刷新")),
       );
 
