@@ -8,6 +8,7 @@
  *   - 导航 / 求值可用；
  *   - selector / 坐标两条文件上传路径在 CDP 接管下可用（夹具为本地 file:// 页面）；
  *   - browser_e2e_close 只断开连接，浏览器进程仍然存活；
+ *   - close 再 start 只重连、不清用户浏览器 cookie（规格 0020 验收 6）；
  *   - 非 loopback 端点被拒绝。
  *
  * 运行：node tests/cdp.mjs
@@ -142,6 +143,13 @@ const downloadServer = createHttpServer((req, res) => {
       + '<body style="margin:0"><a id="cdp-download" href="/files/cdp-click.txt" download="cdp-click.txt"'
       + ' style="position:fixed;left:20px;top:20px;display:block;width:240px;height:40px;background:#eee">'
       + 'download</a></body></html>')
+    return
+  }
+  // cookie 夹具：CDP 重置语义需要 http 源（data: URL 不能读写 cookie）。
+  if (path === '/cookie') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-cookie</title></head>'
+      + '<body><p>cookie</p></body></html>')
     return
   }
   if (path === '/files/cdp-http.txt') {
@@ -309,6 +317,33 @@ try {
         && elapsed >= MIN_EVALUATE_TIMEOUT_MS && elapsed <= 5000
         && after.value === 'cdp-evaluate-timeout' && alive,
       JSON.stringify({ elapsed, message, after: after.value, alive }))
+  }
+
+  console.log('== 用例 3F：CDP 模式下 close 再 start 不清用户浏览器 cookie ==')
+  {
+    await navigate(session, `${downloadBase}/cookie`, 'load')
+    const wrote = await evaluate(session,
+      "(() => { document.cookie = 'cdpKeep=1; path=/'; return document.cookie })()")
+    check('用例 3F 前置：cookie 已写入 CDP 用户浏览器',
+      String(wrote.value).includes('cdpKeep=1'), JSON.stringify(wrote.value))
+
+    const closedInfo = await close(KEY)
+    check('CDP 重置第一步：close 只断连', closedInfo.closed === true && closedInfo.mode === 'cdp',
+      JSON.stringify(closedInfo))
+    const restarted = await launch(KEY, { mode: 'cdp', cdpEndpoint: endpoint }, SID)
+    session = requireSession(KEY)
+    await navigate(session, `${downloadBase}/cookie`, 'load')
+    const cookie = await evaluate(session, 'document.cookie')
+    check('CDP 模式下 close 再 start 不清用户浏览器 cookie',
+      String(cookie.value).includes('cdpKeep=1') && restarted.mode === 'cdp' && restarted.reused === false,
+      JSON.stringify({ cookie: cookie.value, mode: restarted.mode, reused: restarted.reused }))
+
+    const list = await tabs(KEY)
+    check('CDP 重连后按用户浏览器重新接管（adopted）',
+      list.mode === 'cdp' && list.tabs.length >= 1 && list.tabs.every((tab) => tab.origin === 'adopted'),
+      JSON.stringify(list.tabs))
+    const alive = child.exitCode === null && !child.killed
+    check('CDP 重置不结束用户浏览器进程', alive, `exitCode=${child.exitCode}`)
   }
 
   console.log('== 用例 4：close 只断开连接 ==')

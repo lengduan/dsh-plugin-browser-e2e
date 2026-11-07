@@ -115,6 +115,17 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - 子 frame 导航只把该 frame 的增量基线标记失效（页面脚本注册表 epoch 变化时 delta 退化为全量），主文档基线不动。
 - 主框架开始导航时该页 `loading` 置为 true，`domcontentloaded` / `load` 后置 false，面板 tab 上显示「加载中」。
 
+### 重置会话（清登录态 / 换登录态）
+
+不另设 reset 工具，重置由既有调用组合承担：
+
+- **清 cookie / storage、换登录态（isolated，默认模式）**：先 `browser_e2e_close`，再 `browser_e2e_start`。isolated 模式每次启动都是一次性 profile（`chromium.launch`，不带 `userDataDir` / `storageState`），关闭即丢弃 cookie、localStorage、sessionStorage、IndexedDB 与缓存；重新启动得到一张新的空白 `t1`。`browser_e2e_close` 不保留上一会话的 `mode` / `cdpEndpoint`，非默认模式要在 `start` 时重新显式传。
+- **只重置 ref 表与事件环**：`browser_e2e_navigate` 到任意新文档即可，同 URL reload 也算（判据见「事件环重置」）；不必关浏览器。
+- **回到空白页**：`browser_e2e_navigate` 的 `url: "about:blank"`。
+- **不影响其它会话**：`browser_e2e_close` 只关闭本 agent 会话的浏览器；其它会话的浏览器与登录态不受影响。
+- **CDP 接管模式**：`browser_e2e_close` 只断开连接，不清用户浏览器的 cookie / storage，也不关用户标签页；需要干净上下文请改用 isolated 会话。
+- 两步之间没有浏览器，页面工具会报「浏览器尚未启动」；这是两步组合，不是原子操作。
+
 ### 等待 URL 与网络响应
 
 `browser_e2e_wait` 在 `selector` / `expression` 之外支持两类条件。四个条件必须且只能给一个；`state` 只对 selector、`urlMatch` 只对 url / response、response 专属参数只对 response 生效，错配直接报错：
