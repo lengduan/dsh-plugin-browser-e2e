@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-plugin-browser-e2e 架构图</title>
+<style>
+  :root {
+    --ink: #1f2937;
+    --muted: #64748b;
+    --line: #d5dbe5;
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --iface: #2563eb;
+    --iface-bg: #eff6ff;
+    --orche: #7c3aed;
+    --orche-bg: #f5f3ff;
+    --impl: #059669;
+    --impl-bg: #ecfdf5;
+    --common: #b45309;
+    --common-bg: #fffbeb;
+    --client: #0891b2;
+    --client-bg: #ecfeff;
+    --ext: #475569;
+    --ext-bg: #f1f5f9;
+    --danger: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.7 "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  }
+  body > header {
+    padding: 34px 40px 22px;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  header .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    margin-top: 14px; font-size: 13px; color: var(--muted);
+  }
+  header .meta code { color: var(--ink); }
+  nav {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+    padding: 10px 40px;
+    background: rgba(255,255,255,.94);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--iface); }
+  main { padding: 8px 40px 60px; max-width: 1560px; margin: 0 auto; }
+  section {
+    margin: 34px 0;
+    padding: 26px 28px 22px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  section > h2 {
+    margin: 0 0 4px; font-size: 20px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section > h2 .no {
+    font-size: 13px; color: #fff; background: var(--ink);
+    padding: 1px 8px; border-radius: 999px; letter-spacing: .5px;
+  }
+  section > .lead { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  figure { margin: 0; }
+  figure > svg {
+    display: block; width: 100%; height: auto;
+    background: #fbfcfe; border: 1px solid #e6ebf3; border-radius: 10px;
+  }
+  figure > figcaption {
+    margin-top: 10px; font-size: 13px; color: var(--muted);
+  }
+  h3 { margin: 26px 0 10px; font-size: 16px; }
+  p { margin: 8px 0; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 12.5px; }
+  code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; white-space: nowrap; }
+  tbody tr:nth-child(even) td { background: #fbfcfe; }
+  td .mono, th .mono { white-space: nowrap; }
+  .tag {
+    display: inline-block; padding: 0 7px; border-radius: 4px;
+    font-size: 12px; line-height: 20px; white-space: nowrap;
+  }
+  .tag.iface { color: var(--iface); background: var(--iface-bg); }
+  .tag.orche { color: var(--orche); background: var(--orche-bg); }
+  .tag.impl { color: var(--impl); background: var(--impl-bg); }
+  .tag.common { color: var(--common); background: var(--common-bg); }
+  .tag.client { color: var(--client); background: var(--client-bg); }
+  .tag.danger { color: var(--danger); background: #fef2f2; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 8px; }
+  .card {
+    border: 1px solid var(--line); border-left: 4px solid var(--ext);
+    border-radius: 8px; padding: 12px 14px; background: #fff;
+  }
+  .card h4 { margin: 0 0 6px; font-size: 14px; }
+  .card p, .card ul { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  .card ul { padding-left: 18px; }
+  .card.iface { border-left-color: var(--iface); }
+  .card.orche { border-left-color: var(--orche); }
+  .card.impl { border-left-color: var(--impl); }
+  .card.common { border-left-color: var(--common); }
+  .card.client { border-left-color: var(--client); }
+  .card.danger { border-left-color: var(--danger); }
+  .callout {
+    margin: 14px 0; padding: 12px 16px; border-radius: 8px;
+    background: #f8fafc; border: 1px solid var(--line); font-size: 13.5px;
+  }
+  .callout.warn { background: #fffbeb; border-color: #fcd34d; }
+  .callout.danger { background: #fef2f2; border-color: #fca5a5; }
+  .callout b { color: var(--ink); }
+  ul.tight { margin: 8px 0; padding-left: 20px; font-size: 13.5px; }
+  ul.tight li { margin: 4px 0; }
+  footer {
+    padding: 24px 40px 50px; max-width: 1560px; margin: 0 auto;
+    color: var(--muted); font-size: 12.5px;
+  }
+  footer h3 { color: var(--ink); font-size: 14px; }
+  footer ol { padding-left: 22px; }
+  footer li { margin: 3px 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .legend span::before {
+    content: ""; display: inline-block; width: 11px; height: 11px;
+    border-radius: 3px; margin-right: 6px; vertical-align: -1px;
+    background: currentColor;
+  }
+  .legend .lg-iface { color: var(--iface); }
+  .legend .lg-orche { color: var(--orche); }
+  .legend .lg-impl { color: var(--impl); }
+  .legend .lg-common { color: var(--common); }
+  .legend .lg-client { color: var(--client); }
+  .legend .lg-ext { color: var(--ext); }
+  .legend .lg-danger { color: var(--danger); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>dsh-plugin-browser-e2e 架构图</h1>
+  <div class="sub">DSH 浏览器端到端验证插件：宿主半区 15 个 <code>browser_e2e_*</code> 工具 + 右侧实时浏览器面板</div>
+  <div class="meta">
+    <span>仓库 <code>C:\lengduan\githubs\dsh-plugin-browser-e2e</code></span>
+    <span>分支 <code>main</code></span>
+    <span>HEAD <code>d8a6264</code></span>
+    <span>事实读取时点 2026-11-07</span>
+    <span>依据：<code>specs/项目规格/0001-architecture-invariants.md</code>、<code>0002-panel-protocol-v1.md</code>、<code>specs/功能规格/0001-client-entry-activation-failure.md</code>、`lib/` 与 `client/` 源码、`README.md`</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#context">01 系统上下文</a>
+  <a href="#layers">02 分层与依赖</a>
+  <a href="#invariants">03 跨调用不变量</a>
+  <a href="#state">04 会话状态机</a>
+  <a href="#flow">05 编排：一次工具调用</a>
+  <a href="#reclaim">06 进程回收</a>
+  <a href="#contracts">07 协议与单一来源</a>
+  <a href="#boundaries">08 边界、不做与债务</a>
+</nav>
+
+<main>
+
+<!-- ============ 01 系统上下文 ============ -->
+<section id="context">
+  <h2><span class="no">01</span>系统上下文：谁在跟谁说话</h2>
+  <p class="lead">
+    插件分两个半区：宿主半区跑在 DSH 宿主进程里（工具 + 浏览器 + 面板服务端），客户端半区是右侧栏里的
+    React bundle（纯视图）。两侧唯一的在线通道是面板协议 v1 的 WebSocket。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1240 660" role="img" aria-label="系统上下文图">
+      <defs>
+        <marker id="ctxArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#475569"></path>
+        </marker>
+        <marker id="ctxArrowC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#0891b2"></path>
+        </marker>
+        <marker id="ctxArrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#059669"></path>
+        </marker>
+      </defs>
+
+      <!-- DSH 宿主进程 -->
+      <rect x="24" y="56" width="612" height="540" rx="14" fill="#f1f5f9" stroke="#cbd5e1" stroke-dasharray="6 4"></rect>
+      <text x="44" y="84" font-size="14" font-weight="bold" fill="#334155">DSH 宿主进程（dsh web / desktop）</text>
+
+      <!-- agent -->
+      <rect x="48" y="104" width="244" height="104" rx="8" fill="#ffffff" stroke="#94a3b8"></rect>
+      <text x="64" y="128" font-size="13.5" font-weight="bold" fill="#1f2937">agent 会话</text>
+      <text x="64" y="150" font-size="12" fill="#64748b">exec.agent.id = 会话 key</text>
+      <text x="64" y="169" font-size="12" fill="#64748b">调用 browser_e2e_* 工具</text>
+      <text x="64" y="188" font-size="12" fill="#64748b">拿回文本 / 截图附件</text>
+
+      <!-- 工具注册表 -->
+      <rect x="48" y="252" width="244" height="112" rx="8" fill="#ffffff" stroke="#94a3b8"></rect>
+      <text x="64" y="276" font-size="13.5" font-weight="bold" fill="#1f2937">ctx.tools.register</text>
+      <text x="64" y="298" font-size="12" fill="#64748b">15 个工具，全部来自</text>
+      <text x="64" y="317" font-size="12" fill="#64748b">lib/tools.js 的同一张表</text>
+      <text x="64" y="336" font-size="12" fill="#64748b">execute 由 index.js 包装：</text>
+      <text x="64" y="355" font-size="12" fill="#64748b">广播面板动作 + 触发状态同步</text>
+
+      <!-- 附件服务 -->
+      <rect x="48" y="452" width="244" height="96" rx="8" fill="#ffffff" stroke="#94a3b8"></rect>
+      <text x="64" y="476" font-size="13.5" font-weight="bold" fill="#1f2937">attachments 服务</text>
+      <text x="64" y="498" font-size="12" fill="#64748b">截图工具把图片登记成附件</text>
+      <text x="64" y="517" font-size="12" fill="#64748b">随工具结果一起返回给模型</text>
+
+      <!-- 插件宿主半区 -->
+      <rect x="324" y="104" width="288" height="352" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"></rect>
+      <text x="344" y="130" font-size="14" font-weight="bold" fill="#1d4ed8">插件宿主半区 lib/</text>
+      <line x1="344" y1="142" x2="592" y2="142" stroke="#bfdbfe"></line>
+      <text x="344" y="164" font-size="12" fill="#334155">index.js　注册 / 生命周期</text>
+      <text x="344" y="188" font-size="12" fill="#334155">tools.js　工具表</text>
+      <text x="344" y="212" font-size="12" fill="#334155">session.js　会话 + 浏览器进程</text>
+      <text x="344" y="236" font-size="12" fill="#334155">page.js　标签页 / 事件环 / ref</text>
+      <text x="344" y="260" font-size="12" fill="#334155">capture.js　截图与产物目录</text>
+      <text x="344" y="284" font-size="12" fill="#334155">panel.js　PanelHub（面板服务端）</text>
+      <text x="344" y="308" font-size="12" fill="#334155">screencast.js　CDP 投屏适配器</text>
+      <text x="344" y="332" font-size="12" fill="#334155">invariants.js　跨调用不变量</text>
+      <text x="344" y="356" font-size="12" fill="#334155">fence.js　loopback 围栏</text>
+      <text x="344" y="380" font-size="12" fill="#334155">auth.js　本机 GUI 补票</text>
+      <text x="344" y="404" font-size="12" fill="#64748b">运行期依赖 playwright-core 与 ws，</text>
+      <text x="344" y="423" font-size="12" fill="#64748b">由宿主 profile 提供，不装进目标项目。</text>
+
+      <!-- webServer -->
+      <rect x="324" y="476" width="288" height="96" rx="8" fill="#ffffff" stroke="#94a3b8"></rect>
+      <text x="344" y="500" font-size="13.5" font-weight="bold" fill="#1f2937">宿主 webServer 服务</text>
+      <text x="344" y="522" font-size="12" fill="#64748b">GET /api/dsh-browser-e2e/state</text>
+      <text x="344" y="541" font-size="12" fill="#64748b">WS　/api/dsh-browser-e2e/socket</text>
+      <text x="344" y="560" font-size="12" fill="#64748b">无 webServer 的宿主（CLI）不挂路由</text>
+
+      <!-- 浏览器 -->
+      <rect x="700" y="56" width="300" height="286" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"></rect>
+      <text x="720" y="84" font-size="13.5" font-weight="bold" fill="#047857">系统 Edge（channel: msedge）</text>
+      <rect x="720" y="100" width="260" height="92" rx="8" fill="#ffffff" stroke="#a7f3d0"></rect>
+      <text x="734" y="122" font-size="12.5" font-weight="bold" fill="#065f46">isolated（默认）</text>
+      <text x="734" y="142" font-size="12" fill="#64748b">插件自己拉起无头 Edge</text>
+      <text x="734" y="160" font-size="12" fill="#64748b">一次性 profile，用完关闭</text>
+      <text x="734" y="178" font-size="12" fill="#64748b">固定视口（默认 1600 × 900）</text>
+      <rect x="720" y="204" width="260" height="112" rx="8" fill="#ffffff" stroke="#a7f3d0"></rect>
+      <text x="734" y="226" font-size="12.5" font-weight="bold" fill="#065f46">cdp（接管）</text>
+      <text x="734" y="246" font-size="12" fill="#64748b">connectOverCDP(loopback 端点)</text>
+      <text x="734" y="264" font-size="12" fill="#64748b">不新建页面、不改视口</text>
+      <text x="734" y="282" font-size="12" fill="#64748b">关闭只断连，不动用户进程</text>
+      <text x="734" y="300" font-size="12" fill="#64748b">新开的页也纳入 tab 列表</text>
+
+      <!-- 面板 -->
+      <rect x="700" y="384" width="300" height="180" rx="14" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.5"></rect>
+      <text x="720" y="412" font-size="14" font-weight="bold" fill="#0e7490">DSH GUI 右栏面板</text>
+      <text x="720" y="436" font-size="12.5" fill="#334155">lib/client.js（构建产物，React）</text>
+      <text x="720" y="458" font-size="12" fill="#64748b">注册 sidebarRightTabs 一个 tab 类型</text>
+      <text x="720" y="477" font-size="12" fill="#64748b">+ sidebar.right.pane.tab / .title 两席位</text>
+      <text x="720" y="496" font-size="12" fill="#64748b">只读视图：不启动、不操作页面</text>
+      <text x="720" y="515" font-size="12" fill="#64748b">唯一例外：close-tab 会真的关页</text>
+      <text x="720" y="540" font-size="12" fill="#0891b2">parseEvent → reduceEvent → React</text>
+
+      <!-- 产物目录 -->
+      <rect x="1032" y="384" width="184" height="126" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="5 3"></rect>
+      <text x="1048" y="408" font-size="13" font-weight="bold" fill="#334155">本机文件系统</text>
+      <text x="1048" y="430" font-size="11.5" fill="#64748b">~/.dsh/browser-e2e/</text>
+      <text x="1048" y="447" font-size="11.5" fill="#64748b">artifacts/&lt;时间戳&gt;/</text>
+      <text x="1048" y="468" font-size="11.5" fill="#64748b">PNG / JPEG 落盘，</text>
+      <text x="1048" y="485" font-size="11.5" fill="#64748b">文件名带唯一后缀</text>
+
+      <!-- 连线：agent <-> 工具注册表 -->
+      <line x1="170" y1="208" x2="170" y2="252" stroke="#475569" stroke-width="1.6" marker-end="url(#ctxArrow)"></line>
+      <text x="182" y="236" font-size="11.5" fill="#475569">工具调用 / 结果</text>
+
+      <!-- 工具注册表 -> 插件半区 -->
+      <line x1="292" y1="308" x2="324" y2="308" stroke="#475569" stroke-width="1.6" marker-end="url(#ctxArrow)"></line>
+      <text x="268" y="300" font-size="11" fill="#475569" text-anchor="end">definition.run</text>
+
+      <!-- 插件半区 <-> 浏览器 -->
+      <line x1="612" y1="200" x2="700" y2="200" stroke="#059669" stroke-width="2" marker-end="url(#ctxArrowG)" marker-start="url(#ctxArrowG)"></line>
+      <text x="656" y="180" font-size="10.5" fill="#047857" text-anchor="middle">Playwright</text>
+      <text x="656" y="222" font-size="11" fill="#64748b" text-anchor="middle">CDP</text>
+
+      <!-- 插件半区 <-> 面板 -->
+      <line x1="612" y1="452" x2="700" y2="452" stroke="#0891b2" stroke-width="2" marker-end="url(#ctxArrowC)" marker-start="url(#ctxArrowC)"></line>
+      <text x="642" y="440" font-size="11" fill="#0e7490" text-anchor="middle">面板协议 v1</text>
+      <text x="648" y="474" font-size="11" fill="#64748b" text-anchor="middle">WebSocket</text>
+
+      <!-- 插件半区 <-> webServer -->
+      <line x1="468" y1="456" x2="468" y2="476" stroke="#475569" stroke-width="1.6" marker-end="url(#ctxArrow)" marker-start="url(#ctxArrow)"></line>
+      <text x="456" y="472" font-size="11" fill="#475569" text-anchor="end">register / registerUpgrade</text>
+
+      <!-- 插件半区 -> 产物 -->
+      <path d="M612,366 L1024,366 L1024,384" fill="none" stroke="#475569" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#ctxArrow)"></path>
+      <text x="820" y="358" font-size="11.5" fill="#475569" text-anchor="middle">writeFileSync（截图）</text>
+
+      <!-- 插件半区 <-> 附件服务 -->
+      <line x1="324" y1="500" x2="292" y2="500" stroke="#475569" stroke-width="1.4" marker-end="url(#ctxArrow)"></line>
+      <text x="308" y="492" font-size="10.5" fill="#475569" text-anchor="middle">附件</text>
+
+      <!-- 图例 -->
+      <text x="40" y="630" font-size="11.5" fill="#64748b">实线 = 运行期调用 / 连接　　虚线 = 读表注册或文件 I/O　　色块含义同下一节分层配色</text>
+    </svg>
+    <figcaption>
+      插件在宿主侧持有浏览器进程与面板服务端；GUI 侧只有视图。面板连不上或缺 <code>webServer</code> 时，
+      工具仍可用，只是没有实时画面。依据：<code>lib/index.js</code>（<code>apply</code> 全文）、
+      <code>README.md</code>「右侧实时浏览器面板 / 协议与路由」。
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 02 分层与依赖 ============ -->
+<section id="layers">
+  <h2><span class="no">02</span>分层与依赖：按「接口契约」分层，按「变化原因」切文件</h2>
+  <p class="lead">
+    纵向是接口契约分层（接口层 / 编排层 / 实现层 / 公共层），横向按变化原因拆文件。依赖方向按 import
+    实测标注；禁的是「回指」——页面层不 import 会话层，投屏层不 import 会话层。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1360 900" role="img" aria-label="分层与依赖图">
+      <defs>
+        <marker id="layArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+        </marker>
+        <marker id="layArrowD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"></path>
+        </marker>
+      </defs>
+
+      <!-- 宿主区背景 -->
+      <rect x="20" y="40" width="936" height="840" rx="14" fill="#fbfcfe" stroke="#e2e8f0" stroke-dasharray="6 4"></rect>
+      <text x="40" y="66" font-size="13" font-weight="bold" fill="#334155">宿主半区 lib/（Node · DSH 插件进程）</text>
+
+      <!-- 层标签 -->
+      <rect x="36" y="90" width="6" height="96" rx="3" fill="#2563eb"></rect>
+      <text x="52" y="128" font-size="13" font-weight="bold" fill="#1d4ed8">接口层</text>
+      <text x="52" y="148" font-size="11" fill="#64748b">契约表</text>
+
+      <rect x="36" y="240" width="6" height="112" rx="3" fill="#7c3aed"></rect>
+      <text x="52" y="282" font-size="13" font-weight="bold" fill="#6d28d9">编排层</text>
+      <text x="52" y="302" font-size="11" fill="#64748b">注册 /</text>
+      <text x="52" y="318" font-size="11" fill="#64748b">分发</text>
+
+      <rect x="36" y="400" width="6" height="120" rx="3" fill="#059669"></rect>
+      <text x="52" y="446" font-size="13" font-weight="bold" fill="#047857">实现层</text>
+      <text x="52" y="466" font-size="11" fill="#64748b">能力</text>
+
+      <rect x="36" y="566" width="6" height="100" rx="3" fill="#b45309"></rect>
+      <text x="52" y="606" font-size="13" font-weight="bold" fill="#b45309">公共层</text>
+      <text x="52" y="626" font-size="11" fill="#64748b">纯函数 /</text>
+      <text x="52" y="642" font-size="11" fill="#64748b">无状态</text>
+
+      <!-- 接口层盒子 -->
+      <rect x="150" y="90" width="330" height="96" rx="8" fill="#eff6ff" stroke="#93c5fd"></rect>
+      <text x="166" y="114" font-size="13.5" font-weight="bold" fill="#1d4ed8">tools.js</text>
+      <text x="166" y="136" font-size="11.5" fill="#334155">15 个工具的单一声明（name / description /</text>
+      <text x="166" y="153" font-size="11.5" fill="#334155">parameters / run / output）</text>
+      <text x="166" y="174" font-size="11" fill="#64748b">依赖 → session · page · capture · defaults</text>
+
+      <rect x="510" y="90" width="330" height="96" rx="8" fill="#eff6ff" stroke="#93c5fd"></rect>
+      <text x="526" y="114" font-size="13.5" font-weight="bold" fill="#1d4ed8">protocol.js</text>
+      <text x="526" y="136" font-size="11.5" fill="#334155">路由 / 版本 / 关闭码 / 命令表 / 事件表 /</text>
+      <text x="526" y="153" font-size="11.5" fill="#334155">错误码 / 投屏区间与默认值 / panelTabId</text>
+      <text x="526" y="174" font-size="11" fill="#64748b">无内部依赖（契约的单一来源）</text>
+
+      <!-- 编排层盒子 -->
+      <rect x="150" y="240" width="330" height="112" rx="8" fill="#f5f3ff" stroke="#c4b5fd"></rect>
+      <text x="166" y="264" font-size="13.5" font-weight="bold" fill="#6d28d9">index.js</text>
+      <text x="166" y="286" font-size="11.5" fill="#334155">Config + apply：注册工具、session/disposed</text>
+      <text x="166" y="303" font-size="11.5" fill="#334155">与卸载回收、面板路由挂载、动作广播</text>
+      <text x="166" y="324" font-size="11" fill="#64748b">依赖 → tools · panel · session · auth · defaults</text>
+      <text x="166" y="342" font-size="11" fill="#64748b">不含：工具实现细节</text>
+
+      <rect x="510" y="240" width="330" height="112" rx="8" fill="#f5f3ff" stroke="#c4b5fd"></rect>
+      <text x="526" y="264" font-size="13.5" font-weight="bold" fill="#6d28d9">panel.js（PanelHub）</text>
+      <text x="526" y="286" font-size="11.5" fill="#334155">连接集合 / 命令串行队列 / 状态同步 /</text>
+      <text x="526" y="303" font-size="11.5" fill="#334155">投屏目标同步 / 设置合并 / WS 路由</text>
+      <text x="526" y="324" font-size="11" fill="#64748b">依赖 → session · capture · screencast ·</text>
+      <text x="526" y="342" font-size="11" fill="#64748b">fence · protocol</text>
+
+      <!-- 实现层盒子 -->
+      <rect x="150" y="400" width="150" height="120" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+      <text x="162" y="422" font-size="13" font-weight="bold" fill="#047857">session.js</text>
+      <text x="162" y="443" font-size="10.5" fill="#334155">会话注册表 ·</text>
+      <text x="162" y="459" font-size="10.5" fill="#334155">状态机 · launch /</text>
+      <text x="162" y="475" font-size="10.5" fill="#334155">close · 回收 ·</text>
+      <text x="162" y="491" font-size="10.5" fill="#334155">面板事件总线</text>
+      <text x="162" y="505" font-size="10" fill="#64748b">→ 6 个模块，见下方依赖表</text>
+
+      <rect x="310" y="400" width="150" height="120" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+      <text x="322" y="422" font-size="13" font-weight="bold" fill="#047857">page.js</text>
+      <text x="322" y="443" font-size="10.5" fill="#334155">标签页 / 事件环 /</text>
+      <text x="322" y="459" font-size="10.5" fill="#334155">ref 表 / 快照 /</text>
+      <text x="322" y="475" font-size="10.5" fill="#334155">交互 / 格式化</text>
+      <text x="322" y="505" font-size="10" fill="#64748b">→ auth invariants</text>
+
+      <rect x="470" y="400" width="150" height="120" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+      <text x="482" y="422" font-size="13" font-weight="bold" fill="#047857">capture.js</text>
+      <text x="482" y="443" font-size="10.5" fill="#334155">截图参数与尺寸</text>
+      <text x="482" y="459" font-size="10.5" fill="#334155">校验 · 产物目录 ·</text>
+      <text x="482" y="475" font-size="10.5" fill="#334155">单帧 JPEG</text>
+      <text x="482" y="505" font-size="10" fill="#64748b">→ protocol</text>
+
+      <rect x="630" y="400" width="150" height="120" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+      <text x="642" y="422" font-size="13" font-weight="bold" fill="#047857">screencast.js</text>
+      <text x="642" y="443" font-size="10.5" fill="#334155">CDP 投屏适配器</text>
+      <text x="642" y="459" font-size="10.5" fill="#334155">（帧源 B）</text>
+      <text x="642" y="475" font-size="10.5" fill="#334155">串行队列保证</text>
+      <text x="642" y="491" font-size="10.5" fill="#334155">同时只有一个会话</text>
+      <text x="642" y="505" font-size="10" fill="#64748b">→ protocol</text>
+
+      <rect x="790" y="400" width="150" height="120" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+      <text x="802" y="422" font-size="13" font-weight="bold" fill="#047857">auth.js</text>
+      <text x="802" y="443" font-size="10.5" fill="#334155">登录挑战识别 +</text>
+      <text x="802" y="459" font-size="10.5" fill="#334155">loopback 补票</text>
+      <text x="802" y="475" font-size="10.5" fill="#334155">可整体删除</text>
+      <text x="802" y="491" font-size="10.5" fill="#334155">（能力删除）</text>
+      <text x="802" y="505" font-size="10" fill="#64748b">→ fence</text>
+
+      <!-- 帧源接缝 -->
+      <line x1="620" y1="462" x2="630" y2="462" stroke="#94a3b8" stroke-dasharray="4 3"></line>
+
+      <!-- 公共层盒子 -->
+      <rect x="150" y="566" width="220" height="100" rx="8" fill="#fffbeb" stroke="#fcd34d"></rect>
+      <text x="166" y="590" font-size="13" font-weight="bold" fill="#b45309">invariants.js</text>
+      <text x="166" y="612" font-size="11.5" fill="#334155">14 个跨调用断言，全部纯函数</text>
+      <text x="166" y="630" font-size="11.5" fill="#334155">只读入参，不读全局 Map，不做 I/O</text>
+      <text x="166" y="650" font-size="11" fill="#64748b">违反 = 状态损坏，不是入参错</text>
+
+      <rect x="390" y="566" width="180" height="100" rx="8" fill="#fffbeb" stroke="#fcd34d"></rect>
+      <text x="406" y="590" font-size="13" font-weight="bold" fill="#b45309">fence.js</text>
+      <text x="406" y="612" font-size="11.5" fill="#334155">loopback 围栏：</text>
+      <text x="406" y="630" font-size="11.5" fill="#334155">远端地址 / Host 头 /</text>
+      <text x="406" y="648" font-size="11.5" fill="#334155">sec-fetch-site 判定</text>
+
+      <rect x="590" y="566" width="180" height="100" rx="8" fill="#fffbeb" stroke="#fcd34d"></rect>
+      <text x="606" y="590" font-size="13" font-weight="bold" fill="#b45309">defaults.js</text>
+      <text x="606" y="612" font-size="11.5" fill="#334155">DEFAULT_CDP_ENDPOINT</text>
+      <text x="606" y="630" font-size="11.5" fill="#334155">单一来源：启动缺省 /</text>
+      <text x="606" y="648" font-size="11.5" fill="#334155">Config 默认 / 工具描述</text>
+
+      <!-- 层间主干箭头 -->
+      <path d="M240,186 L118,186 L118,384 L225,384 L225,400" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="244" y="206" font-size="10" fill="#475569">run 调能力函数</text>
+
+      <path d="M315,240 L315,186" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="322" y="218" font-size="10.5" fill="#475569">按表注册</text>
+
+      <path d="M675,240 L675,186" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="682" y="218" font-size="10.5" fill="#475569">从表取常量</text>
+
+      <path d="M420,352 L420,382 L225,382 L225,400" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="430" y="374" font-size="10.5" fill="#475569">挂生命周期 / 广播动作</text>
+
+      <path d="M675,352 L675,382 L545,382 L545,400" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="686" y="374" font-size="10.5" fill="#64748b">面板命令 → 能力</text>
+
+      <path d="M545,520 L545,566" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="554" y="548" font-size="10.5" fill="#475569">断言 / 围栏 / 缺省值（单向）</text>
+
+      <!-- 禁止回指 -->
+      <path d="M310,548 C280,536 250,536 228,548" fill="none" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#layArrowD)"></path>
+      <text x="248" y="562" font-size="10" fill="#dc2626">✕ 禁止回指</text>
+
+      <!-- 右栏：客户端与构建链 -->
+      <rect x="986" y="40" width="354" height="840" rx="14" fill="#fbfcfe" stroke="#e2e8f0" stroke-dasharray="6 4"></rect>
+      <text x="1006" y="66" font-size="13" font-weight="bold" fill="#0e7490">客户端半区与构建链</text>
+
+      <rect x="1006" y="240" width="314" height="120" rx="8" fill="#ecfeff" stroke="#67e8f9"></rect>
+      <text x="1022" y="264" font-size="13.5" font-weight="bold" fill="#0e7490">client/index.js（手写源）</text>
+      <text x="1022" y="286" font-size="11.5" fill="#334155">单文件 React bundle 源：注册 tab、</text>
+      <text x="1022" y="303" font-size="11.5" fill="#334155">WebSocket 客户端、parseEvent /</text>
+      <text x="1022" y="320" font-size="11.5" fill="#334155">reduceEvent、渲染面板</text>
+      <text x="1022" y="342" font-size="11" fill="#64748b">不手写协议名 / 区间 / 默认值</text>
+
+      <rect x="1006" y="410" width="314" height="110" rx="8" fill="#f8fafc" stroke="#94a3b8"></rect>
+      <text x="1022" y="434" font-size="13.5" font-weight="bold" fill="#334155">scripts/build-client.mjs</text>
+      <text x="1022" y="456" font-size="11.5" fill="#334155">node --check 语法校验 + 调用</text>
+      <text x="1022" y="473" font-size="11.5" fill="#334155">protocol-inject.mjs 注入常量块</text>
+      <text x="1022" y="494" font-size="11" fill="#64748b">注入：版本 / 路由 / 命令表 / 事件表 /</text>
+      <text x="1022" y="510" font-size="11" fill="#64748b">投屏区间与默认值 / CDP 端点</text>
+
+      <rect x="1006" y="566" width="314" height="116" rx="8" fill="#ecfeff" stroke="#67e8f9"></rect>
+      <text x="1022" y="590" font-size="13.5" font-weight="bold" fill="#0e7490">lib/client.js（构建产物）</text>
+      <text x="1022" y="612" font-size="11.5" fill="#334155">package.json exports ./client；</text>
+      <text x="1022" y="629" font-size="11.5" fill="#334155">宿主 __ModuleLoader__.load 加载</text>
+      <text x="1022" y="650" font-size="11" fill="#64748b">tests/invariants.mjs 断言源码注入</text>
+      <text x="1022" y="666" font-size="11" fill="#64748b">结果与产物逐字一致</text>
+
+      <rect x="1006" y="726" width="314" height="110" rx="8" fill="#ffffff" stroke="#94a3b8"></rect>
+      <text x="1022" y="750" font-size="13.5" font-weight="bold" fill="#334155">右侧栏运行实例</text>
+      <text x="1022" y="772" font-size="11.5" fill="#334155">sidebarRightTabs.register（1 个 tab 类型）</text>
+      <text x="1022" y="789" font-size="11.5" fill="#334155">slots.inject × 2（pane.tab / pane.tab.title）</text>
+      <text x="1022" y="810" font-size="11" fill="#64748b">inject 服务：slots · sidebarRightTabs</text>
+
+      <!-- 构建链箭头 -->
+      <path d="M1163,360 L1163,410" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="1172" y="390" font-size="10.5" fill="#475569">读取 + 注入</text>
+
+      <path d="M1163,520 L1163,566" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="1172" y="548" font-size="10.5" fill="#475569">写产物</text>
+
+      <path d="M1163,682 L1163,726" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#layArrow)"></path>
+      <text x="1172" y="710" font-size="10.5" fill="#475569">加载并运行</text>
+
+      <!-- 构建脚本 -> lib（一次性依赖） -->
+      <path d="M1006,465 L972,465 L972,138 L840,138" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#layArrow)"></path>
+      <text x="946" y="300" font-size="10.5" fill="#475569" transform="rotate(-90 946 300)">构建期一次性依赖，不进运行期调用图</text>
+
+      <!-- panel.js <-> 面板 -->
+      <path d="M840,300 L956,300 L956,790 L1006,790" fill="none" stroke="#0891b2" stroke-width="1.8" marker-end="url(#layArrow)"></path>
+      <text x="950" y="700" font-size="10.5" fill="#0e7490" transform="rotate(-90 950 700)">WebSocket 协议 v1</text>
+
+      <text x="1006" y="96" font-size="11.5" fill="#64748b">客户端只注册面板所需座位；</text>
+      <text x="1006" y="114" font-size="11.5" fill="#64748b">不注册 plugins.row.config /</text>
+      <text x="1006" y="132" font-size="11.5" fill="#64748b">plugins.bundle.config /</text>
+      <text x="1006" y="150" font-size="11.5" fill="#64748b">web-ui.plugin.item（当前宿主上</text>
+      <text x="1006" y="168" font-size="11.5" fill="#64748b">注册会让 entry 激活失败）。</text>
+      <text x="1006" y="192" font-size="11.5" fill="#64748b">设置页由宿主按插件 Config 渲染。</text>
+    </svg>
+    <figcaption>
+      依赖边按源码 <code>import</code> 实测（2026-11-07，HEAD <code>d8a6264</code>）。规格里声明的依赖方向
+      与实测一致；<code>scripts/protocol-inject.mjs</code> 对 <code>lib/</code> 的依赖是构建期的，不进运行期。
+      <code>capture.js</code> 与 <code>screencast.js</code> 是同一接缝（帧源）上的两个适配器，彼此不调用：
+      单帧由 <code>panel.js</code> 调 <code>captureJpeg</code>，连续帧由 <code>Screencast</code> 走 CDP。
+    </figcaption>
+  </figure>
+
+  <h3>依赖边清单（源码实测）</h3>
+  <table>
+    <thead>
+      <tr><th>源模块</th><th>直接依赖</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">tools.js</td><td class="mono">session.js · page.js · capture.js · defaults.js</td><td>工具表在 <code>run</code> 入口解析会话，然后调能力函数</td></tr>
+      <tr><td class="mono">index.js</td><td class="mono">tools.js · panel.js · session.js · auth.js · defaults.js</td><td>注册与生命周期；不碰工具实现</td></tr>
+      <tr><td class="mono">panel.js</td><td class="mono">protocol.js · session.js · capture.js · screencast.js · fence.js</td><td>面板状态、命令分发、投屏目标同步</td></tr>
+      <tr><td class="mono">session.js</td><td class="mono">page.js · capture.js · invariants.js · protocol.js · fence.js · defaults.js</td><td>会话层可调用页面层与截图层</td></tr>
+      <tr><td class="mono">page.js</td><td class="mono">auth.js · invariants.js</td><td>不 import 会话层；广播走注入的 <code>session.emit</code></td></tr>
+      <tr><td class="mono">auth.js</td><td class="mono">fence.js</td><td>补票只对 loopback 生效</td></tr>
+      <tr><td class="mono">screencast.js</td><td class="mono">protocol.js</td><td>不 import 会话层；页面对象由 <code>panel.js</code> 传入</td></tr>
+      <tr><td class="mono">capture.js</td><td class="mono">protocol.js</td><td>只借投屏默认 quality，不 import 会话层</td></tr>
+      <tr><td class="mono">protocol.js · invariants.js · fence.js · defaults.js</td><td>无内部依赖</td><td>契约表 / 纯函数 / 围栏 / 常量，四块可独立测试</td></tr>
+      <tr><td class="mono">client/index.js</td><td>仅 <code>require("react")</code></td><td>协议常量与命令 / 事件表由构建注入，不手写</td></tr>
+      <tr><td class="mono">scripts/protocol-inject.mjs</td><td class="mono">lib/protocol.js · lib/defaults.js</td><td>构建期一次性依赖；测试用同一模块断言产物一致</td></tr>
+      <tr><td colspan="3" class="mono" style="color:#dc2626">禁止边：page.js ↛ session.js（会话对象作为参数传入）；screencast.js ↛ session.js；capture.js ↛ session.js</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <b>为什么这样切：</b>不变量（<code>invariants.js</code>）全部是纯函数，改会话逻辑不必跑截图测试，改截图不必跑协议测试；
+    新增工具只改 <code>tools.js</code>，改协议只改 <code>protocol.js</code> 再重新构建客户端。
+    实现层只有一个真正的端口：帧源（CDP 投屏与单次截图两个适配器）；其余依赖都是进程内纯计算，不建抽象层。
+  </div>
+
+  <div class="legend">
+    <span class="lg-iface">接口层</span>
+    <span class="lg-orche">编排层</span>
+    <span class="lg-impl">实现层</span>
+    <span class="lg-common">公共层</span>
+    <span class="lg-client">客户端 / 构建链</span>
+    <span class="lg-ext">宿主外部、GUI、文件系统</span>
+    <span class="lg-danger">禁止方向</span>
+  </div>
+</section>
+
+<!-- ============ 03 跨调用不变量 ============ -->
+<section id="invariants">
+  <h2><span class="no">03</span>跨调用不变量：14 个纯函数守着状态组合</h2>
+  <p class="lead">
+    判别口径只有一条：<b>违反条件来自跨多次调用积累的状态</b>（会话状态机、标签页注册表、ref 表、投屏会话、
+    连接生命周期），换一次调用不会自愈，必须修状态或重启，才收敛进 <code>lib/invariants.js</code>。
+    只由本次入参决定、改参数重试即可的校验，留在各能力函数入口，不进这里。
+  </p>
+
+  <table>
+    <thead>
+      <tr><th style="width:78px">分组</th><th style="width:250px">断言</th><th>判据</th><th>违反后果（状态已经被破坏时的表现）</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="4"><span class="tag impl">会话<br>生命周期</span></td>
+        <td class="mono">assertNotClosedDuringLaunch(session)</td>
+        <td>状态不是 <code>closing</code> / <code>closed</code></td>
+        <td>启动与关闭并发：在已摘除的会话上继续 newPage，留下半初始化会话与孤儿进程</td>
+      </tr>
+      <tr>
+        <td class="mono">assertLaunchSettled(session)</td>
+        <td>并发启动落定后会话仍有浏览器</td>
+        <td>后到者拿到空结果，误报「已启动」</td>
+      </tr>
+      <tr>
+        <td class="mono">assertModeNotHotSwitched(current, requested)</td>
+        <td>请求 mode 与已运行会话一致</td>
+        <td>运行中热切 mode：隔离进程被当成 CDP 连接关闭，旧浏览器泄漏</td>
+      </tr>
+      <tr>
+        <td class="mono">assertEndpointNotHotSwitched(current, requested)</td>
+        <td>请求端点与已运行会话一致</td>
+        <td>热切端点连到另一浏览器，旧浏览器泄漏</td>
+      </tr>
+
+      <tr>
+        <td rowspan="4"><span class="tag impl">可用性<br>与标签页</span></td>
+        <td class="mono">assertBrowserRunning(session)</td>
+        <td>会话存在且至少 1 个标签页（0 页按「尚未启动」处理）</td>
+        <td>页面工具作用在 <code>undefined</code> 上，报 TypeError</td>
+      </tr>
+      <tr>
+        <td class="mono">assertCurrentTabAvailable(session)</td>
+        <td><code>activeTabId</code> 非空且在该会话 <code>pages</code> 里</td>
+        <td>操作落到不存在的当前页</td>
+      </tr>
+      <tr>
+        <td class="mono">assertTabExists(session, tabId)</td>
+        <td><code>tabId</code> 在该会话 <code>pages</code> 里</td>
+        <td>对不存在的 tab 取页对象，或操作错页</td>
+      </tr>
+      <tr>
+        <td class="mono">assertCanCloseLastTab(session)</td>
+        <td>该会话标签页数 &gt; 1</td>
+        <td>关掉最后一个页面后会话失去全部页面，所有页面工具失效</td>
+      </tr>
+
+      <tr>
+        <td rowspan="5"><span class="tag impl">CDP<br>与 ref</span></td>
+        <td class="mono">assertCdpConnected(session, isConnected)</td>
+        <td>仍持有 CDP context，且 <code>isConnected</code> 不为 <code>false</code></td>
+        <td>连接已失效仍 newPage，报 Target closed</td>
+      </tr>
+      <tr>
+        <td class="mono">assertCdpContext(context)</td>
+        <td>接管前置：至少 1 个 context</td>
+        <td>无 context 时接管，之后所有页面能力不可用</td>
+      </tr>
+      <tr>
+        <td class="mono">assertCdpHasPages(pages)</td>
+        <td>接管前置：至少 1 个已打开标签页</td>
+        <td>接管得到空会话，页面工具全部落空</td>
+      </tr>
+      <tr>
+        <td class="mono">assertRefBelongsToTab(refs, ref)</td>
+        <td>ref 在该 tab 的 ref 表（ref 表按页隔离）</td>
+        <td>切 tab 后旧 ref 落到另一页，xpath 点到另一个元素</td>
+      </tr>
+      <tr>
+        <td class="mono">assertRefRevalidated(ref, check)</td>
+        <td>元素仍命中且宽高 &gt; 0</td>
+        <td>snapshot 后元素已移除 / 零尺寸，按旧 ref 静默点空或点到别处</td>
+      </tr>
+
+      <tr>
+        <td><span class="tag impl">投屏</span></td>
+        <td class="mono">assertSingleScreencast(activeCdp)</td>
+        <td>当前没有持有 CDP 投屏会话</td>
+        <td>两个 CDP 会话同时推帧，面板画面在两个页面间串台</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>这条断言的现状要说清：</b><code>assertSingleScreencast</code> 目前只被
+    <code>tests/invariants.mjs:137-140</code> 调用，生产路径不再调用它。同一时刻只持有一个 CDP 会话由
+    <code>lib/screencast.js</code> 的内部串行队列<b>结构性保证</b>（<code>start</code> / <code>stop</code> 都经
+    <code>enqueue</code> 排队，<code>_start</code> 先 <code>_stop</code> 掉旧会话）。断言保留给纯函数测试。
+  </div>
+
+  <h3>不变量之外的两类错误</h3>
+  <table>
+    <thead><tr><th style="width:120px">类别</th><th>归属</th><th>例子</th></tr></thead>
+    <tbody>
+      <tr><td>单次入参</td><td>能力函数入口</td><td>clip 越界、selector 与 expression 同时给、非正整数超时、mode 非 isolated/cdp、端点非 loopback</td></tr>
+      <tr><td>运行时结果</td><td>能力函数里保留</td><td><code>browser_e2e_wait</code> 等待超时——是操作结果，不是状态损坏</td></tr>
+    </tbody>
+  </table>
+
+  <h3>容量与上限（散落在各层的硬约束）</h3>
+  <table>
+    <thead><tr><th>约束</th><th>值</th><th>位置</th></tr></thead>
+    <tbody>
+      <tr><td>console / network 环形缓冲</td><td>每个 tab 各 500 条</td><td class="mono">page.js RING_LIMIT</td></tr>
+      <tr><td>单条 console 文本</td><td>2000 字符截断</td><td class="mono">page.js CONSOLE_TEXT_LIMIT</td></tr>
+      <tr><td>snapshot 条数</td><td>4000 个可见元素（超出截断并标注）</td><td class="mono">page.js SNAPSHOT_LIMIT</td></tr>
+      <tr><td>截图输出单边 / 总像素</td><td>8192 px / 4194304 px</td><td class="mono">capture.js MAX_SHOT_EDGE / MAX_SHOT_PIXELS</td></tr>
+      <tr><td>投屏参数区间</td><td>quality 10-100，maxWidth/Height 100-4096，everyNthFrame 1-10</td><td class="mono">protocol.js PANEL_CONFIG_LIMITS</td></tr>
+      <tr><td>面板动作提示</td><td>最近 5 条，新的在前</td><td class="mono">client/index.js ACTION_LIMIT</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 04 会话状态机 ============ -->
+<section id="state">
+  <h2><span class="no">04</span>会话状态机：5 个显式状态替代 4 个布尔字段</h2>
+  <p class="lead">
+    会话原来靠 <code>launching / launchingPromise / launchTask / closed</code> 四个字段交叉推断状态；现在转移只走
+    <code>nextSessionState(state, event)</code> 这一张表，转移函数是纯函数（不读全局 <code>Map</code>），
+    非法转移直接抛错，全部合法 / 非法组合由 <code>tests/invariants.mjs</code> 覆盖。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1200 540" role="img" aria-label="会话状态机">
+      <defs>
+        <marker id="stArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#475569"></path>
+        </marker>
+      </defs>
+
+      <rect x="90" y="100" width="150" height="64" rx="10" fill="#f1f5f9" stroke="#94a3b8"></rect>
+      <text x="165" y="128" font-size="14" font-weight="bold" fill="#334155" text-anchor="middle">idle</text>
+      <text x="165" y="148" font-size="11" fill="#64748b" text-anchor="middle">会话已建，未启动</text>
+
+      <rect x="390" y="100" width="170" height="64" rx="10" fill="#eff6ff" stroke="#60a5fa"></rect>
+      <text x="475" y="128" font-size="14" font-weight="bold" fill="#1d4ed8" text-anchor="middle">launching</text>
+      <text x="475" y="148" font-size="11" fill="#64748b" text-anchor="middle">启动 / 接管进行中</text>
+
+      <rect x="720" y="100" width="150" height="64" rx="10" fill="#ecfdf5" stroke="#34d399"></rect>
+      <text x="795" y="128" font-size="14" font-weight="bold" fill="#047857" text-anchor="middle">ready</text>
+      <text x="795" y="148" font-size="11" fill="#64748b" text-anchor="middle">浏览器可用，允许 0 页</text>
+
+      <rect x="390" y="360" width="170" height="64" rx="10" fill="#fef2f2" stroke="#fca5a5"></rect>
+      <text x="475" y="388" font-size="14" font-weight="bold" fill="#b91c1c" text-anchor="middle">closing</text>
+      <text x="475" y="408" font-size="11" fill="#64748b" text-anchor="middle">关闭 / 断连进行中</text>
+
+      <rect x="900" y="360" width="160" height="64" rx="10" fill="#1f2937" stroke="#1f2937"></rect>
+      <text x="980" y="388" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">closed</text>
+      <text x="980" y="408" font-size="11" fill="#cbd5e1" text-anchor="middle">终态：任何事件非法</text>
+
+      <!-- 转移 -->
+      <path d="M240,132 L390,132" fill="none" stroke="#475569" stroke-width="1.7" marker-end="url(#stArrow)"></path>
+      <text x="315" y="122" font-size="12" fill="#334155" text-anchor="middle">launch</text>
+
+      <path d="M560,132 L720,132" fill="none" stroke="#475569" stroke-width="1.7" marker-end="url(#stArrow)"></path>
+      <text x="640" y="122" font-size="12" fill="#334155" text-anchor="middle">launchSettled</text>
+
+      <path d="M455,100 C400,34 230,34 172,100" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#stArrow)"></path>
+      <text x="300" y="36" font-size="12" fill="#64748b" text-anchor="middle">launchFailed（清掉半初始化资源）</text>
+
+      <path d="M475,164 L475,360" fill="none" stroke="#475569" stroke-width="1.7" marker-end="url(#stArrow)"></path>
+      <text x="485" y="270" font-size="12" fill="#334155">close</text>
+
+      <path d="M780,164 C780,300 620,320 560,380" fill="none" stroke="#475569" stroke-width="1.7" marker-end="url(#stArrow)"></path>
+      <text x="700" y="290" font-size="12" fill="#334155">close</text>
+
+      <path d="M165,164 L28,164 L28,500 L980,500 L980,424" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#stArrow)"></path>
+      <text x="600" y="520" font-size="12" fill="#64748b" text-anchor="middle">close（还没起过浏览器，直接进终态）</text>
+
+      <path d="M560,392 L900,392" fill="none" stroke="#475569" stroke-width="1.7" marker-end="url(#stArrow)"></path>
+      <text x="730" y="382" font-size="12" fill="#334155" text-anchor="middle">closeSettled</text>
+
+      <!-- 约束说明 -->
+      <rect x="40" y="296" width="300" height="94" rx="8" fill="#ffffff" stroke="#e2e8f0"></rect>
+      <text x="56" y="318" font-size="11.5" font-weight="bold" fill="#334155">转移与并发约束</text>
+      <text x="56" y="338" font-size="11" fill="#64748b">1. 并发 launch 等同一个 launchTask，</text>
+      <text x="56" y="354" font-size="11" fill="#64748b">　 不另起浏览器；等待期间被 close 即报错</text>
+      <text x="56" y="370" font-size="11" fill="#64748b">2. launching 中 close：launch 收尾负责</text>
+      <text x="56" y="384" font-size="11" fill="#64748b">　 拆掉已建浏览器，不留孤儿进程</text>
+    </svg>
+    <figcaption>
+      转移表见 <code>lib/session.js:98-104</code>；<code>nextSessionState</code> 在 <code>session.js:113</code>。
+      依据：<code>specs/项目规格/0001-architecture-invariants.md</code>「会话状态机」。
+    </figcaption>
+  </figure>
+
+  <h3>状态机之外的会话口径</h3>
+  <table>
+    <thead><tr><th style="width:200px">口径</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr><td><code>ready</code> 允许 0 页</td><td>标签页增删不改会话状态；0 页是可恢复态。<code>page.on('close')</code> / <code>('crash')</code> 只调 <code>removePage</code>，浏览器是否关闭只由 <code>close</code> 决定</td></tr>
+      <tr><td>复用分支</td><td>已有浏览器时同样建立落定信号；返回前复查会话仍在 registry 且不在收尾，不满足就抛并发关闭错误，不返回假的 <code>reused: true</code></td></tr>
+      <tr><td>0 页复用</td><td>isolated 模式补建一页后返回复用结果；CDP 模式报「CDP 浏览器已没有打开的标签页」的可诊断错误</td></tr>
+      <tr><td>空闲计时</td><td>只在 <code>idle</code> / <code>ready</code> 装；<code>launching</code> / <code>closing</code> / <code>closed</code> 不装，启动落定后重新计时</td></tr>
+      <tr><td>会话键</td><td>工具层用 <code>exec.agent.id</code>；无 agent 身份时退回全局 <code>'global'</code>。`session/disposed` 只给 Session，靠同源 <code>session.id</code> 精确回收</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 05 编排：一次工具调用 ============ -->
+<section id="flow">
+  <h2><span class="no">05</span>编排：一次工具调用如何走完整条链</h2>
+  <p class="lead">
+    编排不在某个「总控类」里，而是三段各自的顺序：工具表负责解析会话与调能力函数；会话层把状态变化
+    广播成进程内事件；<code>PanelHub</code> 用一个 50 ms 防抖 + 串行队列把状态同步和投屏目标收敛到同一时刻。
+    工具路径与投屏路径互不阻塞。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1500 880" role="img" aria-label="一次工具调用的编排时序">
+      <defs>
+        <marker id="flArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#334155"></path>
+        </marker>
+        <marker id="flArrowP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"></path>
+        </marker>
+        <marker id="flArrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#059669"></path>
+        </marker>
+        <marker id="flArrowC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#0891b2"></path>
+        </marker>
+      </defs>
+
+      <!-- 泳道 -->
+      <g font-size="12.5" text-anchor="middle">
+        <rect x="30" y="40" width="200" height="54" rx="8" fill="#f1f5f9" stroke="#94a3b8"></rect>
+        <text x="130" y="63" font-size="13" font-weight="bold" fill="#334155">agent / 工具注册表</text>
+        <text x="130" y="82" font-size="11" fill="#64748b">ctx.tools.register</text>
+
+        <rect x="280" y="40" width="200" height="54" rx="8" fill="#eff6ff" stroke="#93c5fd"></rect>
+        <text x="380" y="63" font-size="13" font-weight="bold" fill="#1d4ed8">tools.js</text>
+        <text x="380" y="82" font-size="11" fill="#64748b">工具表 · run 入口</text>
+
+        <rect x="530" y="40" width="200" height="54" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+        <text x="630" y="63" font-size="13" font-weight="bold" fill="#047857">session.js</text>
+        <text x="630" y="82" font-size="11" fill="#64748b">会话注册表 · 事件总线</text>
+
+        <rect x="780" y="40" width="200" height="54" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+        <text x="880" y="63" font-size="13" font-weight="bold" fill="#047857">page.js / capture.js</text>
+        <text x="880" y="82" font-size="11" fill="#64748b">页面能力 · 帧源</text>
+
+        <rect x="1030" y="40" width="200" height="54" rx="8" fill="#f5f3ff" stroke="#c4b5fd"></rect>
+        <text x="1130" y="63" font-size="13" font-weight="bold" fill="#6d28d9">panel.js（PanelHub）</text>
+        <text x="1130" y="82" font-size="11" fill="#64748b">状态同步 · 投屏 · 广播</text>
+
+        <rect x="1280" y="40" width="200" height="54" rx="8" fill="#ecfeff" stroke="#67e8f9"></rect>
+        <text x="1380" y="63" font-size="13" font-weight="bold" fill="#0e7490">面板 client</text>
+        <text x="1380" y="82" font-size="11" fill="#64748b">React · WebSocket</text>
+      </g>
+
+      <g stroke="#dbe3ec" stroke-width="1.4" stroke-dasharray="4 5">
+        <line x1="130" y1="94" x2="130" y2="860"></line>
+        <line x1="380" y1="94" x2="380" y2="860"></line>
+        <line x1="630" y1="94" x2="630" y2="860"></line>
+        <line x1="880" y1="94" x2="880" y2="860"></line>
+        <line x1="1130" y1="94" x2="1130" y2="860"></line>
+        <line x1="1380" y1="94" x2="1380" y2="860"></line>
+      </g>
+
+      <!-- 1 -->
+      <path d="M130,150 L380,150" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#flArrow)"></path>
+      <text x="255" y="140" font-size="11.5" fill="#334155" text-anchor="middle">browser_e2e_click { target, tab_id }</text>
+      <text x="255" y="166" font-size="10.5" fill="#64748b" text-anchor="middle">exec.agent.id 即会话 key</text>
+
+      <!-- 2 -->
+      <path d="M380,208 L630,208" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#flArrow)"></path>
+      <text x="505" y="198" font-size="11.5" fill="#334155" text-anchor="middle">sessionOf(key, sessionId)</text>
+      <text x="505" y="224" font-size="10.5" fill="#64748b" text-anchor="middle">取 / 建会话对象，刷新空闲计时</text>
+
+      <!-- 3 -->
+      <path d="M380,266 L880,266" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#flArrow)"></path>
+      <text x="630" y="254" font-size="11.5" fill="#334155" text-anchor="middle">click(session, target, tabId)</text>
+      <text x="630" y="282" font-size="10.5" fill="#64748b" text-anchor="middle">能力函数接收会话对象，不自己查全局 Map</text>
+
+      <!-- 4 自环 -->
+      <path d="M905,324 C950,324 950,356 905,356" fill="none" stroke="#334155" stroke-width="1.5" marker-end="url(#flArrow)"></path>
+      <text x="962" y="332" font-size="11" fill="#334155">currentTab → assertRefBelongsToTab</text>
+      <text x="962" y="350" font-size="11" fill="#64748b">→ assertRefRevalidated → page.mouse.click</text>
+
+      <!-- 5 -->
+      <path d="M855,382 L655,382" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#flArrowP)"></path>
+      <text x="755" y="372" font-size="11.5" fill="#6d28d9" text-anchor="middle">session.emit({ type: 'changed' })</text>
+      <text x="755" y="398" font-size="10.5" fill="#64748b" text-anchor="middle">页面层不 import 会话层，广播走注入的 emit</text>
+
+      <!-- 6 -->
+      <path d="M630,440 L1130,440" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#flArrowP)"></path>
+      <text x="880" y="430" font-size="11.5" fill="#6d28d9" text-anchor="middle">panelListeners → scheduleSync()</text>
+      <text x="880" y="456" font-size="10.5" fill="#64748b" text-anchor="middle">50 ms 防抖：一次导航连发的 load / domcontentloaded / framenavigated 合并成一次同步</text>
+
+      <!-- 7 -->
+      <path d="M1130,498 L630,498" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#flArrowP)"></path>
+      <text x="880" y="488" font-size="11.5" fill="#6d28d9" text-anchor="middle">listPanelTabs() / panelPage(panelId)</text>
+      <text x="880" y="514" font-size="10.5" fill="#64748b" text-anchor="middle">读模型：tab 列表 + 面板 tab id 解析（key#tab_id）</text>
+
+      <!-- 8 自环 -->
+      <path d="M1155,556 C1200,556 1200,588 1155,588" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#flArrowG)"></path>
+      <text x="1212" y="562" font-size="11" fill="#047857">ensureScreencast → Screencast.start</text>
+      <text x="1212" y="580" font-size="10.5" fill="#64748b">CDP Page.startScreencast → frame → pushFrame(seq)</text>
+
+      <!-- 9 -->
+      <path d="M1130,614 L1380,614" fill="none" stroke="#0891b2" stroke-width="1.8" marker-end="url(#flArrowC)"></path>
+      <text x="1255" y="604" font-size="11.5" fill="#0e7490" text-anchor="middle">broadcast state / frame / action</text>
+      <text x="1255" y="630" font-size="10.5" fill="#64748b" text-anchor="middle">WS 协议 v1（loopback 围栏）</text>
+
+      <!-- 10 -->
+      <path d="M380,672 L130,672" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#flArrow)"></path>
+      <text x="255" y="662" font-size="11.5" fill="#334155" text-anchor="middle">文本结果返回给模型</text>
+      <text x="255" y="688" font-size="10.5" fill="#64748b" text-anchor="middle">index.js 包装层在 run 前后另发 broadcastAction</text>
+
+      <!-- client 内部说明 -->
+      <rect x="1290" y="700" width="180" height="108" rx="8" fill="#ffffff" stroke="#67e8f9"></rect>
+      <text x="1300" y="720" font-size="11" font-weight="bold" fill="#0e7490">client 内部</text>
+      <text x="1300" y="739" font-size="10.5" fill="#64748b">parseEvent 校验 v / kind</text>
+      <text x="1300" y="756" font-size="10.5" fill="#64748b">reduceEvent 合并 view</text>
+      <text x="1300" y="773" font-size="10.5" fill="#64748b">frame 按 seq 丢旧帧</text>
+      <text x="1300" y="790" font-size="10.5" fill="#64748b">img data:image/jpeg</text>
+
+      <!-- 路径图例 -->
+      <rect x="30" y="716" width="1150" height="104" rx="8" fill="#f8fafc" stroke="#e2e8f0"></rect>
+      <text x="48" y="740" font-size="11.5" font-weight="bold" fill="#334155">两条独立路径</text>
+      <text x="48" y="760" font-size="11" fill="#334155">工具路径（深灰）：agent → 工具表 → 能力函数 → 结果。会话解析发生在 run 入口，能力函数只收会话对象。</text>
+      <text x="48" y="780" font-size="11" fill="#6d28d9">事件路径（紫）：状态变化 → 进程内事件总线 → PanelHub 50 ms 防抖 → 状态同步。</text>
+      <text x="48" y="800" font-size="11" fill="#047857">投屏路径（绿）：PanelHub 串行同步投屏目标 → Screencast → CDP 帧 → 按 seq 广播；静态页无新帧，刷新按钮走 captureJpeg。</text>
+    </svg>
+    <figcaption>
+      序列按源码实际调用点排列（<code>tools.js</code> 的 <code>run</code>、<code>page.js click</code>、
+      <code>session.js emitPanelEvent</code>、<code>panel.js scheduleSync / broadcastState / ensureScreencast /
+      handleCommand</code>）。面板侧命令方向相反：<code>attach / select-tab / close-tab / request-frame /
+      configure</code> 由 client 发往 host，进同一条命令串行队列。
+    </figcaption>
+  </figure>
+
+  <h3>编排里真正起作用的四个同步机制</h3>
+  <table>
+    <thead><tr><th style="width:220px">机制</th><th>位置</th><th>解决什么</th></tr></thead>
+    <tbody>
+      <tr><td>状态同步防抖 50 ms</td><td class="mono">panel.js STATE_DEBOUNCE_MS</td><td>一次导航连发多个页面事件，合并成一次 state 广播</td></tr>
+      <tr><td>同步串行化（共享 Promise）</td><td class="mono">panel.js sync() / syncing</td><td>并发同步共享同一次完成，避免投屏被并发启停</td></tr>
+      <tr><td>命令串行队列</td><td class="mono">panel.js enqueue() / commandQueue</td><td>同一条连接上的命令按到达顺序逐个处理，前一个失败不影响后续</td></tr>
+      <tr><td>投屏串行队列</td><td class="mono">screencast.js enqueue() / queue</td><td>start / stop 不交错，结构性保证同时只有一个 CDP 投屏会话</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 06 进程回收 ============ -->
+<section id="reclaim">
+  <h2><span class="no">06</span>进程回收：三道兜底 + 一道关闭超时</h2>
+  <p class="lead">
+    浏览器进程挂在 DSH 服务上，对话结束、会话切走、子代理结束都不会自动回收。三道回收都在
+    <code>lib/session.js</code> 闭口；CDP 模式只断连，绝不结束用户浏览器进程。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1240 620" role="img" aria-label="进程回收路径">
+      <defs>
+        <marker id="rcArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#475569"></path>
+        </marker>
+      </defs>
+
+      <!-- 三个触发 -->
+      <rect x="40" y="90" width="270" height="84" rx="8" fill="#fffbeb" stroke="#fcd34d"></rect>
+      <text x="56" y="114" font-size="12.5" font-weight="bold" fill="#b45309">① 空闲回收</text>
+      <text x="56" y="136" font-size="11" fill="#334155">IDLE_CLOSE_MS（默认 600000，0 关闭）</text>
+      <text x="56" y="154" font-size="11" fill="#64748b">只回收计时器所属的那个会话对象</text>
+
+      <rect x="40" y="210" width="270" height="84" rx="8" fill="#eff6ff" stroke="#93c5fd"></rect>
+      <text x="56" y="234" font-size="12.5" font-weight="bold" fill="#1d4ed8">② 会话回收</text>
+      <text x="56" y="256" font-size="11" fill="#334155">session/disposed 事件</text>
+      <text x="56" y="274" font-size="11" fill="#64748b">session.id → keyBySessionId → close(key)</text>
+
+      <rect x="40" y="330" width="270" height="84" rx="8" fill="#f5f3ff" stroke="#c4b5fd"></rect>
+      <text x="56" y="354" font-size="12.5" font-weight="bold" fill="#6d28d9">③ 卸载回收</text>
+      <text x="56" y="376" font-size="11" fill="#334155">插件卸载 / 热替换</text>
+      <text x="56" y="394" font-size="11" fill="#64748b">ctx.effect 清理函数 → closeAll()</text>
+
+      <!-- close(key) -->
+      <rect x="400" y="190" width="230" height="110" rx="10" fill="#f8fafc" stroke="#64748b"></rect>
+      <text x="515" y="214" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="middle">close(key)</text>
+      <text x="416" y="238" font-size="11" fill="#334155">先摘除会话，再关浏览器：</text>
+      <text x="416" y="256" font-size="11" fill="#334155">sessions.delete(key)</text>
+      <text x="416" y="274" font-size="11" fill="#334155">摘 keyBySessionId</text>
+      <text x="416" y="292" font-size="11" fill="#334155">state → closing</text>
+
+      <path d="M310,132 L350,132 L350,220 L400,220" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+      <path d="M310,252 L400,252" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+      <path d="M310,372 L350,372 L350,272 L400,272" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+
+      <!-- 三个分支 -->
+      <rect x="700" y="90" width="300" height="84" rx="8" fill="#ffffff" stroke="#cbd5e1"></rect>
+      <text x="716" y="114" font-size="12" font-weight="bold" fill="#334155">launching 中关闭</text>
+      <text x="716" y="136" font-size="11" fill="#64748b">等 launchingPromise；launch 的 finally</text>
+      <text x="716" y="154" font-size="11" fill="#64748b">收掉已建浏览器，避免 Target closed</text>
+
+      <rect x="700" y="190" width="300" height="84" rx="8" fill="#ecfdf5" stroke="#6ee7b7"></rect>
+      <text x="716" y="214" font-size="12" font-weight="bold" fill="#047857">cdp 模式</text>
+      <text x="716" y="236" font-size="11" fill="#64748b">browser.close() 只断开连接并清理</text>
+      <text x="716" y="254" font-size="11" fill="#64748b">本连接创建的 context，不结束进程</text>
+
+      <rect x="700" y="300" width="300" height="84" rx="8" fill="#fff7ed" stroke="#fdba74"></rect>
+      <text x="716" y="324" font-size="12" font-weight="bold" fill="#c2410c">isolated 模式</text>
+      <text x="716" y="346" font-size="11" fill="#64748b">closeBrowser：browser.close() race</text>
+      <text x="716" y="364" font-size="11" fill="#64748b">CLOSE_TIMEOUT_MS（5000）→ 超时 kill</text>
+
+      <path d="M630,220 L665,220 L665,132 L700,132" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+      <path d="M630,245 L700,245" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+      <path d="M630,270 L665,270 L665,342 L700,342" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+
+      <!-- 落定 -->
+      <rect x="1040" y="190" width="170" height="110" rx="10" fill="#f1f5f9" stroke="#94a3b8"></rect>
+      <text x="1125" y="214" font-size="13" font-weight="bold" fill="#334155" text-anchor="middle">落定</text>
+      <text x="1056" y="238" font-size="11" fill="#334155">state → closed</text>
+      <text x="1056" y="256" font-size="11" fill="#334155">emitPanelEvent</text>
+      <text x="1056" y="274" font-size="11" fill="#334155">{ type: 'closed' }</text>
+      <text x="1056" y="292" font-size="11" fill="#64748b">面板 tab 随之消失</text>
+
+      <path d="M1000,132 L1020,132 L1020,220 L1040,220" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+      <path d="M1000,232 L1040,232" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+      <path d="M1000,342 L1020,342 L1020,270 L1040,270" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
+
+      <!-- 底部说明 -->
+      <rect x="40" y="460" width="1170" height="128" rx="8" fill="#f8fafc" stroke="#e2e8f0"></rect>
+      <text x="58" y="484" font-size="12" font-weight="bold" fill="#334155">关闭兜底</text>
+      <text x="58" y="504" font-size="11" fill="#334155">系统 Edge 偶发在 graceful close 阶段卡住（进程已退出，Playwright 等不到退出事件）：DSH_BROWSER_CLOSE_TIMEOUT_MS 到点后直接结束主进程，保证关闭路径一定有返回。</text>
+      <text x="58" y="528" font-size="12" font-weight="bold" fill="#b45309">已知边界（已记录，未修）</text>
+      <text x="58" y="548" font-size="11" fill="#334155">空闲计时从「本次工具调用开始」算：一次耗时超过 IDLE_CLOSE_MS 的 browser_e2e_wait，可能在等待期间浏览器被回收，该次调用随后报「浏览器尚未启动」。规避：把 DSH_BROWSER_IDLE_MS 设为 0 或大于单次调用时长。</text>
+      <text x="58" y="572" font-size="11" fill="#64748b">进程计数类测试断言以「回落到运行前基线」为准，不看绝对值（本机若已开着 Edge，基线不是 0）。</text>
+    </svg>
+    <figcaption>
+      依据：<code>lib/session.js</code> 的 <code>IDLE_CLOSE_MS</code> / <code>CLOSE_TIMEOUT_MS</code> /
+      <code>touchSession</code> / <code>close</code> / <code>closeBrowser</code>，<code>lib/index.js</code> 的
+      <code>session/disposed</code> 与 <code>ctx.effect</code> 回收，<code>README.md</code>「进程回收」。
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 07 协议与单一来源 ============ -->
+<section id="contracts">
+  <h2><span class="no">07</span>面板协议 v1 与「单一来源」纪律</h2>
+  <p class="lead">
+    host 与 client 只讲一个版本；路由、版本、命令、事件、错误码、投屏区间与默认值、<code>panelTabId</code>
+    组合规则全部只写在 <code>lib/protocol.js</code>。客户端不手写这些值，构建时注入。
+  </p>
+
+  <div class="cards">
+    <div class="card client">
+      <h4>路由与版本</h4>
+      <ul>
+        <li><code>GET /api/dsh-browser-e2e/state</code>：只读状态快照（socket 连不上时兜底探测）</li>
+        <li><code>WS /api/dsh-browser-e2e/socket</code>：协议 v1</li>
+        <li>首帧 <code>v</code> 不等于 <code>1</code> → 回 <code>protocol-mismatch</code> 并用关闭码 <code>1002</code> 断开；后续帧版本不符只回错误事件</li>
+        <li>两条路由都过 <code>fence.js</code>：远端地址与 Host 头必须是 loopback，拒绝 <code>sec-fetch-site: cross-site</code>，非 loopback 在升级前就 403</li>
+      </ul>
+    </div>
+    <div class="card impl">
+      <h4>命令（client → host，5 条）</h4>
+      <ul>
+        <li><code>attach{sessionId?}</code>：绑定连接所属会话，回 <code>hello{state}</code></li>
+        <li><code>select-tab{tabId}</code>：选中并固定面板 tab</li>
+        <li><code>close-tab{tabId}</code>：关页；最后一个页面回 <code>last-tab</code></li>
+        <li><code>request-frame</code>：立即截一帧 JPEG 推回（刷新按钮）</li>
+        <li><code>configure{config}</code>：合并设置并重开投屏</li>
+        <li>未知命令一律回 <code>invalid-command</code>，不静默丢弃</li>
+      </ul>
+    </div>
+    <div class="card impl">
+      <h4>事件（host → client，5 条）</h4>
+      <ul>
+        <li><code>hello{state}</code>：attach 的应答</li>
+        <li><code>state{state}</code>：tab 列表 / 活动 tab / 运行模式 / 设置</li>
+        <li><code>frame{tabId, seq, width, height, data}</code>：base64 JPEG，<code>seq</code> 单调递增，client 丢弃旧帧</li>
+        <li><code>action{trace:{tool, summary, at}}</code>：工具动作提示</li>
+        <li><code>error{code, message}</code>：<code>code</code> 取自 <code>PANEL_ERROR_CODES</code></li>
+      </ul>
+    </div>
+    <div class="card common">
+      <h4>错误码（13 个，唯一来源）</h4>
+      <ul>
+        <li>协议类：<code>invalid-payload</code> · <code>protocol-mismatch</code> · <code>invalid-command</code> · <code>invalid-config</code></li>
+        <li>标签页类：<code>unknown-tab</code> · <code>last-tab</code> · <code>close-tab-failed</code> · <code>no-active-tab</code></li>
+        <li>执行类：<code>capture-failed</code> · <code>state-failed</code> · <code>config-sync-failed</code> · <code>command-failed</code> · <code>screencast-failed</code></li>
+        <li>host 侧代码不在调用点写 code 字面量；<code>tests/invariants.mjs</code> 断言表外没有字面量</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>panelTabId：跨会话同号 tab 不撞车</h3>
+  <p>
+    组合规则 <code>key + '#' + tabId</code>（如 <code>example-session#t1</code>）；拆分取<b>最后一个</b> <code>#</code>，
+    因此会话 key 自身含 <code>#</code> 时仍能正确拆；<code>#</code> 在开头或末尾、非字符串一律返回 <code>null</code>，
+    由调用方转成 <code>unknown-tab</code>。唯一实现是 <code>lib/protocol.js</code> 的
+    <code>panelTabId / parsePanelTabId</code>，<code>session.js</code> 与 <code>panel.js</code> 都从那里取。
+  </p>
+
+  <h3>投屏设置：区间与默认值只有一份</h3>
+  <table>
+    <thead><tr><th>字段</th><th>区间</th><th>默认</th><th>两处校验的口径</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">quality</td><td class="mono">10-100</td><td class="mono">70</td><td rowspan="4">
+        host：<code>mergeConfig</code>（用户当场操作，越界回 <code>invalid-config</code>）与 <code>initialConfigOf</code>
+        （插件配置可能被手改脏，逐字段回退默认）都从区间表派生；client：<code>normalizeConfig</code> 按同一份注入值 clamp。
+        改上限只改 <code>protocol.js</code> 并重新构建客户端，否则 host 改小、client 按旧上限 clamp 会收到 <code>invalid-config</code>。
+      </td></tr>
+      <tr><td class="mono">maxWidth</td><td class="mono">100-4096</td><td class="mono">1280</td></tr>
+      <tr><td class="mono">maxHeight</td><td class="mono">100-4096</td><td class="mono">800</td></tr>
+      <tr><td class="mono">everyNthFrame</td><td class="mono">1-10</td><td class="mono">1</td></tr>
+    </tbody>
+  </table>
+
+  <h3>构建链：源码一份，产物由脚本生成</h3>
+  <p class="lead">
+    <code>client/index.js</code> → <code>scripts/build-client.mjs</code>（<code>node --check</code> + 调用
+    <code>protocol-inject.mjs</code>）→ <code>lib/client.js</code>。注入内容：协议版本、socket 路由、命令表、事件表、
+    投屏区间与默认值、默认 CDP 端点。改 <code>client/index.js</code> 必须重新构建并提交产物。
+  </p>
+  <table>
+    <thead><tr><th style="width:220px">守护手段</th><th>断言内容</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">tests/invariants.mjs</td><td>生成的常量块与 <code>lib/protocol.js</code> 逐字段相等；源码注入结果 + 头注释与 <code>lib/client.js</code> 全文一致；<code>client/index.js</code> 不再手写协议值</td></tr>
+      <tr><td class="mono">tests/client-bundle.mjs</td><td>Node VM 桩里跑客户端注册面：<code>api.inject</code> 恰为 <code>["slots","sidebarRightTabs"]</code>，<code>apply</code> 只产生 2 条 <code>slots.inject</code> / 2 条 <code>slots.register</code>；<code>parseEvent</code> / <code>reduceEvent</code> 行为</td></tr>
+      <tr><td class="mono">tests/panel.mjs</td><td>围栏、设置合并、工具参数契约、真实 Edge + WebSocket 端到端协议（含 close-tab）</td></tr>
+      <tr><td class="mono">tests/screencast.mjs</td><td>投屏串行队列与面板命令串行队列（假 CDP，不启动浏览器）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <b>测试分层：</b><code>npm run test:unit</code> = invariants + client-bundle + screencast（不启动浏览器）；
+    <code>npm run test:integration</code> = panel + tools + auth + multitab + cdp + reclaim（真起无头 Edge，脚本串行）。
+    改哪块跑哪组的口径见 <code>specs/项目规格/0001-architecture-invariants.md</code>「验收」。
+  </div>
+</section>
+
+<!-- ============ 08 边界、不做与债务 ============ -->
+<section id="boundaries">
+  <h2><span class="no">08</span>边界、明确不做与已知结构性债务</h2>
+
+  <h3>明确不做（设计取舍，不是遗漏）</h3>
+  <div class="cards">
+    <div class="card danger">
+      <h4>不建的抽象</h4>
+      <ul>
+        <li>不建 abstract class / interface 关键字 / DI 容器 / 工厂：只有文件边界 + 纯函数 + 数据表</li>
+        <li>不给 <code>playwright-core</code> 建 <code>BrowserDriver</code> 端口（只有一个适配器）</li>
+        <li>不给 tab 建 class / 值对象；不按业务功能切 <code>navigation.js</code> / <code>input.js</code></li>
+        <li>不保留 <code>browser.js</code> 的 re-export 转发层</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>不拆的边界</h4>
+      <ul>
+        <li>isolated 与 cdp 不拆成两个模块（共享约九成逻辑，差异不是变化原因）</li>
+        <li><code>client/index.js</code> 单文件不拆（以浏览器 bundle 形式分发，只 require react）</li>
+      </ul>
+    </div>
+    <div class="card impl">
+      <h4>只读面板</h4>
+      <ul>
+        <li>面板不启动浏览器、不操作页面；所有行为只能由 <code>browser_e2e_*</code> 发起</li>
+        <li>唯一例外：<code>close-tab</code> 会真的关页</li>
+        <li><code>request-frame</code> 只截一帧，不改变页面状态</li>
+        <li><code>configure</code> 只改宿主进程内配置，不写回 profile</li>
+      </ul>
+    </div>
+    <div class="card client">
+      <h4>客户端注册面固定</h4>
+      <ul>
+        <li>只注册 1 个 tab 类型 + 2 个 keyed 座位</li>
+        <li>不注册 <code>plugins.row.config</code> / <code>plugins.bundle.config</code> / <code>web-ui.plugin.item</code>（当前宿主上会让 entry 激活失败，整个 GUI boot 失败）</li>
+        <li>设置页由宿主按插件导出的 <code>Config</code> 自动渲染</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>已知结构性债务（规格记录于基线 1694b2c；本次按 HEAD d8a6264 逐条实测核对）</h3>
+  <table>
+    <thead><tr><th style="width:190px">项</th><th>现状</th><th style="width:280px">未处置理由 / 建议</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">page.js 粒度过大</td><td>864 行、27 个导出：标签页注册表与生命周期、事件环、snapshot 的 DOM 启发式、五种交互、视口度量、展示格式化</td><td>拆分面覆盖所有页面能力，回归风险高；建议拆 <code>snapshot.js</code> 与 <code>observation.js</code></td></tr>
+      <tr><td class="mono">session.js 粒度过大</td><td>682 行、16 个导出：会话注册表与状态机、launch/close 与回收、面板事件总线、面板读模型与工具能力</td><td>面板读模型与事件总线属「面板视图」；建议拆 <code>lib/view.js</code>，但需先决定注册表暴露面。<b>处置前不得再往 session.js 加职责</b></td></tr>
+      <tr><td class="mono">视口度量三份</td><td><code>page.js</code> 与 <code>capture.js</code> 各一份 <code>viewportBounds</code>，capture 另有内联兜底</td><td>收敛会改依赖图（capture 现只依赖 protocol），留待拆 page.js 时一并处理</td></tr>
+      <tr><td class="mono">串行队列两份</td><td><code>panel.js</code> 与 <code>screencast.js</code> 各一份 enqueue/queue，逻辑相同</td><td>抽出公共模块会增加一条依赖边并改依赖图，留待拆分评估</td></tr>
+      <tr><td class="mono">会话解析入口不统一</td><td>9 个工具用 <code>sessionOf</code>（会创建会话），console / network 用 <code>requireSession</code>，tabs / close_tab 经 <code>session.tabs</code> / <code>session.closeTab</code> 内的 <code>sessions.get</code>；未启动时报错文案不同</td><td>只影响未启动时的会话表残留与文案，统一需逐工具核对语义</td></tr>
+      <tr><td class="mono">展示格式化四处</td><td><code>page.js</code> 的 timeOf/oneLine、<code>session.js</code> 的 tabs 文本、<code>tools.js</code> 的标题拼串、client 的 formatClock；timeOf 取 UTC、formatClock 用本地时区</td><td>上移会改动全部 15 个工具 <code>run</code> 的返回契约，属较大重构</td></tr>
+      <tr><td class="mono">client 文案 / 样式孤儿键</td><td>删除死组件后留下 17 个无引用 EN 文案键（45 键中）与 9 个无引用样式键（44 键中）；规格基线记 9 + 8</td><td>整洁度问题，不影响行为；清理需与 client-bundle 文案断言一起核对</td></tr>
+      <tr><td class="mono">默认值散落</td><td><code>tools.js</code> 描述与 <code>page.js</code> 写死「默认 100」「默认 10000」，尚无单一来源</td><td>需新增常量并补规格的常量口径</td></tr>
+    </tbody>
+  </table>
+
+  <h3>已知限制（行为层面）</h3>
+  <ul class="tight">
+    <li><b>面板是单 Hub 的全局视图</b>：<code>activeTabId</code> 不按连接隔离。多个会话同时打开面板时，显示哪个 tab 由最后一次 <code>attach</code> / <code>select-tab</code> 决定；按连接隔离需要 per-connection 视图状态，超出当前实现范围。</li>
+    <li><b>同一会话并发启动</b>：只允许一次 launch，后到者等前一次落定后按复用返回；等待期间会话被 close，后到者收到「浏览器已关闭（启动与关闭并发）」。</li>
+    <li><b>快照体积</b>：4000 条上限，实测 4100 个简单 div 的页面模型可见文本约 189 KB；大页面建议直接用 <code>selector</code> 操作。</li>
+    <li><b>profile 里是 commit 快照</b>：改完源码必须 commit + push 再在 profile 重新解析，否则跑的还是旧提交。</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <h3>证据来源与读取时点</h3>
+  <p>
+    本图基于 2026-11-07、HEAD <code>d8a6264</code>（<code>main</code>）的工作区源码与规格；未运行测试套件，
+    因此「实现与规格一致」只指本次逐文件读到的代码与规格文字一致，不含运行期验证。
+  </p>
+  <ol>
+    <li><code>specs/项目规格/0001-architecture-invariants.md</code>：三层与文件表、依赖方向、throw 分类、不变量清单、状态机、进程回收、结构债务。</li>
+    <li><code>specs/项目规格/0002-panel-protocol-v1.md</code>：路由、命令、事件、错误码、投屏设置、panelTabId、单 Hub 限制。</li>
+    <li><code>specs/功能规格/0001-client-entry-activation-failure.md</code>：客户端注册面与 entry 激活失败的约束。</li>
+    <li><code>lib/index.js</code>：Config 与 apply、工具注册包装、session/disposed 与卸载回收、面板路由挂载。</li>
+    <li><code>lib/tools.js</code>：15 个工具声明与 <code>run</code> 实现（第 145-486 行的工具表）。</li>
+    <li><code>lib/session.js</code>：状态转移表（98-104）、<code>nextSessionState</code>（113）、<code>touchSession</code>（147）、<code>launch</code>（308）、<code>close</code>（519）、<code>closeTab</code>（562）、<code>closeBySessionId</code>（598）、<code>closeAll</code>（605）。</li>
+    <li><code>lib/page.js</code>：<code>addPage</code>（59）、<code>removePage</code>（86）、<code>createPage</code>（118）、<code>attachPageHooks</code>（135）及容量常量（14-23）。</li>
+    <li><code>lib/panel.js</code>：<code>PanelHub</code>（77）、<code>state</code>（144）、<code>broadcastState</code>（196）、<code>scheduleSync</code>（204）、<code>sync</code>（214）、<code>ensureScreencast</code>（228）、<code>applyConfig</code>（257）、<code>pushFrame</code>（279）、<code>handleCommand</code>（319）。</li>
+    <li><code>lib/screencast.js</code>：串行队列与 <code>Page.startScreencast</code> 适配器（全文 133 行）。</li>
+    <li><code>lib/protocol.js</code>：契约表全文（140 行）；<code>lib/invariants.js</code>：14 个断言（22-176）。</li>
+    <li><code>client/index.js</code>：注册面（<code>inject</code>、<code>tabDefinition</code>、<code>apply</code>）、<code>parseEvent</code> / <code>reduceEvent</code>、连接与重连常量。</li>
+    <li><code>package.json</code>（bundle 与测试脚本）、<code>cordis.patch.yml</code>（bundle patch）、<code>README.md</code>（面板、回收、实现说明节：<code>git diff --stat d8a6264..d59c8e9</code> 实测仅 README 重写，<code>lib/</code> 与 <code>client/</code> 源码未变）。</li>
+  </ol>
+  <p>
+    依赖边由 <code>Select-String</code> 对 <code>lib/*.js</code>、<code>client/index.js</code>、<code>scripts/*.mjs</code>
+    的 <code>from './…'</code> 逐文件提取；跨模块可变字段清单见 <code>0001-architecture-invariants.md</code>「进程内对象契约」。
+    第 08 节债务表已按 HEAD 实测核对：文件行数与 <code>^export</code> 计数用 <code>Get-Content</code> / <code>Select-String</code>，
+    客户端孤儿键用一次性脚本解析 <code>client/index.js</code> 的 <code>EN</code> / <code>st</code> 对象并统计引用；
+    规格基线（1694b2c）与当前 HEAD 数字不一致的三处已按实测改写并在表中标注。
+  </p>
+</footer>
+
+</body>
+</html>
