@@ -32,7 +32,7 @@
 | `lib/protocol.js` | 面板协议 v1 的单一契约来源：路由路径、版本、关闭码、命令表、事件表、投屏设置区间与默认值、`panelTabId` 组合规则 | 运行时状态、连接对象 |
 | `lib/invariants.js` | 跨调用不变量断言函数；每个函数配「违反后果」注释；全部纯函数 | 入参校验、I/O、读全局 Map |
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
-| `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
+| `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
 | `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`）、事件环（console/network 环形缓冲、ref 表）、`snapshot/click/fill/scroll/press/waitFor/evaluate/consoleEntries/networkEntries` | 落盘、协议、面板连接 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
@@ -46,7 +46,7 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / capture.js
+tools.js → session.js / page.js / capture.js / defaults.js
 index.js → tools.js / panel.js / session.js / auth.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
@@ -103,16 +103,16 @@ HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型�
 - `panel.js` 读 `screencast.tabId` / `screencast.page`（`panel.js:235`），据此判断「同一个 tab
   但页面对象已经换了」；`cdp` 只在 `screencast.js` 内部读写（`screencast.js:31`、`77`、`80`、`88`、`117`）。
 - 能力函数返回值被 `tools.js` 读的字段：
-  - `start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`（`tools.js:166-175`）；
-  - `navigate`：`summary` / `title` / `tabId`（`tools.js:197`）；
-  - `tabs`：`summary` / `mode` / `text`（`tools.js:207`）；
-  - `close_tab`：`summary` / `activeTabId`（`tools.js:218`）；
-  - `snapshot`：`summary` / `url` / `tabId` / `text`（`tools.js:229`）；
-  - `screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等，`tools.js:119-126`、`373-395`）；
-  - `console` / `network`：`summary` / `count` / `total` / `text`（`tools.js:409-410`、`423-424`）；
-  - `wait`：`summary` / `state` / `timeoutMs`（`tools.js:448`）；
-  - `evaluate`：`summary` / `value`（`tools.js:465-469`）；
-  - `click` / `fill` / `scroll` / `press` / `close`：只读 `summary`（`tools.js:252`、`282`、`304`、`318`、`478`）。
+  - `start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`（`tools.js:168-177`）；
+  - `navigate`：`summary` / `title` / `tabId`（`tools.js:199`）；
+  - `tabs`：`summary` / `mode` / `text`（`tools.js:209`）；
+  - `close_tab`：`summary` / `activeTabId`（`tools.js:220`）；
+  - `snapshot`：`summary` / `url` / `tabId` / `text`（`tools.js:231`）；
+  - `screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等，`tools.js:121-128`、`375-397`）；
+  - `console` / `network`：`summary` / `count` / `total` / `text`（`tools.js:411-412`、`425-426`）；
+  - `wait`：`summary` / `state` / `timeoutMs`（`tools.js:450`）；
+  - `evaluate`：`summary` / `value`（`tools.js:467-471`）；
+  - `click` / `fill` / `scroll` / `press` / `close`：只读 `summary`（`tools.js:254`、`284`、`306`、`320`、`480`）。
 
 ### 明确不做
 
@@ -338,8 +338,8 @@ CDP 模式只断连，绝不结束用户浏览器进程。
   与导航里的调用（`page.js:297`）、`index.js` 的 `setConnectionResolver` 注入（`index.js:13`、`140`），
   并删 `tests/auth.mjs`；删除后导航不再自动补票，其余能力不受影响。
 - `capture.js` 删除同样是**能力删除**：需同时改 `session.js` 的产物目录（`import { ensureArtifactsDir }`，
-  `session.js:16`、`422`）、`tools.js` 的截图工具（`import { screenshot }`，`tools.js:17`；工具定义
-  `322-398`）、`panel.js` 的刷新帧（`import { captureJpeg }`，`panel.js:17`；`request-frame` 分支
+  `session.js:16`、`422`）、`tools.js` 的截图工具（`import { screenshot }`，`tools.js:19`；工具定义
+  `324-400`）、`panel.js` 的刷新帧（`import { captureJpeg }`，`panel.js:17`；`request-frame` 分支
   `384-396`）；删除后截图能力随之消失，面板刷新按钮也没有可截的帧源。
 - 上述两条都是能力删除，不是零改动模块删除。
 - `invariants.js` 删除后约束会散回各能力函数（删除测试的反向判据）。

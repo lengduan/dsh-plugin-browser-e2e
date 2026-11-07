@@ -727,6 +727,20 @@ await check('captureJpeg：显式 quality 优先于默认值', async () => {
   assert.equal(calls[0].quality, 42)
 })
 
+console.log('== 用例 K：tools.js 描述常量单源 ==')
+await check('tools.js 的工具描述从常量插值，不写死默认值', () => {
+  const source = readFileSync(new URL('../lib/tools.js', import.meta.url), 'utf8')
+  assert.ok(!source.includes('http://127.0.0.1:9222'), 'CDP 默认端点应取自 defaults.js')
+  assert.ok(!/\b(1600|900|9222|4000|8192|4194304|500)\b/.test(source),
+    '视口 / 端点 / 快照 / 截图 / 缓冲上限不应写成数字字面量')
+  for (const name of [
+    'DEFAULT_VIEWPORT.width', 'DEFAULT_VIEWPORT.height', 'DEFAULT_CDP_ENDPOINT',
+    'SNAPSHOT_LIMIT', 'MAX_SHOT_EDGE', 'MAX_SHOT_PIXELS', 'RING_LIMIT',
+  ]) {
+    assert.ok(source.includes(name), `tools.js 应引用 ${name}`)
+  }
+})
+
 await closeAll()
 await check('收尾检查：会话注册表已清空', () => {
   assert.deepEqual(activeSessionKeys(), [])
