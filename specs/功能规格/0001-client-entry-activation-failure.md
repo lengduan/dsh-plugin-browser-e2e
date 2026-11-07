@@ -19,8 +19,8 @@
   - `sidebarRightTabs.register(tabDefinition())`：tab 类型 `dsh-browser-e2e`，只注册一次。
   - `slots.inject("sidebar.right.pane.tab", ...)` + `slots.inject("sidebar.right.pane.tab.title", ...)`：
     面板 body 与右侧栏 chip 两个 keyed 座位，共用一个 liveTitle 通道。
-- 客户端 `inject` 服务依赖只有 `["slots", "sidebarRightTabs"]`；`configForms` 改为
-  `service(ctx, "configForms")` 懒取，不进入依赖数组。
+- 客户端 `inject` 服务依赖只有 `["slots", "sidebarRightTabs"]`；不再注册设置 / 卡片座位，
+  也不再通过 `configForms` 懒取宿主服务（该入口已从 bundle 移除）。
 - `apply(ctx)` 可重入：宿主再次调用时先执行上一次保存的 disposer，再重新注册；
   不得出现 `tab type id "dsh-browser-e2e" is already registered`。
 - 插件级设置页不靠客户端座位：宿主插件管理页按本插件导出的 `Config` 自行
@@ -47,10 +47,13 @@
 1. `node tests/client-bundle.mjs` 输出 `SUMMARY: 36 passed, 0 failed`；其中断言
    `api.inject` 恰为 `["slots","sidebarRightTabs"]`、`apply` 只产生 2 条 `slots.inject`、
    2 条 `slots.register`。
-2. `node scripts/build-client.mjs` 通过后，`lib/client.js` 与 `client/index.js` 内容一致
-   （构建只加头注释），且部署到 profile 的产物 hash 与仓库产物相同。
+2. `node scripts/build-client.mjs` 通过后，`lib/client.js` 是最新生成物：构建注入协议常量、
+   命令 / 事件表与默认 CDP 端点（头注释 + 注入块），`node tests/invariants.mjs` 用
+   `scripts/protocol-inject.mjs` 断言 `HEADER + injectProtocol(readSource())` 与 `lib/client.js`
+   全文一致；部署到 profile 的产物 hash 与仓库产物相同。
 3. 用独立 profile（复用 desktop 的 bundles 与本插件）+ `dsh <profile>` 起 web 服务，
    用系统 Edge 打开首页并在 8 秒后检查控制台：不得出现
    `web boot: ... did not activate`、`already registered`；页面标题为 `DeepSeek Harness`，
    正文可交互。
-4. 全量串行 7 个测试：266 PASS / 0 FAIL（记录时点，日志 `%TEMP%\e2e-lead-fullrun4.log`）。
+4. 全量串行 9 个测试：invariants / client-bundle / screencast / panel / tools / auth /
+   multitab / cdp / reclaim，合计 356 PASS / 0 FAIL（2026-11-07 实测，见 `.scratch/review-loop/03-执行记录.md`）。

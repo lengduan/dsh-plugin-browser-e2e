@@ -477,8 +477,9 @@ console.log('== 用例 F：投屏参数接线（Config → PanelHub）==')
 panel.ws.close()
 server.close()
 await closeAll()
-await sleep(200)
-check('收尾后 sessions 为空', activeSessionKeys().length === 0, JSON.stringify(activeSessionKeys()))
+// closeAll 的清理是异步的：轮询等待会话注册表清空（最多 5s），不做固定 sleep 后立即断言。
+const sessionsCleared = await waitFor(() => activeSessionKeys().length === 0, 5000)
+check('收尾后 sessions 为空', sessionsCleared === true, JSON.stringify(activeSessionKeys()))
 
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)

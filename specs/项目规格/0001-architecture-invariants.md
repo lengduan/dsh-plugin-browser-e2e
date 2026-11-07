@@ -292,6 +292,9 @@ closed：终态，任何事件非法
 
 1. **空闲回收**：`DSH_BROWSER_IDLE_MS`（默认 600000，0 关闭）内无任何工具调用则关闭该会话浏览器；
    计时器只回收它所属的会话对象，不碰同 key 后来新建的会话。
+   已知边界（已记录，未修）：计时从「本次工具调用开始」算，一次 `browser_e2e_wait` 等调用若本身
+   耗时超过 `DSH_BROWSER_IDLE_MS`，浏览器可能在等待期间被回收，该次调用随后报「浏览器尚未启动」。
+   规避：把 `DSH_BROWSER_IDLE_MS` 设为 0 或大于单次调用时长。
 2. **会话回收**：`session/disposed` 按 `session.id` 经 `keyBySessionId` 精确关闭。
 3. **卸载回收**：插件卸载 / 热替换时 `closeAll()`。
 

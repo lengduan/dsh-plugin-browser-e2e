@@ -172,6 +172,20 @@ console.log('== 用例 D：PanelHub 命令串行队列 ==')
     calls.length === 2 && calls[0].raw === 'one' && calls[1].raw === 'two', JSON.stringify(calls))
   check('first 标志在调度时确定（首帧 true、次帧 false）',
     calls[0]?.first === true && calls[1]?.first === false, JSON.stringify(calls))
+
+  // dispose 之后 in-flight 命令不得再处理、更不能重开投屏。
+  const disposedHub = new PanelHub()
+  disposedHub.dispose()
+  const sent = []
+  const afterDispose = await disposedHub.handleCommand(
+    { send: (event) => sent.push(event) },
+    { v: 1, kind: 'attach' },
+    true,
+  )
+  check('dispose 后 handleCommand 直接 accept 且不回事件', afterDispose === 'accept' && sent.length === 0,
+    `${afterDispose} / ${JSON.stringify(sent)}`)
+  check('dispose 后命令不重开投屏', disposedHub.screencast.cdp === null && disposedHub.screencast.tabId === null,
+    `${String(disposedHub.screencast.cdp)} / ${String(disposedHub.screencast.tabId)}`)
   hub.dispose()
 }
 

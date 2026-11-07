@@ -114,6 +114,9 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 - 宿主不提供 `webServer` 时（CLI 场景）不挂路由，工具照常可用。
 - `configure` 只改宿主进程内配置，不写回 profile；插件重载后回到插件 Config 的值。
 - 投屏是 CDP `Page.startScreencast`：静态页面不产生新帧，刷新按钮走 `captureJpeg` 兜底。
+- 已知限制（已记录，未修）：面板是单 `PanelHub` 的全局视图，`activeTabId` 不按连接隔离。
+  多个会话同时打开面板时，显示哪一个 tab 由最后一次 `attach` / `select-tab` 决定，其它连接
+  看到的是同一个全局选中项；要按连接隔离需要 per-connection 视图状态，超出当前实现范围。
 
 ## 验收
 
