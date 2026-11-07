@@ -158,8 +158,8 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 
 ```sh
 # <sha> 取本仓当前 HEAD：git rev-parse --short HEAD
-# pwsh / bash 下 `#` 与 `&` 是保留字符，spec 必须整体加引号
-dsh plugin --profile desktop add 'github:lengduan/dsh-plugin-browser-e2e&<sha>'
+# pwsh / bash 下 `#` 是保留字符，spec 必须整体加引号
+dsh plugin --profile desktop add 'github:lengduan/dsh-plugin-browser-e2e#<sha>'
 ```
 
 git 依赖是快照，锁在指定 commit：改完源码要 commit + push，再在 profile 目录重新解析（`pnpm update dsh-browser-e2e`，或重新 add 新 sha），否则 profile 里跑的仍是旧提交。
