@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, clipboard, click, dialogEntries, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, press, setDialogPolicy, upload } = await import('../lib/page.js')
+const { currentTab, clipboard, click, dialogEntries, evaluate, followTab, MIN_EVALUATE_TIMEOUT_MS, navigate, press, setDialogPolicy, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
 
@@ -225,6 +225,30 @@ try {
     check('截图成功（无固定视口时按内尺寸兜底）', shot.meta.width > 0 && shot.meta.height > 0, JSON.stringify(shot.meta))
     const list = await tabs(KEY)
     check('导航没有新建 page', list.tabs.length >= 1, JSON.stringify(list.tabs.map((t) => t.tab_id)))
+  }
+
+  console.log('== 用例 3-0：CDP 接管下 follow_tab ==')
+  {
+    const before = await tabs(KEY)
+    // 选一个非当前页做显式绑定（只有一个页时就用它），验证写入 activeTabId 生效。
+    const target = before.tabs.find((tab) => tab.tab_id !== before.activeTabId) ?? before.tabs[0]
+    const explicit = await followTab(session, { tab_id: target.tab_id })
+    check('CDP 接管下显式 tab_id 绑定生效', explicit.tabId === target.tab_id
+      && explicit.source === 'explicit' && session.activeTabId === target.tab_id,
+    JSON.stringify(explicit))
+
+    const auto = await followTab(session, {})
+    check('CDP 接管下无参判定返回 adopted 页', typeof auto.tabId === 'string'
+      && session.pages.has(auto.tabId)
+      && session.pages.get(auto.tabId)?.origin === 'adopted'
+      && ['focused', 'visible', 'current'].includes(auto.source),
+    JSON.stringify(auto))
+
+    const after = await tabs(KEY)
+    check('CDP 绑定不改变浏览器进程与页面数', child.exitCode === null && !child.killed
+      && after.tabs.length === before.tabs.length
+      && after.tabs.every((tab) => before.tabs.some((item) => item.tab_id === tab.tab_id)),
+    JSON.stringify({ before: before.tabs.map((tab) => tab.tab_id), after: after.tabs.map((tab) => tab.tab_id) }))
   }
 
   console.log('== 用例 3A：CDP 接管下对话框策略生效并记录 ==')
