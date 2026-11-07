@@ -234,7 +234,7 @@ HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型�
 | `assertLaunchSettled(session)` | 并发启动落定后会话有浏览器 | 浏览器启动失败（同一会话的并发启动未成功），请重试 browser_e2e_start |
 | `assertModeNotHotSwitched(currentMode, requestedMode)` | 请求 mode 与已运行会话一致 | 浏览器已启动（{当前} 模式）；如需切换为 {请求} 模式请先 browser_e2e_close |
 | `assertEndpointNotHotSwitched(currentEndpoint, requestedEndpoint)` | 请求端点与已运行会话一致 | 浏览器已启动（CDP 端点 {当前}）；如需切换为 {请求} 请先 browser_e2e_close |
-| `assertCdpConnected(session)` | 会话仍持有 CDP context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
+| `assertCdpConnected(session, isConnected)` | 会话仍持有 CDP context，且 `isConnected`（调用方传入的 `browser.isConnected()` 结果）不为 `false`；未探测（undefined）时只按 context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
 | `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
 | `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |
 | `assertRefBelongsToTab(tab, ref)` | ref 在该 tab 的 ref 表 | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |

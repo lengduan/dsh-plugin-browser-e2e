@@ -19,7 +19,7 @@ import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
   tabs,
 } from '../lib/session.js'
-import { navigate, titleOf } from '../lib/page.js'
+import { createPage, navigate, titleOf } from '../lib/page.js'
 import { captureJpeg } from '../lib/capture.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
@@ -109,6 +109,19 @@ await check('assertModeNotHotSwitched：不一致的两个方向都报错', () =
   assert.throws(() => assertModeNotHotSwitched('isolated', 'cdp'), /如需切换为 cdp 模式请先 browser_e2e_close/)
   assert.throws(() => assertModeNotHotSwitched('cdp', 'isolated'), /如需切换为 isolated 模式请先 browser_e2e_close/)
 })
+await check('createPage：CDP 断连时抛友好错误而不是 Target closed', async () => {
+  const session = {
+    browser: { isConnected: () => false },
+    mode: 'cdp',
+    context: {
+      newPage: async () => {
+        throw new Error('Target closed')
+      },
+    },
+  }
+  await assert.rejects(() => createPage(session), /CDP 浏览器连接已失效/)
+})
+
 await check('assertEndpointNotHotSwitched：端点不一致报错并带两端点', () => {
   assert.doesNotThrow(() => assertEndpointNotHotSwitched('http://127.0.0.1:9222', 'http://127.0.0.1:9222'))
   assert.throws(
@@ -118,6 +131,9 @@ await check('assertEndpointNotHotSwitched：端点不一致报错并带两端点
 })
 await check('CDP 三条不变量各自报原文案', () => {
   assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} })))
+  assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} }), true))
+  assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} }), undefined))
+  assert.throws(() => assertCdpConnected(makeSession({ context: {} }), false), /CDP 浏览器连接已失效/)
   assert.throws(() => assertCdpConnected(makeSession({ context: null })), /CDP 浏览器连接已失效/)
   assert.doesNotThrow(() => assertCdpContext({}))
   assert.throws(() => assertCdpContext(null), /没有可用的 context/)
