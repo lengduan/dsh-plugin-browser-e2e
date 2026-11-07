@@ -1,6 +1,6 @@
 /**
- * dsh-browser-e2e 工具能力验证：console / network 捕获、snapshot 增强、
- * 点击三种方式、悬停、拖拽、clip 截图、wait 与超时。
+ * dsh-browser-e2e 工具能力验证：console / network 捕获、网络响应体详情、
+ * snapshot 增强、点击三种方式、悬停、拖拽、clip 截图、wait 与超时。
  *
  * 直接调用 page.js / capture.js 的真实实现（不 mock），真起无头 Edge；
  * 网络请求用 node:http 在 127.0.0.1 随机端口起本地服务制造。
@@ -9,6 +9,7 @@
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
@@ -16,10 +17,11 @@ import { inflateSync } from 'node:zlib'
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
-const { closeAll, launch, requireSession } = await import('../lib/session.js')
+const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
-  attachPageHooks, click, consoleEntries, drag, evaluate, fill, hover, navigate, networkEntries, RING_LIMIT, scroll,
-  snapshot, waitFor,
+  attachPageHooks, clearRings, click, consoleEntries, drag, evaluate, fill, hover, navigate,
+  NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MAX_MS, NETWORK_BODY_TIMEOUT_MIN_MS, NETWORK_BODY_TIMEOUT_MS,
+  networkDetail, networkEntries, RING_LIMIT, scroll, snapshot, waitFor,
 } = await import('../lib/page.js')
 const { currentTab } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
@@ -163,11 +165,29 @@ async function waitUntil(fn, timeoutMs = 10000, stepMs = 250) {
   }
 }
 
+/** 轮询当前标签页网络环，直到出现满足条件的记录；返回记录或 null。 */
+async function waitNetworkEntry(predicate, timeoutMs = 5000, tabId) {
+  let found = null
+  await waitUntil(async () => {
+    const info = await networkEntries(session, RING_LIMIT, tabId)
+    found = info.entries.find(predicate) ?? null
+    return found !== null
+  }, timeoutMs, 100)
+  return found
+}
+
+/** 网络详情夹具：10 万字符文本正文，用于 max_chars 截断。 */
+const TEXT_BODY = 'A'.repeat(100000)
+/** 网络详情夹具：1024 字节确定二进制（0..255 循环），用于校验 bytes / mime / sha256。 */
+const BINARY_BODY = Buffer.from(Array.from({ length: 1024 }, (_, index) => index % 256))
+/** 网络详情夹具：JSON 响应体，用于校验解析与两空格格式化。 */
+const JSON_FIXTURE = { alpha: 1, beta: { gamma: [1, 2, 3] }, note: '详情夹具' }
+
 const baseline = edgeRootCount()
 // 运行前可能已有别的进程用 Playwright 起过 Edge（例如其他工具），只断言本测试没有新增残留。
 const playwrightBaseline = playwrightEdgeRootCount()
 const server = createServer((req, res) => {
-  if (req.url === '/page') {
+  if (req.url === '/page' || req.url.startsWith('/page?')) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end('<!doctype html><html><head><title>tools</title></head><body><h1 id="title">ok</h1></body></html>')
     return
@@ -188,6 +208,95 @@ const server = createServer((req, res) => {
       + 'console.log("doc-load-" + n);'
       + 'fetch("/reload-sub?n=" + n).catch(function () {});'
       + '</script></body></html>')
+    return
+  }
+  // 用例 3D / 3E 的夹具：JSON、10 万字符文本、1KB 二进制、302 链、204、失败、慢响应、
+  // 流式（SSE）与 POST echo；全部在本地，不依赖外网。
+  if (req.url === '/tab-b') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html><head><title>tab-b</title></head><body><h1 id="tab-b">b</h1></body></html>')
+    return
+  }
+  if (req.url === '/json') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify(JSON_FIXTURE))
+    return
+  }
+  if (req.url === '/text') {
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end(TEXT_BODY)
+    return
+  }
+  if (req.url === '/binary') {
+    res.writeHead(200, { 'content-type': 'application/octet-stream' })
+    res.end(BINARY_BODY)
+    return
+  }
+  if (req.url === '/redirect') {
+    res.writeHead(302, { location: '/final' })
+    res.end()
+    return
+  }
+  if (req.url === '/final') {
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('final-body')
+    return
+  }
+  if (req.url === '/empty204') {
+    res.writeHead(204)
+    res.end()
+    return
+  }
+  if (req.url === '/fail') {
+    // 直接断连接：制造「没有响应对象」的失败请求（net::ERR_EMPTY_RESPONSE）。
+    req.socket.destroy()
+    return
+  }
+  if (req.url === '/slow') {
+    // 5s 后才回头，供「未完成请求返回 pending」；详情读取按 timeout_ms 放弃，不会挂住测试。
+    setTimeout(() => {
+      if (res.destroyed || res.writableEnded) return
+      try {
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('slow-body')
+      } catch {
+        // 测试已结束或连接已断，忽略。
+      }
+    }, 5000)
+    return
+  }
+  if (req.url === '/stream') {
+    // 永不结束的 SSE：response.body() 不会返回，供超时用例使用。
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+    res.write('data: start\n\n')
+    const timer = setInterval(() => {
+      if (res.destroyed) return
+      try {
+        res.write('data: tick\n\n')
+      } catch {
+        // 连接已断，忽略。
+      }
+    }, 100)
+    res.on('close', () => clearInterval(timer))
+    return
+  }
+  if (req.url === '/echo') {
+    const chunks = []
+    req.on('data', (chunk) => chunks.push(chunk))
+    req.on('end', () => {
+      let received = null
+      try {
+        received = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      } catch {
+        received = null
+      }
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'x-detail-header': 'visible-value',
+        'set-cookie': 'session=secret-cookie-value; Path=/',
+      })
+      res.end(JSON.stringify({ ok: true, received }))
+    })
     return
   }
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
@@ -293,6 +402,280 @@ try {
     const oldest = entry.networkByRequest.keys().next().value
     check('淘汰的是最旧请求（保留最后 RING_LIMIT 条）', oldest?.url() === 'http://127.0.0.1/x/100', String(oldest?.url()))
     check('网络 ring 同样只保留 RING_LIMIT 条', entry.networkRing.length === RING_LIMIT, String(entry.networkRing.length))
+  }
+
+  console.log('== 用例 3D：网络详情（正常链路）==')
+  {
+    await navigate(session, `${base}/page`, 'load')
+    const list = await networkEntries(session, 100)
+    const pageEntry = list.entries.find((entry) => entry.url === `${base}/page`)
+    check('网络列表条目带 request_id',
+      Boolean(pageEntry) && /^n[1-9][0-9]*$/.test(pageEntry.request_id ?? '')
+      && list.entries.every((entry) => /^n[1-9][0-9]*$/.test(entry.request_id ?? ''))
+      && list.text.includes(`[${pageEntry?.request_id}]`),
+      JSON.stringify({ request_id: pageEntry?.request_id, text: list.text }))
+
+    // JSON：正文自动解析并两空格缩进。
+    await evaluate(session, "fetch('/json').then(r => r.status)")
+    const jsonEntry = await waitNetworkEntry((entry) => entry.url === `${base}/json` && entry.status === 200)
+    const jsonDetail = jsonEntry ? await networkDetail(session, jsonEntry.request_id, { timeoutMs: 3000 }) : null
+    check('detail 读取 JSON 正文并格式化',
+      Boolean(jsonDetail) && jsonDetail.response.body.kind === 'json'
+      && jsonDetail.response.body.json?.alpha === 1
+      && jsonDetail.response.body.truncated === false
+      && jsonDetail.response.body.text.includes('\n  "alpha": 1')
+      && jsonDetail.text.includes('"gamma": ['),
+      JSON.stringify(jsonDetail?.response.body))
+
+    // POST echo：同时覆盖请求头、请求体、响应头与敏感头脱敏。
+    await evaluate(session, "fetch('/echo', { method: 'POST',"
+      + " headers: { 'content-type': 'application/json', authorization: 'Bearer secret-token', 'x-api-key': 'secret-key' },"
+      + " body: JSON.stringify({ hello: 'world', nested: { n: 1 } }) }).then(r => r.status)")
+    const echoEntry = await waitNetworkEntry((entry) => entry.url === `${base}/echo` && entry.status === 200)
+    const echoDetail = echoEntry ? await networkDetail(session, echoEntry.request_id, { timeoutMs: 3000 }) : null
+    check('detail 读取请求头',
+      Boolean(echoDetail) && /json/.test(echoDetail.request.headers['content-type'] ?? '')
+      && Object.keys(echoDetail.request.headers).every((name) => name === name.toLowerCase())
+      && echoDetail.text.includes('请求头：'),
+      JSON.stringify(echoDetail?.request.headers))
+    check('detail 读取请求体',
+      Boolean(echoDetail) && echoDetail.request.postData?.kind === 'json'
+      && echoDetail.request.postData?.json?.hello === 'world'
+      && echoDetail.request.postData?.text.includes('"hello": "world"')
+      && echoDetail.text.includes('请求体：'),
+      JSON.stringify(echoDetail?.request.postData))
+    check('detail 读取响应头',
+      Boolean(echoDetail) && /json/.test(echoDetail.response.headers['content-type'] ?? '')
+      && echoDetail.response.headers['x-detail-header'] === 'visible-value'
+      && echoDetail.text.includes('响应头：'),
+      JSON.stringify(echoDetail?.response.headers))
+
+    const sensitiveDetail = echoEntry
+      ? await networkDetail(session, echoEntry.request_id, { includeSensitive: true, timeoutMs: 3000 })
+      : null
+    check('敏感请求头默认隐藏、include_sensitive 后可见',
+      Boolean(echoDetail) && echoDetail.request.headers.authorization === '[已隐藏]'
+      && echoDetail.request.headers['x-api-key'] === '[已隐藏]'
+      && echoDetail.response.headers['set-cookie'] === '[已隐藏]'
+      && sensitiveDetail?.request.headers.authorization === 'Bearer secret-token'
+      && sensitiveDetail?.request.headers['x-api-key'] === 'secret-key'
+      && (sensitiveDetail?.response.headers['set-cookie'] ?? '').includes('secret-cookie-value'),
+      JSON.stringify({ hidden: echoDetail?.request.headers, visible: sensitiveDetail?.request.headers }))
+
+    // 二进制：只给 bytes / mime / sha256，不给正文或 base64。
+    await evaluate(session, "fetch('/binary').then(r => r.status)")
+    const binaryEntry = await waitNetworkEntry((entry) => entry.url === `${base}/binary` && entry.status === 200)
+    const binaryDetail = binaryEntry ? await networkDetail(session, binaryEntry.request_id, { timeoutMs: 3000 }) : null
+    const binarySha = createHash('sha256').update(BINARY_BODY).digest('hex')
+    check('二进制正文只给大小、mime 与 sha256',
+      Boolean(binaryDetail) && binaryDetail.response.body.kind === 'binary'
+      && binaryDetail.response.body.bytes === BINARY_BODY.length
+      && binaryDetail.response.body.mimeType === 'application/octet-stream'
+      && binaryDetail.response.body.sha256 === binarySha
+      && binaryDetail.response.body.text === undefined
+      && binaryDetail.text.includes('未返回 base64'),
+      JSON.stringify(binaryDetail?.response.body))
+
+    // 10 万字符文本 + max_chars=100：截断且标记。
+    await evaluate(session, "fetch('/text').then(r => r.status)")
+    const textEntry = await waitNetworkEntry((entry) => entry.url === `${base}/text` && entry.status === 200)
+    const limitedDetail = textEntry
+      ? await networkDetail(session, textEntry.request_id, { maxChars: 100, timeoutMs: 3000 })
+      : null
+    check('max_chars 截断正文并标记 truncated',
+      Boolean(limitedDetail) && limitedDetail.response.body.kind === 'text'
+      && limitedDetail.response.body.truncated === true
+      && limitedDetail.response.body.bytes === TEXT_BODY.length
+      && limitedDetail.response.body.chars === TEXT_BODY.length
+      && limitedDetail.response.body.text === TEXT_BODY.slice(0, 100),
+      JSON.stringify(limitedDetail?.response.body))
+
+    // 404 的正文同样可读（复用服务端兜底的 'not found'）。
+    await evaluate(session, "fetch('/missing').then(r => r.status)")
+    const missingEntry = await waitNetworkEntry((entry) => entry.url === `${base}/missing` && entry.status === 404)
+    const missingDetail = missingEntry
+      ? await networkDetail(session, missingEntry.request_id, { timeoutMs: 3000 })
+      : null
+    check('404 响应正文可读',
+      Boolean(missingDetail) && missingDetail.status === 404
+      && missingDetail.response.body.kind === 'text'
+      && missingDetail.response.body.text === 'not found',
+      JSON.stringify(missingDetail?.response.body))
+  }
+
+  console.log('== 用例 3E：网络正文边界与错误 ==')
+  {
+    await navigate(session, `${base}/page`, 'load')
+
+    // 没有响应对象的失败请求：kind=failed，不读正文。
+    await evaluate(session, "fetch('/fail').catch(function () {}); 'started'")
+    const failEntry = await waitNetworkEntry((entry) => entry.url === `${base}/fail` && entry.failure !== '')
+    const failDetail = failEntry
+      ? await networkDetail(session, failEntry.request_id, { timeoutMs: 500 })
+      : null
+    check('失败请求返回 failure 且没有响应体',
+      Boolean(failDetail) && failDetail.response.body.kind === 'failed'
+      && failDetail.response.body.bytes === 0
+      && failDetail.response.body.reason === failEntry.failure
+      && failDetail.text.includes('请求失败'),
+      JSON.stringify({ failure: failEntry?.failure, body: failDetail?.response.body }))
+
+    // 204：Playwright 下可能同时标记 failure（net::ERR_ABORTED），仍按状态分类为空正文。
+    await evaluate(session, "fetch('/empty204').catch(function () {}); 'started'")
+    const emptyEntry = await waitNetworkEntry((entry) => entry.url === `${base}/empty204` && entry.status === 204)
+    const emptyDetail = emptyEntry
+      ? await networkDetail(session, emptyEntry.request_id, { timeoutMs: 500 })
+      : null
+    check('204 响应按空正文返回（有 failure 也按状态分类）',
+      Boolean(emptyDetail) && emptyDetail.response.body.kind === 'empty'
+      && emptyDetail.response.body.bytes === 0,
+      JSON.stringify({ failure: emptyEntry?.failure, body: emptyDetail?.response.body }))
+
+    // 302 链：重定向记录不给正文，并指向最终请求；最终响应正文可读。
+    await evaluate(session, "fetch('/redirect').then(r => r.status)")
+    const redirectEntry = await waitNetworkEntry((entry) => entry.url === `${base}/redirect` && entry.status === 302)
+    const finalEntry = await waitNetworkEntry((entry) => entry.url === `${base}/final` && entry.status === 200)
+    const redirectDetail = redirectEntry
+      ? await networkDetail(session, redirectEntry.request_id, { timeoutMs: 3000 })
+      : null
+    const finalDetail = finalEntry
+      ? await networkDetail(session, finalEntry.request_id, { timeoutMs: 3000 })
+      : null
+    check('重定向响应不给正文并指向最终请求',
+      Boolean(redirectDetail) && redirectDetail.response.body.kind === 'redirect'
+      && redirectDetail.response.body.bytes === 0
+      && redirectDetail.text.includes('302')
+      && redirectDetail.redirect?.toUrl === `${base}/final`
+      && redirectDetail.redirect?.toRequestId === finalEntry?.request_id,
+      JSON.stringify(redirectDetail?.redirect))
+    check('最终响应正文可读',
+      Boolean(finalDetail) && finalDetail.response.body.kind === 'text'
+      && finalDetail.response.body.text === 'final-body',
+      JSON.stringify(finalDetail?.response.body))
+
+    // 未完成请求：status 0 时返回 pending，最多被 timeout_ms 拖慢，不挂起。
+    await evaluate(session, "fetch('/slow').catch(function () {}); 'started'")
+    const slowEntry = await waitNetworkEntry((entry) => entry.url === `${base}/slow` && entry.status === 0, 3000)
+    const pendingStartedAt = Date.now()
+    const pendingDetail = slowEntry
+      ? await networkDetail(session, slowEntry.request_id, { timeoutMs: 300 })
+      : null
+    const pendingElapsed = Date.now() - pendingStartedAt
+    check('未完成请求返回 pending 而不是挂起',
+      Boolean(pendingDetail) && pendingDetail.response.body.kind === 'pending'
+      && pendingDetail.text.includes('尚未完成')
+      && pendingElapsed < 2500,
+      JSON.stringify({ elapsed: pendingElapsed, body: pendingDetail?.response.body }))
+
+    // 流式响应（SSE）：body() 不返回，到 timeout_ms 报错。
+    await evaluate(session, "fetch('/stream').catch(function () {}); 'started'")
+    const streamEntry = await waitNetworkEntry((entry) => entry.url === `${base}/stream` && entry.status === 200, 5000)
+    const streamMessage = streamEntry
+      ? await expectThrow(() => networkDetail(session, streamEntry.request_id, { timeoutMs: 500 }))
+      : null
+    check('流式响应读取超时报错',
+      Boolean(streamMessage) && streamMessage.includes('读取响应体超时')
+      && streamMessage.includes('500'),
+      String(streamMessage))
+
+    // 导航后旧 id 不再可查：报「已导航导致记录重置」。
+    const staleId = redirectEntry?.request_id ?? finalEntry?.request_id
+    await navigate(session, `${base}/page?reset=1`, 'load')
+    const resetMessage = staleId ? await expectThrow(() => networkDetail(session, staleId)) : null
+    check('导航后旧 request_id 报已重置',
+      Boolean(resetMessage) && resetMessage.includes('没有 request_id')
+      && resetMessage.includes('页面已导航'),
+      String(resetMessage))
+
+    // 未知 / 非法 / 空 request_id 三种错误口径。
+    const unknownMessage = await expectThrow(() => networkDetail(session, 'n999999'))
+    const invalidMessage = await expectThrow(() => networkDetail(session, 'x1'))
+    const missingMessage = await expectThrow(() => networkDetail(session, ''))
+    check('未知或非法 request_id 报错',
+      Boolean(unknownMessage) && unknownMessage.includes('网络记录里没有 request_id n999999')
+      && Boolean(invalidMessage) && invalidMessage.includes('格式不对')
+      && Boolean(missingMessage) && missingMessage.includes('缺少必填参数 request_id'),
+      JSON.stringify({ unknownMessage, invalidMessage, missingMessage }))
+
+    // max_chars / timeout_ms 越界在入口报错，且常量与规格一致。
+    const maxTooSmall = await expectThrow(() => networkDetail(session, 'n1', { maxChars: 0 }))
+    const maxTooBig = await expectThrow(() => networkDetail(session, 'n1', { maxChars: NETWORK_BODY_TEXT_LIMIT + 1 }))
+    const maxNotInteger = await expectThrow(() => networkDetail(session, 'n1', { maxChars: 1.5 }))
+    const timeoutTooSmall = await expectThrow(() => networkDetail(session, 'n1', { timeoutMs: NETWORK_BODY_TIMEOUT_MIN_MS - 1 }))
+    const timeoutTooBig = await expectThrow(() => networkDetail(session, 'n1', { timeoutMs: NETWORK_BODY_TIMEOUT_MAX_MS + 1 }))
+    check('max_chars / timeout_ms 越界报错',
+      [maxTooSmall, maxTooBig, maxNotInteger].every((message) =>
+        message?.includes(`max_chars 必须是 1..${NETWORK_BODY_TEXT_LIMIT}`))
+      && [timeoutTooSmall, timeoutTooBig].every((message) =>
+        message?.includes(`timeout_ms 必须是 ${NETWORK_BODY_TIMEOUT_MIN_MS}..${NETWORK_BODY_TIMEOUT_MAX_MS}`)),
+      JSON.stringify({ maxTooSmall, maxTooBig, maxNotInteger, timeoutTooSmall, timeoutTooBig }))
+    check('网络正文常量与规格一致',
+      NETWORK_BODY_TEXT_LIMIT === 65536 && NETWORK_BODY_TIMEOUT_MS === 5000
+      && NETWORK_BODY_TIMEOUT_MIN_MS === 100 && NETWORK_BODY_TIMEOUT_MAX_MS === 30000,
+      JSON.stringify({ NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MS, NETWORK_BODY_TIMEOUT_MIN_MS, NETWORK_BODY_TIMEOUT_MAX_MS }))
+
+    // 网络上下文随环形缓冲淘汰、随 clearRings 清空；request_id 计数不归零。
+    const handlers = {}
+    const fakePageObj = {
+      on: (event, handler) => {
+        handlers[event] = handler
+      },
+      mainFrame: () => ({}),
+      evaluate: async () => 'complete',
+      viewportSize: () => ({ width: 800, height: 600 }),
+    }
+    const evictionEntry = {
+      id: 'fake-detail',
+      page: fakePageObj,
+      refs: new Map(),
+      consoleRing: [],
+      networkRing: [],
+      networkByRequest: new Map(),
+      networkContext: new Map(),
+      nextNetworkSeq: 0,
+      loading: false,
+      origin: 'created',
+    }
+    attachPageHooks({ key: 'fake-detail-session', hookedPages: new WeakSet(), emit: () => {} }, evictionEntry)
+    for (let i = 0; i < RING_LIMIT + 100; i += 1) {
+      handlers.request({
+        url: () => `http://127.0.0.1/detail/${i}`,
+        method: () => 'GET',
+        isNavigationRequest: () => false,
+      })
+    }
+    const evictedOk = evictionEntry.networkContext.size === RING_LIMIT
+      && !evictionEntry.networkContext.has('n1')
+      && evictionEntry.networkContext.has(`n${RING_LIMIT + 100}`)
+      && evictionEntry.networkRing[0].request_id === 'n101'
+    clearRings(evictionEntry)
+    const clearedOk = evictionEntry.networkContext.size === 0
+      && evictionEntry.nextNetworkSeq === RING_LIMIT + 100
+    check('网络上下文随环形缓冲淘汰', evictedOk && clearedOk,
+      JSON.stringify({ size: RING_LIMIT, nextSeq: evictionEntry.nextNetworkSeq, clearedOk }))
+
+    // tab_id 隔离：同一数字 id 在不同标签页互不串用，跨页查询报记录不存在。
+    const tabA = currentTab(session)
+    const tabAId = (await networkEntries(session, 100, tabA.id)).entries.at(-1)?.request_id
+    const tabB = await navigate(session, `${base}/tab-b`, 'load', { new_tab: true })
+    let tabBId = null
+    await waitUntil(async () => {
+      const info = await networkEntries(session, 100, tabB.tabId)
+      tabBId = info.entries.find((entry) => entry.url === `${base}/tab-b`)?.request_id ?? null
+      return tabBId !== null
+    }, 3000, 100)
+    const detailA = tabAId ? await networkDetail(session, tabAId, {}, tabA.id) : null
+    const detailB = tabBId ? await networkDetail(session, tabBId, {}, tabB.tabId) : null
+    const crossAToB = tabBId ? await expectThrow(() => networkDetail(session, tabBId, {}, tabA.id)) : 'missing tab-b id'
+    const crossBToA = tabAId ? await expectThrow(() => networkDetail(session, tabAId, {}, tabB.tabId)) : 'missing tab-a id'
+    check('detail 按 tab_id 隔离',
+      Boolean(detailA) && detailA.tabId === tabA.id
+      && Boolean(detailB) && detailB.tabId === tabB.tabId && detailB.url === `${base}/tab-b`
+      && Boolean(crossAToB) && String(crossAToB).includes('网络记录里没有')
+      && Boolean(crossBToA) && String(crossBToA).includes('网络记录里没有'),
+      JSON.stringify({ tabAId, tabBId, detailB: detailB?.url, crossAToB, crossBToA }))
+    // 收掉第二个标签页，保持后续用例「默认只有一个标签页」的前提。
+    await closeTab(KEY, tabB.tabId)
   }
 
   console.log('== 用例 4：snapshot 的 box / role / depth ==')
@@ -1061,6 +1444,8 @@ try {
   }
 } finally {
   await closeAll()
+  // SSE / 慢响应夹具会留下未结束的连接，先强制断开再关服务，避免 close 回调挂住。
+  server.closeAllConnections?.()
   await new Promise((resolve) => server.close(resolve))
 }
 

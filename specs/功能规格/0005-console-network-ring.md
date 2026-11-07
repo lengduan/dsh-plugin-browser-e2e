@@ -12,21 +12,21 @@
 
 ### 缓冲与记录
 
-- 每个标签页条目（`addPage` 创建）自带三个容器：`consoleRing`、`networkRing`、`networkByRequest`，初始都为空。`attachPageHooks` 用 `session.hookedPages` 保证同一个 page 只挂一次监听，避免重复记账。
+- 每个标签页条目（`addPage` 创建）自带四个容器：`consoleRing`、`networkRing`、`networkByRequest`、`networkContext`（`request_id` → `{ request, response }`），初始都为空；`nextNetworkSeq` 从 0 起，用于分配 `n<N>`。`attachPageHooks` 用 `session.hookedPages` 保证同一个 page 只挂一次监听，避免重复记账。
 - 上限常量 `RING_LIMIT`（500，`lib/page.js` 导出）。`pushRing` 追加后若超过上限，从头部 `splice` 掉多出的最旧记录，保留最新。
 - 控制台：`console` 事件记 `{ level, text, at }`，`level` 取 `msg.type()`（Playwright 消息类型原样透传，不做归一），`text` 经 `truncateText` 截到 `CONSOLE_TEXT_LIMIT`（2000 字符）并在末尾追加 `...(已截断)`，`at` 为 `nowAt()` 的 ISO 串。
 - 未捕获异常：`pageerror` 记为 `level: 'error'`，`text` 取 `error.message`，同样截断。
 - 网络：`request` 先建占位并压入 `networkRing`：
-  - `{ url, method, status: 0, mimeType: '', failure: '', at }`，`status` 为 0 表示还没有拿到响应；
+  - `{ request_id, url, method, status: 0, mimeType: '', failure: '', at }`，`status` 为 0 表示还没有拿到响应；`request_id` 是按标签页自增的 `n<N>`（`n1`、`n2` …），文档重置与环形淘汰都不复用；
   - 同一个对象同时以 request 为键存进 `networkByRequest`，所以 `response` 与 `requestfailed` 是原地改字段，不二次查 ring。
 - `response`：用 `networkByRequest.get(response.request())` 取到记录后写 `status = response.status()`、`mimeType = headers()['content-type'] ?? ''`。
 - `requestfailed`：取到记录后写 `failure = request.failure()?.errorText ?? 'request failed'`。
-- `networkByRequest` 淘汰：`request` 事件数量可能远多于 response，Map 超过 `RING_LIMIT` 时按插入顺序删除最旧的键；ring 由 `pushRing` 独立淘汰，两者口径都是 `RING_LIMIT`。
+- `networkByRequest` 淘汰：`request` 事件数量可能远多于 response，Map 超过 `RING_LIMIT` 时按插入顺序删除最旧的键；ring 由 `pushRing` 独立淘汰，两者口径都是 `RING_LIMIT`。`networkRing` 淘汰最旧记录时同步删掉该记录的 `networkContext` 条目，关页 / 崩溃随标签页条目一起丢弃。
 
 ### 重置
 
 - 判据是「主框架新文档请求」，由 `isNewDocumentRequest(request, page)` 判定：`request.isNavigationRequest()` 为真，且 `request.frame() === page.mainFrame()`；`frame()` 抛错（所属 frame 已 detach）时按 false 处理。
-- 命中时先 `clearRings(entry)`（清空 `consoleRing` / `networkRing` / `networkByRequest`），再 `entry.refs.clear()`，之后才登记本次请求，因此新文档自身已发出的 document 与子请求不会被误删。
+- 命中时先 `clearRings(entry)`（清空 `consoleRing` / `networkRing` / `networkByRequest` / `networkContext`；`request_id` 计数不归零，旧 id 不会被新文档的记录冒名顶替），再 `entry.refs.clear()`，之后才登记本次请求，因此新文档自身已发出的 document 与子请求不会被误删。
 - `navigate` 另清两次：`goto` 之前 `clearRings(tab)` 与 `tab.refs.clear()`（导航失败也不让旧记录挂在新结果上），`goto` 与补票之后再次 `tab.refs.clear()`。
 - 不重置的场景：SPA 路由变化、hash 变化不产生主框架 document 请求，事件环与 ref 表保留。`framenavigated` 只把 `entry.loading` 置回 true 并广播 `changed`，不碰 ring。
 
@@ -35,7 +35,7 @@
 - `consoleEntries(session, limit = 100, tabId)` 与 `networkEntries(session, limit = 100, tabId)` 先 `session.touch()` 刷新空闲计时，再经 `currentTab(session, tabId)` 取标签页（显式 `tab_id` 优先，缺省用 active）。
 - `limit` 口径：`Number.isInteger(limit) && limit > 0` 时取 `Math.min(limit, RING_LIMIT)`，否则回退 100。返回条数由 `ring.slice(-take)` 决定，最新在最后。
 - 返回形状 `{ tabId, total, count, entries, text, summary }`：`total` 是 ring 当前长度，`count` 是本次返回条数，`entries` 直接引用记录对象。
-- 控制台文本每行 `${timeOf(at)} ${level} ${oneLine(text)}`；网络文本每行由 `timeOf(at)`、`method`、`status`、`mimeType || '-'`、`url` 依次拼成，`status <= 0` 显示 `0(无响应)`，`failure` 非空时追加 `失败: ${failure}`。
+- 控制台文本每行 `${timeOf(at)} ${level} ${oneLine(text)}`；网络文本每行由 `timeOf(at)`、`[${request_id}]`、`method`、`status`、`mimeType || '-'`、`url` 依次拼成，`status <= 0` 显示 `0(无响应)`，`failure` 非空时追加 `失败: ${failure}`。单条请求的请求头 / 请求体 / 响应头 / 响应体读取见 `0015-network-response-body.md`。
 - `timeOf` 取 `at.slice(11, 23)`，即 ISO 串里的 `HH:MM:SS.mmm`（UTC，不是本地时区）；`oneLine` 把换行压成空格，保证一条记录占一行。
 - 空记录文案：控制台 `（暂无控制台记录）`，网络 `（暂无网络记录）`。摘要：`控制台记录 N 条`、`网络请求 N 条`。
 - 工具层（`browser_e2e_console` / `browser_e2e_network`）：参数为 `limit`（integer，缺省 100）与 `tab_id`；`args.limit ?? 100` 传给能力函数，`total > count` 时在摘要后追加 `（缓冲共 ${info.total} 条，只取尾部 ${info.count} 条）`，换行后接 `text`。两个工具用 `requireSession(sessionKey(exec))` 取会话，不经 `sessionOf` 创建会话。
