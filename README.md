@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：27 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：28 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 27 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 28 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -47,9 +47,24 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 同一会话复用同一实例，`browser_e2e_start` 可重复调用。未显式传 `mode` / `cdpEndpoint` 时，首次启动使用插件配置里的默认值，工具参数优先。已启动后要切换 `mode`（isolated ↔ cdp）或改 `cdpEndpoint`，必须先 `browser_e2e_close` 再重新启动；已启动时传入与当前不一致的值会直接报错，不会静默复用。同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例。
 
+### 环境诊断
+
+`browser_e2e_doctor` 一次给出六项只读检查，用来回答「为什么浏览器起不来」，本身不启动浏览器：
+
+| 检查 | 内容 | 何时不通过 |
+|---|---|---|
+| `runtime` | Node / 平台 / 插件版本 / `playwright-core` 版本 | `playwright-core` 解析失败为 `FAIL`；插件版本读取失败为 `WARN` |
+| `edge` | 系统 Edge 可执行文件（与 Playwright `channel: 'msedge'` 同一批候选前缀） | 全部候选不存在 `FAIL`；平台不在 win32 / darwin / linux `SKIP` |
+| `cdp` | 端点归一、TCP 可达、`GET /json/version` 是否为 CDP 端点 | `isolated` 模式 `SKIP`；端点非法或连不上 `FAIL`；端口通但不是 CDP `WARN` |
+| `session` | 本会话只读视图（模式、标签页数、连接状态） | `launching` / `closing` 为 `WARN`；连接失效为 `FAIL` |
+| `paths` | 产物根目录可写性、下载目录合法性 | 根目录不可写、下载目录不是绝对路径为 `FAIL` |
+| `env` | `DSH_BROWSER_IDLE_MS` / `DSH_BROWSER_CLOSE_TIMEOUT_MS` / `DSH_BROWSER_PROXY` | 空闲回收非法 `FAIL`；关闭兜底或代理非法 `WARN` |
+
+报告首行是统计行，其后每项一行 `[OK|WARN|FAIL|SKIP] <id>：<证据>`，非 `OK` 项各带一行 `修复：`，末行按最严重项给结论。工具只读：不启动浏览器、不接管 CDP、不改会话状态；唯一的写操作是在已存在的产物根目录里写一个探针文件并立即删除。`mode` 缺省取插件设置；`cdpEndpoint` 非法只报 `cdp` 项 `FAIL`，不抛错——诊断工具不能因为被诊断对象坏了就失败。
+
 ### 工具一览
 
-27 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+28 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -79,6 +94,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_assert` | 一次判定多条断言并逐条给证据：`checks`（1-20 条）每项给 `selector`（配合 `state`，默认 visible）/ `text`（页面可见文本子串，区分大小写）/ `url`（配合 `urlMatch`）/ `expression`（同步表达式）之一；任一条未通过仍成功返回，`pass=false`，`checks[]` 给 index / kind / expected / pass / actual；不等待、不重试；只作用于主文档 |
 | `browser_e2e_recipe` | 一次按顺序执行 1-20 个声明式步骤（`navigate` / `wait` / `click` / `fill` / `press` / `hover` / `scroll` / `extract`）：首个失败即停、已执行步骤不回滚，返回逐步 PASS / FAIL、失败步号与 `extract` 输出；步骤字段与对应工具同名，`wait` 步不接受 `expression`、没有 `evaluate` 步骤（不执行调用方脚本）；总预算 `timeoutMs` 默认 60000（1000-120000），只在步骤之间检查；全部输出合计上限 20000 字符 |
 | `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装。`timeoutMs` 是执行上限（默认 30000，允许 1000-120000），到点中断页面内正在执行的脚本并报错，页面与标签页保持打开 |
+| `browser_e2e_doctor` | 环境诊断（只读，不启动浏览器）：一次给 `runtime` / `edge` / `cdp` / `session` / `paths` / `env` 六项检查，每项 `OK` / `WARN` / `FAIL` / `SKIP` + 证据，非 `OK` 项附修法；`mode` 缺省取插件设置，检查 CDP 接管环境传 `mode: "cdp"`；`probeTimeoutMs` 100-10000（默认 1500）；`cdpEndpoint` 非法只报 `cdp` 项 FAIL，不抛错 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
 ### 逐键输入（mode=keystrokes）
@@ -423,6 +439,9 @@ node tests/human.mjs
 # 文件上传：宿主侧路径校验 / ref、selector、坐标三条下发路径 / 覆盖与清空（真起无头 Edge）
 node tests/upload.mjs
 
+# 环境诊断：报告骨架 / 六项检查 / CDP 探测与超时 / 入参与工具表（不启动浏览器）
+node tests/doctor.mjs
+
 # 分层聚合
 npm run test:unit
 npm run test:integration
@@ -441,7 +460,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（27 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（28 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  human.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -475,7 +494,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。27 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。28 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -505,6 +524,7 @@ npm run test:integration
 - **evaluate 超时只中断当前脚本** —— `browser_e2e_evaluate` 的 `timeoutMs` 到点用 CDP 的 `Runtime.terminateExecution` 中断目标页主线程正在执行的脚本：只中断「正在执行」的那段，表达式返回永不 resolve 的 Promise 时页内等待仍会继续；Worker、跨源 iframe 与同源子 frame 内的死循环是否被中断未验证。中断可能打断页面自己的事件处理或框架渲染，DOM 会停在半完成状态，需要时重新 `browser_e2e_snapshot`。CDP 接管模式下这会打断用户浏览器里该页正在执行的脚本。若把 `DSH_BROWSER_IDLE_MS` 设得小于 `timeoutMs`，浏览器可能先被空闲回收，该次调用报「浏览器尚未启动」。
 - **人机验证检测是启发式且可能漏报** —— `browser_e2e_captcha_check` / `browser_e2e_wait_for_human` 只匹配已知结构选择器与一组文本短语，且只读主 frame：纯图片验证码、无已知 class 的自绘组件、跨源 iframe 子文档内部与 shadow DOM 内部文本会漏报，等待可能立即返回 `resolved:true`（`needed:false`）。`resolved:true` 只表示「未检测到」，不是「页面一定没有验证」，调用方需自行用 `browser_e2e_snapshot` / `browser_e2e_read` 或 `selector` 兜底。隔离模式默认 headless，用户看不到窗口，除页面自解外只能等出超时；`headless` 与 `hint` 用于改走 `headless=false` 或 cdp。探针是一次页面求值，不可被 `timeoutMs` 中断，页面主线程死锁时整次调用会挂住。
 - **剪贴板的边界** —— 只作用主 frame，iframe 内可编辑元素不支持；不提供真实快捷键粘贴（`method=system`）与剪贴板读回，验证复制按钮的推荐路径是「点击复制 → `action=paste` 回填 → 断言页面内容」；`sanitize: false` 只在 isolated 模式允许，且 `isolated` headed 下 `write` 改写的是用户真实系统剪贴板；`grantPermissions` 是整表授予，isolated 写入授予会替换此前的 `clipboard-read`，测试每次读回前需重新授予；非 https / localhost / file 的页面没有 `navigator.clipboard`，`write` 报固定错误而 `paste` 不受影响；后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略兜底插入。
+- **doctor 只体检不修复** —— `browser_e2e_doctor` 不启动浏览器、不安装 Edge、不清理残留进程，也不探测 profile 占用：`edge` 项按 Playwright 的同一条候选路径规则判断可执行文件是否存在，因此不能证明「Edge 一定起得来」；CDP 探测只做一次 TCP 连接与 `GET /json/version`，不建立 CDP 会话、不占用浏览器。代理只校验格式不探活；产物根目录不存在时用最近祖先的 `fs.access(W_OK)` 判可写，Windows 上该 API 对目录 ACL 判定不精确。环境变量在模块加载时求值，进程运行中改值不会反映到报告的生效值上。
 
 <a id="dev-note"></a>
 ### Dev Note

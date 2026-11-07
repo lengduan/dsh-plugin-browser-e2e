@@ -33,16 +33,17 @@
 | `lib/invariants.js` | 跨调用不变量断言函数；每个函数配「违反后果」注释；全部纯函数 | 入参校验、I/O、读全局 Map |
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
-| `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
+| `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage`、`peekSession`（只读会话视图，不创建会话、不刷新空闲计时）；导出 `normalizeCdpEndpoint` 与 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS` 供诊断复用 | 页面能力、截图落盘、鉴权补票 |
 | `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate/snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/assertPage/evaluate/consoleEntries`（含 `CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES` / `normalizeConsoleLevel` / `consoleLevelRank` 的级别过滤视图）`/networkEntries/networkDetail`、对话框策略与记录（`dialogPolicy` / `dialogPromptText` / `dialogRing`、`setDialogPolicy` / `dialogEntries`）、`titleOf` | 落盘、协议、面板连接、结构化读取（`lib/read.js`） |
 | `lib/read.js` | 结构化页面读取：页内扫描 controls / links / tables / forms，唯一 CSS selector 生成与校验，记录整形与文本预算（`readStructured`） | 生命周期、事件环、ref 表、交互动作、截图、面板 |
 | `lib/recipe.js` | 多步声明式步骤编排：一级参数校验、按序执行与总预算、逐步汇总与输出截断（`normalizeRecipe` / `runRecipe` / `renderRecipeReport`）；页面交互一律复用 `page.js` 的既有能力函数，只 `extract` 一种只读页内取值为自带固定脚本 | 生命周期、页面能力实现、事件环、协议、面板 |
-| `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
+| `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录（`artifactsRoot` 单一定义，`ensureArtifactsDir` 由它派生）、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
+| `lib/doctor.js` | 环境诊断（只读）：运行时与依赖版本、系统 Edge 候选路径、CDP 端点可达性与 `/json/version` 识别、当前会话只读视图、产物 / 下载目录可写性、环境变量合法性；报告为固定六项文本，不启动浏览器、不改会话与进程 | 生命周期、页面能力、截图落盘、面板协议 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/human.js` | 人机协同等待：页内人机验证探测、轮询判定与完成信号（`humanCheck` / `waitForHuman`） | 会话生命周期、面板、工具定义 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 27 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 28 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -51,7 +52,7 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / human.js / defaults.js
+tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / human.js / defaults.js / doctor.js
 index.js → tools.js / panel.js / session.js / auth.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
@@ -63,6 +64,7 @@ human.js → page.js
 auth.js → fence.js
 screencast.js → protocol.js
 capture.js → protocol.js
+doctor.js → session.js / capture.js / defaults.js
 protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
 ```
 
@@ -408,6 +410,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
    - 改 `page.js` / `tools.js`：`npm run test:unit && node tests/tools.mjs && node tests/multitab.mjs`。
    - 改 `read.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `protocol.js` / `panel.js` / `index.js`：`npm run test:unit && node tests/panel.mjs`。
+   - 改 `doctor.js`：`npm run test:unit && node tests/doctor.mjs && node tests/panel.mjs`。
    - 无法判断改动面时：`npm run test:unit && npm run test:integration`。
 3. `lib/` 内不再有 `browser.js`（无 re-export 转发层），所有 import 直接指向新文件。
 4. 三级测试全绿（说明见 README「开发」节）：单元 `npm run test:unit`（不启动浏览器）→ 集成
