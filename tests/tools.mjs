@@ -1398,7 +1398,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 21 个（含 read）', table.length === 21 && names.length === 21, String(table.length))
+    check('工具表共 22 个（含 read / dialog）', table.length === 22 && names.length === 22, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')

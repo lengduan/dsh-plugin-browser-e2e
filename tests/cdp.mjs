@@ -24,7 +24,7 @@ import { pathToFileURL } from 'node:url'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, evaluate, navigate, upload } = await import('../lib/page.js')
+const { currentTab, dialogEntries, evaluate, navigate, setDialogPolicy, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
 
@@ -217,6 +217,30 @@ try {
     check('截图成功（无固定视口时按内尺寸兜底）', shot.meta.width > 0 && shot.meta.height > 0, JSON.stringify(shot.meta))
     const list = await tabs(KEY)
     check('导航没有新建 page', list.tabs.length >= 1, JSON.stringify(list.tabs.map((t) => t.tab_id)))
+  }
+
+  console.log('== 用例 3A：CDP 接管下对话框策略生效并记录 ==')
+  {
+    await navigate(session, 'data:text/html,<title>cdp-dialog</title><p>dialog</p>', 'load')
+    await setDialogPolicy(session, 'accept')
+    const confirmValue = await evaluate(session, "confirm('CDP 确认吗')")
+    const confirmInfo = await dialogEntries(session)
+    check('CDP 接管下 confirm 被策略应答并记录', confirmValue.value === true
+      && confirmInfo.policy === 'accept'
+      && confirmInfo.entries.at(-1)?.type === 'confirm'
+      && confirmInfo.entries.at(-1)?.message === 'CDP 确认吗'
+      && confirmInfo.entries.at(-1)?.accepted === true,
+    JSON.stringify({ value: confirmValue.value, info: confirmInfo }))
+
+    await setDialogPolicy(session, 'accept', 'CDP 文本')
+    const promptValue = await evaluate(session, "prompt('CDP 输入', 'CDP 默认')")
+    const promptInfo = await dialogEntries(session)
+    check('CDP 接管下 prompt 使用 prompt_text 并保留默认值', promptValue.value === 'CDP 文本'
+      && promptInfo.promptText === 'CDP 文本'
+      && promptInfo.entries.at(-1)?.type === 'prompt'
+      && promptInfo.entries.at(-1)?.defaultValue === 'CDP 默认'
+      && promptInfo.entries.at(-1)?.accepted === true,
+    JSON.stringify({ value: promptValue.value, info: promptInfo }))
   }
 
   console.log('== 用例 3B：CDP 接管下 selector 上传生效 ==')

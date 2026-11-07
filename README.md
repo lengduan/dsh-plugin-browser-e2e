@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：21 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：22 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、悬停、拖拽、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 21 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 22 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-21 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+22 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -68,6 +68,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_press` | 按下键盘按键（如 Enter、Tab、Escape、Control+A），作用于当前焦点元素 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
 | `browser_e2e_download` | 下载并校验完整性：`url`（HTTP(S) 直接经当前浏览器上下文取回，共享 Cookie / 登录态）或 `ref` / `selector` / `x`+`y`（点击触发 download 事件）二选一；`filename` 覆盖服务器建议名，`maxBytes` 默认 100 MiB（上限 1 GiB），`expectedSha256` 可选强校验，`timeoutMs` 默认 60000；落盘到产物目录的 `downloads/` 子目录（`DSH_BROWSER_DOWNLOAD_DIR` 覆盖），返回路径、字节数与 SHA-256，同名不覆盖 |
+| `browser_e2e_dialog` | 读取页面弹出的 alert / confirm / prompt 记录（类型、文案、prompt 默认值、实际应答），并按 `tab_id` 设置后续对话框的应答策略：`policy`（`dismiss` 默认 / `accept`，不传表示只读）、`prompt_text`（仅 accept 时可用，缺省用页面默认值）、`limit`（默认 20，最多 50）；对话框在打开时立即按策略应答并记录，策略必须在触发动作前设好 |
 | `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100） |
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
 | `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
@@ -277,6 +278,8 @@ browser_e2e_press { key: "Enter" }
 browser_e2e_upload { selector: "input[type=file]", files: "C:\\tmp\\report.pdf" }
 browser_e2e_download { url: "http://127.0.0.1:19387/files/report.pdf" }
 browser_e2e_download { selector: "#export", expectedSha256: "<64 位十六进制>" }
+browser_e2e_dialog { policy: "accept" }
+browser_e2e_dialog { limit: 20 }
 browser_e2e_wait { selector: ".result", state: "visible", timeoutMs: 5000 }
 browser_e2e_wait { url: "**/dashboard", urlMatch: "glob", timeoutMs: 5000 }
 browser_e2e_wait { response: "/api/order", responseMethod: "POST", statusMin: 200, statusMax: 299 }
@@ -350,7 +353,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（21 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（22 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -384,7 +387,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。21 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。22 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -408,6 +411,7 @@ npm run test:integration
 - **下载的边界** —— URL 模式把响应体整体读入内存（`APIResponse` 只有 `body()`），默认 100 MiB、硬上限 1 GiB 是内存风险边界，超大文件改用点击触发模式；URL 请求失败直接报错，不做导航捕获附件的回退；不支持取消、断点续传与重试；点击触发只接本次调用期间的第一个下载事件，`navigate` / `evaluate` 在工具调用之外触发的下载无法追溯；一次只处理一个文件；`Content-Disposition` 缺失且 URL 末段为空时文件名回退 `download`；不按扩展名过滤，也不解析 PDF / 压缩包。
 - **悬停与拖拽只作用于主 frame** —— `browser_e2e_hover` / `browser_e2e_drag` 与 `browser_e2e_click` 一致，只查主框架、不进入 iframe；坐标目标按视口 CSS 像素校验，元素目标不暴露 `force` / `sourcePosition` / `targetPosition`，被遮挡时报 Playwright 超时。拖拽中途页面导航会由 Playwright 报执行上下文销毁；HTML5 目标若不在 `dragover` 里 `preventDefault()`，浏览器会拒绝 drop，这是页面行为，不是工具失败。
 - **逐键输入（`mode=keystrokes`）的边界** —— 不支持坐标目标（无法可靠清空与校验可编辑性）；不支持真实 IME 与组合键，中文 / emoji 走 `Input.insertText`、不产生 keydown / keyup，`\t` 不会移动焦点；`\n` / `\r` 映射为 Enter，单行 input 里可能触发表单提交。工具在最后一个按键后立即返回，不等防抖落定；掩码与受控组件可能改写最终值，工具不回读。后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略按键（不做 focus emulation）。
+- **对话框处理是「先设策略、后触发」** —— `browser_e2e_dialog` 在对话框打开的事件回调里立即应答（不立即应答页面会冻结），所以无法「先读文案、再按文案决定接受 / 取消」：要验证文案用默认 `dismiss`（记录照写），要走确认分支必须先把 `policy` 设为 `accept` 再触发。策略与记录按标签页隔离，新标签页从 `dismiss` 开始；`beforeunload` 一律接受（与浏览器默认一致）；HTTP 认证、权限请求、`window.print()` 与页面自绘的 `<dialog>` 元素不在覆盖范围；跨源 iframe（OOPIF）里的对话框是否上报未验证。CDP 接管模式下设 `accept` 等于替用户在真实浏览器里点确定。
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -4,7 +4,7 @@
  * 分四段：
  *   A. loopback 围栏的判定（纯函数）；
  *   B. 设置合并与越界拒绝（纯函数）；
- *   C. 插件注册面：15 个工具的参数契约；
+ *   C. 插件注册面：22 个工具的参数契约；
  *   D. 端到端：用真实 http 服务模拟宿主 webServer，注册插件自己的路由与 socket，
  *      真起无头 Edge，走完整协议（attach / hello / 帧 / 动作 / configure /
  *      request-frame / 未知命令 / 协议版本不符 / 关闭后状态清空），并校验围栏
@@ -133,7 +133,7 @@ let upgradeHandler = null
   apply(ctx, { quality: 30, maxWidth: 640 })
   check('注册的工具与工具表逐项一致（顺序与名字）',
     JSON.stringify(toolNames) === JSON.stringify(TOOL_TABLE.map((definition) => definition.name)), JSON.stringify(toolNames))
-  check('工具表共 21 个', TOOL_TABLE.length === 21, String(TOOL_TABLE.length))
+  check('工具表共 22 个', TOOL_TABLE.length === 22, String(TOOL_TABLE.length))
   check('工具名唯一且统一带 browser_e2e_ 前缀',
     new Set(toolNames).size === toolNames.length && toolNames.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(toolNames))
   check('每个工具都有 description 与合法参数 schema（required 是 properties 子集）',
@@ -146,8 +146,20 @@ let upgradeHandler = null
   check('新增 read 工具已注册且带 tab_id', tools.has('browser_e2e_read')
     && ['sections', 'maxItems', 'includeValues', 'selector', 'tab_id']
       .every((field) => field in tools.get('browser_e2e_read').parameters.properties))
-  check('作用于页面的工具都接受 tab_id', ['navigate', 'snapshot', 'read', 'click', 'fill', 'scroll', 'press', 'screenshot', 'console', 'network', 'wait', 'evaluate', 'hover', 'drag', 'download']
+  check('作用于页面的工具都接受 tab_id', ['navigate', 'snapshot', 'read', 'click', 'fill', 'scroll', 'press', 'screenshot', 'console', 'network', 'wait', 'evaluate', 'hover', 'drag', 'download', 'dialog']
     .every((suffix) => 'tab_id' in tools.get(`browser_e2e_${suffix}`).parameters.properties))
+  check('browser_e2e_dialog 声明 policy 枚举与 prompt_text / limit / tab_id', (() => {
+    const dialog = tools.get('browser_e2e_dialog')
+    if (!dialog) return false
+    const parameters = dialog.parameters
+    return typeof dialog.description === 'string' && dialog.description.includes('对话框')
+      && parameters.additionalProperties === false && parameters.required.length === 0
+      && parameters.properties.policy?.type === 'string'
+      && JSON.stringify(parameters.properties.policy.enum) === JSON.stringify(['dismiss', 'accept'])
+      && parameters.properties.prompt_text?.type === 'string'
+      && parameters.properties.limit?.type === 'integer'
+      && 'tab_id' in parameters.properties
+  })())
   check('browser_e2e_fill 把 value 列为必填，且提供 ref/selector/x/y 目标参数', (() => {
     const fill = tools.get('browser_e2e_fill').parameters
     return fill.required.includes('value') && ['ref', 'selector', 'x', 'y'].every((field) => field in fill.properties)

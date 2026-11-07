@@ -12,7 +12,7 @@
 
 ### 缓冲与记录
 
-- 每个标签页条目（`addPage` 创建）自带四个容器：`consoleRing`、`networkRing`、`networkByRequest`、`networkContext`（`request_id` → `{ request, response }`），初始都为空；`nextNetworkSeq` 从 0 起，用于分配 `n<N>`。`attachPageHooks` 用 `session.hookedPages` 保证同一个 page 只挂一次监听，避免重复记账。
+- 每个标签页条目（`addPage` 创建）自带控制台与网络四个容器：`consoleRing`、`networkRing`、`networkByRequest`、`networkContext`（`request_id` → `{ request, response }`），初始都为空；对话框记录另见 `0022-dialog-handling.md`（`dialogRing` 独立于这两个环）；`nextNetworkSeq` 从 0 起，用于分配 `n<N>`。`attachPageHooks` 用 `session.hookedPages` 保证同一个 page 只挂一次监听，避免重复记账。
 - 上限常量 `RING_LIMIT`（500，`lib/page.js` 导出）。`pushRing` 追加后若超过上限，从头部 `splice` 掉多出的最旧记录，保留最新。
 - 控制台：`console` 事件记 `{ level, text, at }`，`level` 取 `msg.type()`（Playwright 消息类型原样透传，不做归一），`text` 经 `truncateText` 截到 `CONSOLE_TEXT_LIMIT`（2000 字符）并在末尾追加 `...(已截断)`，`at` 为 `nowAt()` 的 ISO 串。
 - 未捕获异常：`pageerror` 记为 `level: 'error'`，`text` 取 `error.message`，同样截断。
