@@ -131,6 +131,8 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 协议契约的单一来源是 `lib/protocol.js`：路由路径、版本、关闭码、命令表、事件表、投屏设置区间与默认值、`panelTabId` 组合规则都在那里；host 与 client 的校验从表派生。客户端所需常量（含命令 / 事件表）由 `scripts/build-client.mjs` 在构建时注入到 `lib/client.js`。
 
+下面的路由、命令与错误码是速览；契约文本以 `specs/项目规格/0002-panel-protocol-v1.md` 为准，两处不一致时以规格与 `lib/protocol.js` 为准。
+
 | 路径 | 作用 |
 |---|---|
 | `GET /api/dsh-browser-e2e/state` | 只读状态快照（socket 连不上时的兜底探测） |

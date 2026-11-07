@@ -1,0 +1,42 @@
+# 浏览器启动、接管与复用
+
+状态: 已实现
+关联: specs/项目规格/0001-architecture-invariants.md（模块表、进程内对象契约「session 对象」、会话状态机、进程回收三道兜底）；specs/项目规格/0002-panel-protocol-v1.md（契约：`state` 的 `mode` / `endpoint` 由会话推导）
+代码: lib/session.js / lib/page.js / lib/tools.js / lib/index.js / lib/capture.js / tests/invariants.mjs / tests/multitab.mjs / tests/cdp.mjs / tests/reclaim.mjs / tests/panel.mjs
+
+## 需求
+
+同一会话要能按需拉起本机系统 Edge，或接管已开远程调试端口的浏览器；重复调用 `browser_e2e_start` 复用同一实例，参数不一致时明确拒绝而不是悄悄换浏览器。收益：启动语义（缺省、失败清理、并发、复用）可预期，调用方不必自己判断「该不该再 start」。
+
+## 行为
+
+- 入口：`lib/tools.js` 的 `buildToolTable` 里 `browser_e2e_start`，参数全部可选：`headless`（boolean）、`proxy`（string）、`viewportWidth` / `viewportHeight`（number）、`mode`（枚举 `isolated` / `cdp`）、`cdpEndpoint`（string）；根 schema 由 `params` 生成，`additionalProperties: false`，没有必填字段。`run` 调 `lib/session.js` 的 `launch(sessionKey(exec), args, exec?.agent?.id, launchDefaults())`，把插件配置默认值作为第四个参数传，不合并进 `args`。
+- 缺省来源：`mode` 取 `options.mode ?? defaults.mode`，只认 `cdp`，其余落 `isolated`；`defaults.mode` 由 `lib/index.js` 的 `launchDefaultsOf` 只放行 `isolated` / `cdp`；`headless` 默认 `true`；`proxy` 取 `options.proxy ?? process.env.DSH_BROWSER_PROXY ?? ''`；视口取 `options.viewportWidth ?? DEFAULT_VIEWPORT.width` / `options.viewportHeight ?? DEFAULT_VIEWPORT.height`（`lib/page.js` 的 `DEFAULT_VIEWPORT`）；`cdpEndpoint` 经 `normalizeCdpEndpoint(options.cdpEndpoint ?? defaults.cdpEndpoint)` 归一，都缺时取 `lib/defaults.js` 的 `DEFAULT_CDP_ENDPOINT`。插件配置侧的缺省来源见 `0006-plugin-config-and-live-apply.md`。
+- 隔离启动：`launch` 调 `chromiumImpl.launch`（缺省即 playwright-core 的 `chromium`），`channel` 取常量 `BROWSER_CHANNEL`（`msedge`），带 `headless` 与 `ignoreHTTPSErrors: true`，`proxy` 非空时加 `proxy: { server }`；随后 `browser.newPage({ viewport: session.viewport })`，`addPage(session, page, 'created')` 生成首个标签页 `t1`（`session.nextTabSeq` 从 1 起），置 `session.mode` / `session.browser` / `session.viewport`，广播 `opened` 面板事件，再由 `lib/capture.js` 的 `ensureArtifactsDir` 建产物目录。返回 `{ reused: false, mode, headless, channel, version, viewport, tabs: 1, artifactsDir, summary }`，摘要为 `启动浏览器 系统 Edge ${version}（headless=${headless}，视口 ${session.viewport.width}x${session.viewport.height}）`。
+- CDP 接管：`mode: 'cdp'` 时 `launch` 走接管分支（`connectOverCDP` 建连、逐页 `addPage(..., 'adopted')` 登记、`context.on('page')` 增量接入），不新建页面、不设视口、不传 `headless` / `proxy`。接管的前置校验、页面 adopt 细节、增量接管与「close 只断连」等行为见 `0008-cdp-attach.md`；本文件只约定该分支在 `launch` 内的返回形状 `{ reused: false, mode: 'cdp', endpoint, version, tabs, summary }` 与摘要 `接管 CDP 浏览器 ${endpoint}（${session.pages.size} 个标签页，系统 Edge ${version}）`。
+- 工具渲染：`browser_e2e_start` 的 `run` 按返回分支拼文本——复用输出摘要与 `当前地址：${info.url || '空白页'}`；CDP 追加 `接管端点：${info.endpoint}` 与 `CDP 模式不会关闭你的浏览器，browser_e2e_close 只断开连接。`；隔离追加 `产物目录：${info.artifactsDir}`。
+- 复用分支：`session.browser` 已存在时先 `assertReuseCompatible`——只对显式传入的 `options.mode` / `options.cdpEndpoint` 做一致性校验（`assertModeNotHotSwitched` / `assertEndpointNotHotSwitched`），配置默认值不参与。复用分支同样建立 `launchingPromise` / `launchTask` 落定信号，收尾时清掉。`reuseInfo` 返回 `{ reused: true, mode, version, url, tabs, summary }`，其中 `version` 取 `browser.version()`、`url` 取当前 active 页地址（无页为空串），摘要为 `浏览器已启动（${session.mode === 'cdp' ? 'CDP 接管' : '隔离'}模式，系统 Edge ${session.browser.version()}，${session.pages.size} 个标签页）`。
+- 复用且 0 页：隔离模式用 `createPage` 补建一页、`addPage` 登记并把 `activeTabId` 切到新页后返回复用结果；CDP 模式直接抛 `CDP 浏览器已没有打开的标签页，请在浏览器里新建标签页，或先 browser_e2e_close 再重新 browser_e2e_start`，会话停在 `ready`。
+- 并发启动：同一 key 的 `launch` 发现 `session.launchTask` 存在时只等它落定，不另起浏览器；落定后依次过 `assertNotClosedDuringLaunch`、`assertLaunchSettled`、`assertReuseCompatible`，再按复用返回。
+- 并发关闭：`lib/session.js` 的 `close` 先同步摘除注册表与会话状态（`idle` 直接进 `closed`，`launching -> closing` 或 `ready -> closing`），有 `launchingPromise` 时等它落定；启动路径的 `ensureAlive`（内部调 `assertNotClosedDuringLaunch`）在 `chromiumImpl.launch` / `connectOverCDP` / `browser.newPage` 之后各查一次，被 close 就立刻停下。
+
+## 边界
+
+- 非法 `mode` 在登记会话之前直接报 `mode 只支持 isolated / cdp，收到 ${JSON.stringify(options.mode)}`，不静默降级成 `isolated`，也不留下会话条目。
+- 端点校验在 `normalizeCdpEndpoint`：不是 URL 报 `cdpEndpoint 不是合法 URL：${text}`；协议不是 http 报 `cdpEndpoint 只支持 http，收到 ${url.protocol}`；主机不是 loopback 报 `cdpEndpoint 只允许 loopback 主机（localhost / 127.0.0.1 / ::1），收到 ${url.hostname}`。
+- 启动中被 close：`launch` 的 `finally` 看到 `session.state === 'closing'` 时先收掉可能已建立的浏览器——按本次局部 `mode` 决定用 `closeBrowser`（隔离模式，超时后强制结束主进程）还是 `browser.close()`（CDP 模式，只断连），再把 `closing` 落成 `closed`，不留半初始化会话与孤儿进程。
+- 启动失败清理：`finally` 里 `launched` 仍为 false 且会话仍是 `launching` 时，清 `browser` / `context` / `pages` / `activeTabId`，按目标模式收掉浏览器；只有广播过 `opened` 的会话才补广播 `closed`；状态从 `launching` 走 `launchFailed` 回 `idle`；清理期间若已被 close，则按 `closeSettled` 收成 `closed`，不被启动结果覆写。
+- 成功判据是「launcher 走完、浏览器在、至少一页」：`launched` 只在 `addPage` 之后置真，因此 `newPage` 抛错、CDP 没有 context / 已打开标签页等情况都算失败，不会停在 `ready + 0 页`。
+- `headless` / `proxy` / `viewportWidth` / `viewportHeight` 只对隔离模式生效；`mode: 'cdp'` 下即使传视口也不作用于被接管的浏览器。
+- 热切换拒绝只由显式参数触发：已启动会话传了与当前不一致的 `mode` / `cdpEndpoint` 就由 `assertModeNotHotSwitched` / `assertEndpointNotHotSwitched` 报错（文案见项目规格「不变量清单」），未传则复用原实例。
+- 空闲计时：`lib/session.js` 的 `touchSession` 在 `launching` / `closing` / `closed` 或 `IDLE_CLOSE_MS` 为 0 时不装计时器；`launch` 开头清旧计时器，`finally` 落定后重新计时，因此启动耗时超过 `DSH_BROWSER_IDLE_MS` 不会被中途回收（回收口径见项目规格「进程回收三道兜底」）。
+- 复用分支补建页失败：先落定信号再 `close(key)` 收掉浏览器、摘除会话，然后把原始错误抛出，不留 `ready + 0 页`；复用成功返回前再用 `assertReuseAlive` 复查会话仍在注册表里，若与 close 并发则报 `浏览器已关闭（复用与关闭并发），请重新调用 browser_e2e_start`，不返回假的 `reused: true`。
+- 明确不处理：只驱动系统 Edge（`BROWSER_CHANNEL` 固定为 `msedge`），不提供其他 channel 或可执行路径参数；`mode` 只有 `isolated` / `cdp` 两个取值，其他值按上一条报错。
+
+## 验收
+
+1. `node tests/invariants.mjs`（假 chromium，不起浏览器）：用例 D 的 `状态全集为 idle / launching / ready / closing / closed`、`合法转移逐条命中`、`非法转移抛错（含终态 closed）`；用例 B 的 `assertModeNotHotSwitched：不一致的两个方向都报错`、`assertEndpointNotHotSwitched：端点不一致报错并带两端点`、`assertNotClosedDuringLaunch：closing / closed 报并发关闭`、`assertLaunchSettled：没有浏览器时报启动失败`；用例 G 的 `隔离模式 newPage 抛错：launch 失败、状态回 idle 并关闭浏览器`、`CDP 模式没有 context：报错、回 idle 并断开连接`、`CDP 模式没有已打开标签页：报错、回 idle 并断开连接`、`复用路径 0 标签页（isolated）：自动补建一页并返回成功`、`复用路径 0 标签页（cdp）：抛可诊断错误而不是静默成功`、`已广播 opened 后启动失败：补广播同 key 的 closed 事件`；用例 H 的 `关闭唯一页后：state 仍 ready、pages 为 0，tabs / navigate 报「尚未启动」，复用 start 补建一页`、`复用分支与 close 并发：close 先生效时 launch 只能抛并发关闭错误，不返回 reused:true`。判定：exit 0、输出无 FAIL。
+2. `node tests/multitab.mjs`（真起无头 Edge）：用例 1 的 `启动成功`、`首个导航在 t1`、`tabs 列出 1 个页且 active 为 t1`、`tabs 带 loading / origin（created）字段`；用例 2 的 `new_tab 生成 t2 且标记 newTab`、`t2 成为 active`。判定：exit 0、输出无 FAIL。
+3. `node tests/cdp.mjs`（需要本机 Edge；找不到 Edge 时脚本打 `SKIP：本机找不到 Edge 可执行文件，CDP 接管未验证（设置 EDGE_PATH 后可重跑）` 并以 0 退出）：用例 1 的 `非 loopback 端点报错`、`非 http 端点报错`；用例 2 的 `接管成功且 mode 为 cdp`、`摘要包含接管端点`、`tab 列表取 context.pages()（至少 1 个）`、`接管页 origin 为 adopted、loading 为布尔`、`接管不杀浏览器进程`；用例 3 的 `导航没有新建 page`；用例 4 的 `close 返回 cdp 模式`、`浏览器进程仍然存活`、`DevTools 端点仍可访问`。判定：exit 0、输出无 FAIL。
+4. `node tests/reclaim.mjs`（真起无头 Edge，进程数按回落到运行前基线判定）：用例 F 的 `IDLE_MS=100 时 launch 正常返回（未被空闲回收打断）`、`启动耗时超过空闲时限（竞态场景确实被覆盖）`、`launch 落定后空闲回收仍然生效`；用例 G 的 `两次并发 launch 都成功返回`、`后到的一次按复用返回同一实例`、`会话只有一个标签页`、`只新增一个 Edge 主进程`。判定：exit 0、输出无 FAIL。
+5. `node tests/panel.mjs`（真起无头 Edge）：用例 C 的 `browser_e2e_start 的 mode 参数声明枚举`；用例 E 的 `配置 defaultMode=cdp 被首次启动消费`、`未提供配置时默认 isolated`、`配置默认值不让已启动会话报 mode 不一致`、`mode=cdpp 的 start 显式报错且不启动 isolated`。判定：exit 0、输出无 FAIL。

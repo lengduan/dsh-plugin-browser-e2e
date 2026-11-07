@@ -1,7 +1,7 @@
 # 客户端座位注册面与 entry 激活失败
 
 状态: 已实现
-关联: 无（项目规格目录尚无正式条目）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表：客户端 bundle 行；进程内对象契约）；specs/项目规格/0002-panel-protocol-v1.md（事件表、注入块约定）
 代码: client/index.js / lib/client.js / tests/client-bundle.mjs / README.md
 
 ## 需求
@@ -44,7 +44,7 @@
 
 ## 验收
 
-1. `node tests/client-bundle.mjs` 输出 `SUMMARY: 36 passed, 0 failed`；其中断言
+1. `node tests/client-bundle.mjs` 全部 PASS（0 failed）；其中断言
    `api.inject` 恰为 `["slots","sidebarRightTabs"]`、`apply` 只产生 2 条 `slots.inject`、
    2 条 `slots.register`。
 2. `node scripts/build-client.mjs` 通过后，`lib/client.js` 是最新生成物：构建注入协议常量、
@@ -56,5 +56,6 @@
    `web boot: ... did not activate`、`already registered`；页面标题为 `DeepSeek Harness`，
    正文可交互。
 4. 全量串行 9 个测试：invariants / client-bundle / screencast / panel / tools / auth /
-   multitab / cdp / reclaim，合计 371 PASS / 0 FAIL（2026-11-07 实测；`.scratch/` 不入库，
-   复跑用 `npm run test:unit` 与 `npm run test:integration`）。
+   multitab / cdp / reclaim，全部 exit 0（2026-11-07 复跑实测 385 PASS / 0 FAIL；数字只作当时
+   记录，复跑以 exit code 为准；`.scratch/` 不入库，复跑用 `npm run test:unit` 与
+   `npm run test:integration`）。

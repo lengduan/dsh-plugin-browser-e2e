@@ -2,8 +2,8 @@
 
 状态: 已实现
 关联: 0001-architecture-invariants.md（架构约束、panelTabId 规则、投屏设置单一来源）
-代码: lib/protocol.js / lib/panel.js / client/index.js / scripts/build-client.mjs /
-scripts/protocol-inject.mjs / tests/invariants.mjs
+代码: lib/protocol.js / lib/panel.js / lib/screencast.js / lib/fence.js / client/index.js /
+scripts/build-client.mjs / scripts/protocol-inject.mjs / tests/invariants.mjs
 
 ## 需求
 
@@ -30,6 +30,8 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
   拒绝 `sec-fetch-site: cross-site`，同源 Origin 放行；非 loopback 在升级之前返回 403。
 - 首帧 `v` 与 `PANEL_PROTOCOL_VERSION` 不一致时回 `protocol-mismatch` 错误事件并关闭连接（1002）；
   后续帧版本不符只回错误事件、不断开。
+- 线上信封：每帧是一个 JSON 对象 `{v, kind, ...payload}`；`v` 只参与版本校验，`kind` 参与命令 /
+  事件分派，下表「参数」「载荷」列描述的是 `payload` 部分。client 侧 `parseEvent` 拒绝数组与非对象。
 
 ### 命令表（client → host）
 
@@ -56,8 +58,8 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 ### 错误码表
 
 错误码的唯一来源是 `lib/protocol.js` 的 `PANEL_ERROR_CODES`：host 侧（`lib/panel.js`、
-`lib/session.js`）从表取值，不在调用点写 code 字面量；`tests/invariants.mjs` 断言表内取值
-与预期一致，并断言两份 host 源文件里不出现这些 code 的字面量。
+`lib/session.js`、`lib/screencast.js`）从表取值，不在调用点写 code 字面量；`tests/invariants.mjs`
+断言表内取值与预期一致，并断言 host 源文件里不出现这些 code 的字面量。
 
 | code | 触发条件 | 是否关闭连接 |
 |---|---|---|
@@ -68,7 +70,7 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 | `close-tab-failed` | `session.closeTab` 抛错且 `error.code` 不是 `last-tab` | 否 |
 | `no-active-tab` | `request-frame` 时没有选中 tab | 否 |
 | `capture-failed` | `request-frame` 调 `captureJpeg` 抛错 | 否 |
-| `invalid-config` | `configure` 的 `config` 不是对象、字段非整数或越界 | 否 |
+| `invalid-config` | `configure` 的 `config` 不是对象，或字段经 `Number()` 转换后不是整数 / 越界（当前实现接受 `"80"`、`true` 这类可转换值；正常面板只发整数） | 否 |
 | `invalid-command` | `kind` 不在 `PANEL_COMMANDS` 表 | 否 |
 | `state-failed` | 状态同步 / 广播（`broadcastState`）抛错 | 否 |
 | `config-sync-failed` | `applyConfig` 重开投屏或广播失败 | 否 |
@@ -94,6 +96,9 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 
 - host：`mergeConfig`（用户当场操作，越界回 `invalid-config`）与 `initialConfigOf`（插件配置可能
   被手改脏，逐字段回退默认）都遍历 `PANEL_CONFIG_LIMITS`。
+- 设置页保存：宿主按即时字段更新配置引用并广播 `loader/volatile-update`，`lib/index.js` 监听后调
+  `hub.applyConfig`。未提供的字段回退默认、非法字段回退默认、设置没变化不重开投屏；这条通道会
+  用插件 Config 覆盖进程内 `configure` 的值（`configure` 不落盘，插件重载后回到 Config）。
 - 设置变更的处理顺序：先按新参数重开投屏，再广播状态；socket 的 `configure` 与宿主侧
   `applyConfig` 都按这个顺序。重开投屏失败由 `screencast-failed` 上报（`Screencast` 内部
   回调错误并返回 false），广播失败则分别走 `command-failed` / `config-sync-failed`。
@@ -108,8 +113,9 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 ### `panelTabId`
 
 组合 `key + '#' + tabId`，拆分以最后一个 `#` 为界（会话 key 可含 `#`，tab_id 为 `t<N>`）。
-唯一实现 `lib/protocol.js:panelTabId / parsePanelTabId`；`session.js` 与 `panel.js` 都从那里取，
-不再各写一份（基线 `browser.js:1651-1662` 与 `panel.js:41-51` 两份逐字重复）。
+唯一实现 `lib/protocol.js` 的 `panelTabId` / `parsePanelTabId`；`session.js` 与 `panel.js` 都从那里取，
+不再各写一份（拆分前基线：`browser.js:1651-1662` 与 `panel.js:41-51` 两份逐字重复，`browser.js`
+已不存在）。
 
 ## 边界
 
@@ -117,7 +123,11 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
   唯一例外是协议命令 `close-tab`（用户主动关页，宿主调 `session.closeTab`），它会真的关闭页面。
 - `request-frame` 只触发一次 `captureJpeg` 并推回一帧，不改变页面状态。
 - 宿主不提供 `webServer` 时（CLI 场景）不挂路由，工具照常可用。
-- `configure` 只改宿主进程内配置，不写回 profile；插件重载后回到插件 Config 的值。
+- `configure` 只改宿主进程内配置，不写回 profile；插件重载后回到插件 Config 的值。反向通道：
+  设置页保存会经 `loader/volatile-update` → `applyConfig` 用插件 Config 覆盖进程内设置。
+- `invalid-config` 的整数判定是「`Number()` 转换后为整数」：`"80"`、`true` 会被接受并转成数字
+  （`true` → 1）。正常面板只发整数，这一宽松点不影响面板；要收紧需同时改 `mergeConfig` /
+  `initialConfigOf` 并同步本规格。
 - 投屏是 CDP `Page.startScreencast`：静态页面不产生新帧，刷新按钮走 `captureJpeg` 兜底。
 - 已知限制（已记录，未修）：面板是单 `PanelHub` 的全局视图，`activeTabId` 不按连接隔离。
   多个会话同时打开面板时，显示哪一个 tab 由最后一次 `attach` / `select-tab` 决定，其它连接
@@ -128,6 +138,6 @@ scripts/protocol-inject.mjs / tests/invariants.mjs
 1. `node tests/invariants.mjs`：协议常量与 client 注入块一致、命令/事件表、`panelTabId` 往返。
 2. `node tests/panel.mjs`：围栏、设置合并、表驱动工具契约、WebSocket 端到端（hello / 帧 /
    动作 / configure / request-frame / 未知命令 / 协议版本不符 / 关闭后状态清空）。
-3. `node tests/client-bundle.mjs`：`SUMMARY: 36 passed, 0 failed`，含 `parseEvent` / `reduceEvent`
+3. `node tests/client-bundle.mjs`：全部 PASS（0 failed），含 `parseEvent` / `reduceEvent`
    对协议表派生的行为断言。
 4. `node scripts/build-client.mjs` 通过后 `lib/client.js` 为最新生成物。

@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -34,7 +34,7 @@
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage` | 页面能力、截图落盘、鉴权补票 |
-| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`）、事件环（console/network 环形缓冲、ref 表）、`snapshot/click/fill/scroll/press/waitFor/evaluate/consoleEntries/networkEntries` | 落盘、协议、面板连接 |
+| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、`navigate/snapshot/click/fill/scroll/press/waitFor/evaluate/consoleEntries/networkEntries`、`titleOf` | 落盘、协议、面板连接 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
@@ -42,6 +42,7 @@
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
+| `lib/client.js` | `client/index.js` 的构建产物（头注释 + 协议常量注入块 + 源码），包内实际被宿主加载的客户端 bundle；由 `scripts/build-client.mjs` 生成，手改会被下一次构建覆盖 | 手写逻辑（客户端逻辑只改 `client/index.js`） |
 
 依赖方向（实现层单向，禁止回指）：
 
@@ -70,49 +71,49 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 
 ### 进程内对象契约（隐式接口）
 
-模块之间不只有函数调用，还通过共享可变对象协作。下面是实际跨模块读写的字段（行号以当前
-HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型检查，改字段名或形状必须同步改
-消费方。
+模块之间不只有函数调用，还通过共享可变对象协作。下面是实际跨模块读写的字段。它们是隐式接口：
+没有类型检查，改字段名或形状必须同步改消费方。定位一律用符号名，不写行号（行号会随重构漂移；
+需要定位时按符号名在文件里检索）。
 
-#### `session` 对象（`session.js` 创建，`page.js` 读写）
+#### `session` 对象（`session.js` 的 `sessionOf` 创建，`page.js` 读写）
 
-| 字段 | 读写点 | 用途 |
+| 字段 | 读写方（符号） | 用途 |
 |---|---|---|
-| `key` | `page.js:76`、`92`、`197`、`301` 读 | 面板事件里的会话 key |
-| `emit` | `page.js:76`、`92`、`197`、`301` 读 | 页面层广播面板事件（不 import `session.js`） |
-| `pages` | `page.js:73`、`87-90`、`107` 读，`page.js:73`、`88` 写 | 标签页注册表 |
-| `activeTabId` | `page.js:75`、`89-90`、`107`、`290` 读写 | 当前标签页 |
-| `nextTabSeq` | `page.js:61`、`72` 读，`page.js:72` 写 | 分配 `t<N>` |
-| `hookedPages` | `page.js:137-138` 读 | 防止同一个 page 重复挂监听 |
-| `mode` | `page.js:122` 读 | 选择 `newPage` 路径 |
-| `context` | `page.js:124` 读 | CDP 模式新建页面 |
-| `browser` | `page.js:119`、`126` 读 | 隔离模式新建页面与前置检查 |
-| `viewport` | `page.js:126` 读 | 隔离模式新页视口 |
-| `touch` | `page.js:733`、`759`、`777` 调用 | 刷新空闲计时 |
+| `key` | `page.js` 的 `addPage` / `removePage` / `attachPageHooks`（`notifyChanged`）/ `navigate` 读 | 面板事件里的会话 key |
+| `emit` | 同上四个函数调用 | 页面层广播面板事件（不 import `session.js`） |
+| `pages` | `page.js` 的 `addPage` / `removePage` / `currentTab` 读写；`session.js` 的 `tabs` / `listPanelTabs` / `closeTab` 读 | 标签页注册表 |
+| `activeTabId` | `page.js` 的 `addPage` / `removePage` / `currentTab` / `navigate` 读写；`session.js` 的 `tabs` / `listPanelTabs` 读 | 当前标签页 |
+| `nextTabSeq` | `page.js` 的 `addPage` 读并自增；`session.js` 的 `sessionOf` 初始化 | 分配 `t<N>` |
+| `hookedPages` | `page.js` 的 `attachPageHooks` 读 / 写 | 防止同一个 page 重复挂监听 |
+| `mode` | `page.js` 的 `createPage` 读 | 选择 `newPage` 路径 |
+| `context` | `page.js` 的 `createPage` 读 | CDP 模式新建页面 |
+| `browser` | `page.js` 的 `createPage` 读 | 隔离模式新建页面与前置检查 |
+| `viewport` | `page.js` 的 `createPage` 读 | 隔离模式新页视口 |
+| `touch` | `page.js` 的 `scroll` / `consoleEntries` / `networkEntries` 调用；定义在 `session.js` 的 `sessionOf`（挂 `touchSession`） | 刷新空闲计时 |
 
-#### 标签页条目（`page.js:60-71` 创建）
+#### 标签页条目（`page.js` 的 `addPage` 创建）
 
-| 字段 | 读写方 |
+| 字段 | 读写方（符号） |
 |---|---|
-| `id` / `page` / `loading` / `origin` | `session.js:594-599`、`638-643` 读；`capture.js:152` 读 `page` |
-| `refs` / `consoleRing` / `networkRing` / `networkByRequest` | `page.js` 内部读写（`page.js:142-180`、`251-253`、`294`、`300`、`518-519`、`611`、`675`、`761`、`779`），不跨模块读取 |
+| `id` / `page` / `loading` / `origin` | `session.js` 的 `tabs` / `listPanelTabs` 读；`capture.js` 的 `screenshot` 读 `tab.page` |
+| `refs` / `consoleRing` / `networkRing` / `networkByRequest` | `page.js` 内部读写（`addPage` / `attachPageHooks` / `clearRings` / `snapshot` / `click` / `fill` / `navigate` / `consoleEntries` / `networkEntries`），不跨模块读取 |
 
 #### 其他跨模块字段
 
-- `capture.js` 写 `session.artifactsDir`（`capture.js:53-60`）。
-- `panel.js` 读 `screencast.tabId` / `screencast.page`（`panel.js:235`），据此判断「同一个 tab
-  但页面对象已经换了」；`cdp` 只在 `screencast.js` 内部读写（`screencast.js:31`、`77`、`80`、`88`、`117`）。
-- 能力函数返回值被 `tools.js` 读的字段：
-  - `start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`（`tools.js:168-177`）；
-  - `navigate`：`summary` / `title` / `tabId`（`tools.js:199`）；
-  - `tabs`：`summary` / `mode` / `text`（`tools.js:209`）；
-  - `close_tab`：`summary` / `activeTabId`（`tools.js:220`）；
-  - `snapshot`：`summary` / `url` / `tabId` / `text`（`tools.js:231`）；
-  - `screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等，`tools.js:121-128`、`375-397`）；
-  - `console` / `network`：`summary` / `count` / `total` / `text`（`tools.js:411-412`、`425-426`）；
-  - `wait`：`summary` / `state` / `timeoutMs`（`tools.js:450`）；
-  - `evaluate`：`summary` / `value`（`tools.js:467-471`）；
-  - `click` / `fill` / `scroll` / `press` / `close`：只读 `summary`（`tools.js:254`、`284`、`306`、`320`、`480`）。
+- `capture.js` 的 `ensureArtifactsDir` 写 `session.artifactsDir`。
+- `panel.js` 的 `ensureScreencast` 读 `screencast.tabId` / `screencast.page`，据此判断「同一个 tab
+  但页面对象已经换了」；`Screencast` 的 `cdp` 字段只在 `screencast.js` 内部读写。
+- 能力函数返回值被 `tools.js` 各工具 `run` 读的字段（按工具名）：
+  - `browser_e2e_start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`；
+  - `browser_e2e_navigate`：`summary` / `title` / `tabId`；
+  - `browser_e2e_tabs`：`summary` / `mode` / `text`；
+  - `browser_e2e_close_tab`：`summary` / `activeTabId`；
+  - `browser_e2e_snapshot`：`summary` / `url` / `tabId` / `text`；
+  - `browser_e2e_screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等）；
+  - `browser_e2e_console` / `browser_e2e_network`：`summary` / `count` / `total` / `text`；
+  - `browser_e2e_wait`：`summary` / `state` / `timeoutMs`；
+  - `browser_e2e_evaluate`：`summary` / `value`；
+  - `browser_e2e_click` / `fill` / `scroll` / `press` / `close`：只读 `summary`。
 
 ### 明确不做
 
@@ -126,7 +127,9 @@ HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型�
 
 ## P3：`lib/` 全部 `throw` 的分类
 
-读取时点：HEAD `1694b2c`（2026-11-06），行号为当时的文件行号。分类口径：
+读取时点：HEAD `1694b2c`（2026-11-06），行号为当时的文件行号。本表是拆分前的历史存档：
+`lib/browser.js` 已不在仓库里，表内行号不按当前文件校对，只用于追溯每类 throw 的归属；P4 调用
+图表同理。当前代码的位置一律按符号名定位（见「进程内对象契约」的开头约定）。分类口径：
 
 - **跨调用**：违反条件来自跨多次调用积累的状态（会话状态机、标签页注册表、ref 表、投屏会话、
   连接生命周期），换一次调用不会自愈，必须修状态或重启。收敛进 `lib/invariants.js`。
@@ -208,10 +211,11 @@ HEAD 的 `Select-String` 检索为准）。它们是隐式接口：没有类型�
 | `screencast.js:21-24` 注释「同一时刻最多持有一个 CDP 会话」 | `assertSingleScreencast` | 两个 CDP 会话同时推帧，面板画面在两个页面间串台 | `invariants.js`（生产路径由串行队列保证，见下） |
 | `browser.js:150-151` 注释「ref 表按页隔离」 | `assertRefBelongsToTab` | 切 tab 后旧 ref 落到另一页，点击位置错误 | `invariants.js`（与 294/994 同源） |
 
-`assertSingleScreencast` 目前只被 `tests/invariants.mjs:137-140` 调用，生产路径不再调用它。
+`assertSingleScreencast` 目前只被 `tests/invariants.mjs` 的 `assertSingleScreencast` 用例调用，
+生产路径不再调用它。
 同一时刻只持有一个 CDP 会话由 `lib/screencast.js` 的内部串行队列结构性保证：`start` / `stop`
-都经 `enqueue` 排队（`screencast.js:15-17`、`32-45`、`54-56`、`107-110`），`_start` 先 `_stop`
-掉旧会话；该断言保留给纯函数测试。
+都经 `Screencast` 的 `enqueue` 排队（`start` / `stop` / `_start` / `_stop` 都走队列），`_start` 先
+`_stop` 掉旧会话；该断言保留给纯函数测试。
 
 ### 协议层的两条契约（不 `throw`，转 `error` 事件）
 
@@ -282,8 +286,10 @@ closed：终态，任何事件非法
 
 - 转移函数 `nextSessionState(state, event)` 纯函数：只读两个参数，不读全局 `Map`，非法转移抛错；
   `tests/invariants.mjs` 覆盖全部合法 / 非法组合。
-- `closing` 期间到达的 `launchSettled` 必须走 `closeSettled`：启动中被 close 时，启动收尾负责
-  拆掉已建立的浏览器，不留半初始化会话与孤儿进程。
+- 启动收尾（`launch` 的 `finally` 分支）发现会话已是 `closing` 时，必须走 `closeSettled`：先按
+  本次目标 mode 拆掉已建立的浏览器（isolated 强制结束进程、cdp 只断连），再把 `closing` 收成
+  `closed`，不留半初始化会话与孤儿进程。注意这不是给转移表加边：`closing --launchSettled-->`
+  仍非法（`tests/invariants.mjs` 的非法转移用例覆盖），`launchSettled` 只在非关闭路径上使用。
 - `ready` 表示「浏览器可用」，允许 0 个标签页；标签页增删不改会话状态，0 页是可恢复态：
   页面工具（`assertBrowserRunning` / `assertCurrentTabAvailable`）仍报「浏览器尚未启动」，
   `browser_e2e_start` 的复用路径按模式处理 —— 隔离模式补建一页后返回复用结果，CDP 模式报
@@ -325,7 +331,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 | `panelTabId` | 8 | listPanelTabs / panelPage / panel.js 解析 | `protocol.js` |
 | `addPage` | 5 | launch（两条路径）/ navigate（new_tab）/ 事件环接管 | `page.js` |
 | `removePage` | 4 | 关页 / page close / crash | `page.js` |
-| `requireRef` | 3 | click / fill / snapshot 重建后 | `page.js`（内部转 `assertRefBelongsToTab`） |
+| ~~`requireRef`~~ | 3 | click / fill / snapshot 重建后（该函数已不在代码里，click / fill 直接调 `assertRefBelongsToTab`） | `page.js` |
 | `titleOf` | 3 | tabs / listPanelTabs | `page.js`（页面标题属于页面层） |
 
 结论：`page.js` 与 `capture.js` 之间不存在互相依赖（`capture.screenshot` 接收 `(session, tab, options)`，
@@ -335,13 +341,13 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 ## 边界
 
 - `invariants.js` 的断言只在「违反=状态损坏」处使用；入参校验留在能力函数入口，不搬进来。
-- `auth.js` 删除是**能力删除**：需同时删 `page.js` 的 `import { topUpIfChallenged }`（`page.js:7`）
-  与导航里的调用（`page.js:297`）、`index.js` 的 `setConnectionResolver` 注入（`index.js:13`、`140`），
-  并删 `tests/auth.mjs`；删除后导航不再自动补票，其余能力不受影响。
-- `capture.js` 删除同样是**能力删除**：需同时改 `session.js` 的产物目录（`import { ensureArtifactsDir }`，
-  `session.js:16`、`422`）、`tools.js` 的截图工具（`import { screenshot }`，`tools.js:19`；工具定义
-  `324-400`）、`panel.js` 的刷新帧（`import { captureJpeg }`，`panel.js:17`；`request-frame` 分支
-  `384-396`）；删除后截图能力随之消失，面板刷新按钮也没有可截的帧源。
+- `auth.js` 删除是**能力删除**：需同时删 `page.js` 对 `topUpIfChallenged` 的 `import` 与 `navigate`
+  里的调用、`index.js` 的 `setConnectionResolver` 注入，并删 `tests/auth.mjs`；删除后导航不再自动
+  补票，其余能力不受影响。
+- `capture.js` 删除同样是**能力删除**：需同时改 `session.js` 的产物目录（`import { ensureArtifactsDir }`
+  与 `launch` 里的调用）、`tools.js` 的截图工具（`import { screenshot }` 与 `browser_e2e_screenshot`
+  定义）、`panel.js` 的刷新帧（`import { captureJpeg }` 与 `request-frame` 分支）；删除后截图能力随之
+  消失，面板刷新按钮也没有可截的帧源。
 - 上述两条都是能力删除，不是零改动模块删除。
 - `invariants.js` 删除后约束会散回各能力函数（删除测试的反向判据）。
 
@@ -351,13 +357,13 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 
 | 项 | 现状 | 未处置理由 |
 |---|---|---|
-| `page.js` 粒度过大 | 约 840 行、27 个导出，混装：标签页注册表与生命周期、事件环（console/network 环形缓冲、ref 表）、snapshot 的 DOM→xpath/role/name 启发式、五种交互动作、视口度量、展示格式化。 | 拆分面覆盖所有页面能力，回归风险高；且本规格第 30-43 行的模块表把这几块整体划给 `page.js`，拆分须先改规格。建议拆为 `snapshot.js`（DOM 快照引擎）与 `observation.js`（事件环），交互与格式化留在 `page.js`。 |
+| `page.js` 粒度过大 | 864 行（2026-11-07 实测）、27 个导出，混装：标签页注册表与生命周期、事件环（console/network 环形缓冲、ref 表）、snapshot 的 DOM→xpath/role/name 启发式、五种交互动作、视口度量、展示格式化。 | 拆分面覆盖所有页面能力，回归风险高；且本规格「三层与被切分的文件」的模块表把这几块整体划给 `page.js`，拆分须先改规格。建议拆为 `snapshot.js`（DOM 快照引擎）与 `observation.js`（事件环），交互与格式化留在 `page.js`。 |
 | 视口度量三份 | `page.js` 的 `viewportBounds`、`capture.js` 的 `viewportBounds`、`capture.js` 内联的 `innerWidth/innerHeight` 兜底。 | 收敛需要新建公共模块或调整依赖方向（`capture.js` 现仅依赖 `protocol.js`），会改动本规格的依赖图，故留待拆分 `page.js` 时一并处理。 |
 | `session.js` 粒度过大 | 约 680 行、16 个导出，混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
-| 会话解析入口不统一 | 8 个工具用 `sessionOf`（会创建会话对象），`console`/`network`/`tabs`/`close_tab` 用 `requireSession`/`sessions.get`（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
+| 会话解析入口不统一 | 9 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs`/`close_tab` 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 15 个 `run` 的返回契约，属较大重构，留待单独一轮。 |
-| client 文案 / 样式孤儿键 | 删除死组件后 `client/index.js` 新增 9 个无引用 EN 文案键与 8 个无引用 `st` 样式键（HEAD 另有 8 个 EN 孤儿键）。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
+| client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
 | 工具描述里的 limit / timeoutMs 默认值 | `lib/tools.js` 描述与 `lib/page.js` 写死「默认 100」「默认 10000」，与已收敛的视口 / 快照 / 截图 / 缓冲上限常量同类，但尚无单一来源。 | 需新增常量并补本规格的常量口径，属 11 条 P2 清单外的同类残留，留待后续。 |
 
 ## 验收
