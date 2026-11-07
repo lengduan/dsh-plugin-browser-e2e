@@ -161,6 +161,28 @@ try {
     const clickMessage = await expectThrow(() => click(session, { selector: '#btn' }, 't9'))
     check('click 未知 tab 报错', Boolean(clickMessage) && clickMessage.includes('不存在'), String(clickMessage))
   }
+  console.log('== 用例 7：唯一页被关掉后的零页恢复 ==')
+  {
+    const only = session.pages.get('t1')
+    check('用例 7 前置：只剩 t1 一个页', Boolean(only), JSON.stringify([...session.pages.keys()]))
+    // 直接在页面对象上 close，模拟用户在浏览器里关掉唯一标签页。
+    await only.page.close()
+    for (let i = 0; i < 200 && session.pages.size > 0; i += 1) await sleep(10)
+    check('关掉唯一页后 pages 归零', session.pages.size === 0, String(session.pages.size))
+
+    const noTabError = await expectThrow(() => navigate(session, `${base}/a`, 'load'))
+    check('零页时不带 new_tab 的导航报「浏览器尚未启动」',
+      Boolean(noTabError) && noTabError.includes('浏览器尚未启动'), String(noTabError))
+
+    const recovered = await navigate(session, `${base}/b`, 'load', { new_tab: true })
+    check('零页时 new_tab 能新建页并导航成功',
+      recovered.newTab === true && recovered.tabId === 't3' && recovered.title === 'page-b', JSON.stringify(recovered))
+    const list = await tabs(KEY)
+    check('恢复后 tabs 列出 1 个页且为 active',
+      list.tabs.length === 1 && list.activeTabId === 't3' && list.tabs[0].tab_id === 't3', JSON.stringify(list))
+    const snap = await snapshot(session)
+    check('恢复后可 snapshot', snap.tabId === 't3' && snap.text.includes('B Button'), `${snap.tabId} ${snap.text}`)
+  }
 } finally {
   await closeAll()
   server.close()
