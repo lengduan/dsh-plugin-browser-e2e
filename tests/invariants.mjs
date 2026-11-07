@@ -15,7 +15,7 @@ import {
   assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled, assertModeNotHotSwitched,
   assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated, assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
-import { nextSessionState, SESSION_STATES, activeSessionKeys, closeAll, launch, sessionOf } from '../lib/session.js'
+import { nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, launch, sessionOf, subscribePanelEvents } from '../lib/session.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_EVENTS, PANEL_PROTOCOL_VERSION,
   PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelEvent, isSupportedProtocol, panelTabId, parsePanelTabId,
@@ -296,6 +296,7 @@ await check('隔离模式 newPage 抛错：launch 失败、状态回 idle 并关
   const session = sessionOf('g-isolated-fail')
   assert.equal(session.state, 'idle')
   assert.equal(session.browser, null)
+  assert.equal(session.context, null)
   assert.equal(session.pages.size, 0)
   assert.equal(browser.closeCalls, 1)
 })
@@ -368,6 +369,84 @@ await check('复用路径 0 标签页（cdp）：抛可诊断错误而不是静�
     /CDP 浏览器已没有打开的标签页，请在浏览器里新建标签页，或先 browser_e2e_close 再重新 browser_e2e_start/,
   )
   assert.equal(session.state, 'ready')
+})
+await check('复用路径 0 标签页（isolated）补建失败：拒绝、收掉浏览器并摘除会话', async () => {
+  let failNewPage = false
+  const browser = fakeBrowser({
+    newPage: async () => {
+      if (failNewPage) throw new Error('补建页面失败（模拟）')
+      return fakePage()
+    },
+  })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-reuse-isolated-fail', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-reuse-isolated-fail')
+  session.pages.clear()
+  session.activeTabId = null
+  failNewPage = true
+  await assert.rejects(
+    () => launch('g-reuse-isolated-fail'),
+    /补建页面失败（模拟）/,
+  )
+  assert.equal(browser.closeCalls, 1, '补建失败必须收掉浏览器')
+  assert.equal(session.state, 'closed')
+  assert.ok(!activeSessionKeys().includes('g-reuse-isolated-fail'), '会话注册表不应残留该 key')
+})
+await check('失败清理期间被 close：终态 closed，不被启动落定覆写为 idle', async () => {
+  let releaseClose = () => {}
+  const closeGate = new Promise((resolve) => {
+    releaseClose = resolve
+  })
+  const browser = fakeBrowser({
+    newPage: async () => {
+      throw new Error('newPage 失败（模拟）')
+    },
+    close: async () => {
+      browser.closeCalls += 1
+      await closeGate
+    },
+  })
+  const chromium = fakeChromium({ launch: () => browser })
+  const launchPromise = launch('g-fail-close-race', {}, undefined, {}, { chromium }).catch((error) => error)
+  const session = sessionOf('g-fail-close-race')
+  // 等 launch 进入失败清理、close 被调用且还没 resolve。
+  for (let i = 0; i < 400 && browser.closeCalls === 0; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  assert.equal(browser.closeCalls, 1, 'launch 应已进入失败清理')
+  const closePromise = close('g-fail-close-race')
+  assert.equal(session.state, 'closing')
+  releaseClose()
+  const error = await launchPromise
+  assert.match(String(error && error.message), /newPage 失败（模拟）/)
+  await closePromise
+  assert.equal(session.state, 'closed')
+})
+await check('已广播 opened 后启动失败：补广播同 key 的 closed 事件', async () => {
+  const events = []
+  const unsubscribe = subscribePanelEvents((event) => events.push(event))
+  try {
+    const browser = fakeBrowser({
+      contexts: () => [fakeContext([fakePage()])],
+      version: () => {
+        throw new Error('version 失败（模拟）')
+      },
+    })
+    const chromium = fakeChromium({ connectOverCDP: () => browser })
+    await assert.rejects(
+      () => launch('g-opened-failed', { mode: 'cdp' }, undefined, {}, { chromium }),
+      /version 失败（模拟）/,
+    )
+    assert.deepEqual(
+      events
+        .filter((event) => event.key === 'g-opened-failed' && (event.type === 'opened' || event.type === 'closed'))
+        .map((event) => event.type),
+      ['opened', 'closed'],
+    )
+    assert.equal(sessionOf('g-opened-failed').state, 'idle')
+  } finally {
+    unsubscribe()
+  }
 })
 
 // 清空会话注册表，避免假会话影响后续用例与进程退出。
