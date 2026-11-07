@@ -183,6 +183,19 @@ try {
     const snap = await snapshot(session)
     check('恢复后可 snapshot', snap.tabId === 't3' && snap.text.includes('B Button'), `${snap.tabId} ${snap.text}`)
   }
+  console.log('== 用例 8：并发 closeTab 不会把会话关到 0 页 ==')
+  {
+    await navigate(session, `${base}/a`, 'load', { new_tab: true })
+    check('用例 8 前置：当前 2 个页', session.pages.size === 2, JSON.stringify([...session.pages.keys()]))
+    const [firstKey, secondKey] = [...session.pages.keys()]
+    const results = await Promise.allSettled([closeTab(KEY, firstKey), closeTab(KEY, secondKey)])
+    check('并发关两页恰好一成一败',
+      results.filter((item) => item.status === 'fulfilled').length === 1
+        && results.filter((item) => item.status === 'rejected').length === 1,
+      JSON.stringify(results.map((item) => item.status)))
+    check('并发关两页后仍有 1 页且 active 不为空',
+      session.pages.size === 1 && session.activeTabId !== null, `${session.pages.size} / ${session.activeTabId}`)
+  }
 } finally {
   await closeAll()
   server.close()

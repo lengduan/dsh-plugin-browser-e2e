@@ -413,6 +413,8 @@ try {
     await evaluate(session, "document.getElementById('btn').remove()")
     const message = await expectThrow(() => click(session, { ref }))
     check('失效 ref 报「已失效，请重新 snapshot」', Boolean(message) && message.includes('已失效'), String(message))
+    const fillMessage = await expectThrow(() => fill(session, { ref }, 'x'))
+    check('失效 ref 的 fill 同样报「已失效」而不是点空', Boolean(fillMessage) && fillMessage.includes('已失效'), String(fillMessage))
   }
 
   console.log('== 用例 7：截图增强（clip / jpeg / 校验链）==')
@@ -433,7 +435,8 @@ try {
       const expectedHeight = 50 * factor
       check(`scale ${factor} 输出 ${expectedWidth}x${expectedHeight}`, scaledSize.width === expectedWidth
         && scaledSize.height === expectedHeight && scaled.meta.width === expectedWidth
-        && scaled.meta.height === expectedHeight, `${JSON.stringify(scaledSize)} meta=${JSON.stringify(scaled.meta)}`)
+        && scaled.meta.height === expectedHeight && scaled.meta.scale === factor,
+      `${JSON.stringify(scaledSize)} meta=${JSON.stringify(scaled.meta)}`)
     }
     const badScale = await expectThrow(() => screenshot(session, currentTab(session), { scale: 4 }))
     check('非法 scale 数字报错', Boolean(badScale) && badScale.includes('scale'), String(badScale))
@@ -482,6 +485,7 @@ try {
     const scaleOneShot = await screenshot(session, currentTab(session), { name: 'scroll-scale-1', clip: scrolledClip, scale: 1 })
     const cssPixel = decodePng(cssShot.file).pixel(50, 50)
     const scaleOnePixel = decodePng(scaleOneShot.file).pixel(50, 50)
+    check('meta.scale 原样回传 css 形态', cssShot.meta.scale === 'css', JSON.stringify(cssShot.meta.scale))
     check('滚动后 clip 取到视口内容（蓝色，不是白图）', cssPixel.b > 200 && cssPixel.r < 80, JSON.stringify(cssPixel))
     check('滚动后 scale:1 与 scale:"css" 像素一致', JSON.stringify(cssPixel) === JSON.stringify(scaleOnePixel),
       `css=${JSON.stringify(cssPixel)} scale1=${JSON.stringify(scaleOnePixel)}`)
@@ -517,6 +521,9 @@ try {
 
     const bothMessage = await expectThrow(() => waitFor(session, { selector: '#late', expression: 'true' }))
     check('selector 与 expression 同时给时报错', Boolean(bothMessage) && bothMessage.includes('二选一'), String(bothMessage))
+    const invalidSelector = await expectThrow(() => waitFor(session, { selector: 'foo(', timeoutMs: 500 }))
+    check('非法 selector 抛解析错误而不是「超时」文案',
+      Boolean(invalidSelector) && !invalidSelector.includes('超时'), String(invalidSelector))
   }
 
   console.log('== 用例 9：snapshot 全 DOM 的 4000 条截断 ==')

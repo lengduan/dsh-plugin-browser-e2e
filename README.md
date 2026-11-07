@@ -129,6 +129,7 @@ DeepSeek Harness（DSH）浏览器端到端验证插件：提供浏览器操控�
 - `format` 只接受 png / jpeg；`quality` 只对 jpeg 有效，必须是 1-100 整数；`clip` 与 `fullPage` 互斥，`clip` 四值必须是整数、非负、宽高 >= 1，且不能越出视口；输出单边不超过 8192、总像素不超过 4194304，按基准尺寸乘倍率后校验。
 - `scale` 三种形态：`css` / `device` 透传 Playwright 的 `page.screenshot`；整数 `1` / `2` / `3` 是倍率，改走 CDP `Page.captureScreenshot` 的 `clip.scale`。
 - `fullPage` + 数值倍率：显式给出 `{x: 0, y: 0, width: 整页宽, height: 整页高, scale: 倍率}` 的 clip，并置 `captureBeyondViewport: true`；不整页的数值倍率用 `captureBeyondViewport: false`，有 clip 按 clip 截、无 clip 只截视口。
+- 截图的 `meta.scale` 原样回传请求的形态：`css` / `device` 为字符串，数值倍率为该整数（`1` / `2` / `3`）；未传 `scale` 时 meta 里没有该字段。输出 schema 的 `scale` 因此声明为 string / integer 二选一。
 - 整页宽高取 `document.documentElement.scrollWidth/scrollHeight` 与 `document.body` 的较大值；CDP 接管模式没有固定视口，非整页截图按 `window.innerWidth/innerHeight` 兜底。
 - `name` 是文件名前缀，只允许字母、数字、`.`、`_`、`-`，不能含 `..` 或路径分隔符（`/`、`\`、`:`），否则在截图前就报错；落盘时会追加「时间戳 + 自增序号」的唯一后缀，所以实际文件名形如 `<name>-<后缀>.png`，同一名字连续截图不会互相覆盖。缺省用 `shot-<时间戳>`。
 

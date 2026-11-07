@@ -284,6 +284,7 @@ console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 
 function fakePage(overrides = {}) {
   return {
     on() {},
+    close: async () => {},
     evaluate: async () => 'complete',
     url: () => 'about:blank',
     title: async () => '',
@@ -507,6 +508,37 @@ await check('closeTab 关最后一个页：抛结构化 last-tab 错误且页仍
   assert.equal(error?.code, 'last-tab')
   assert.match(String(error.message), /最后一个标签页/)
   assert.equal(sessionOf('g-close-last').pages.size, 1)
+})
+
+await check('并发 closeTab 两页：恰好一成一败，会话仍保留 1 页', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-close-race-two', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-close-race-two')
+  session.pages.set('t2', {
+    id: 't2',
+    page: fakePage(),
+    refs: new Map(),
+    consoleRing: [],
+    networkRing: [],
+    networkByRequest: new Map(),
+    loading: false,
+    origin: 'created',
+  })
+  const results = await Promise.allSettled([closeTab('g-close-race-two', 't1'), closeTab('g-close-race-two', 't2')])
+  assert.equal(results.filter((item) => item.status === 'fulfilled').length, 1)
+  assert.equal(results.filter((item) => item.status === 'rejected').length, 1)
+  assert.equal(session.pages.size, 1)
+  assert.ok(session.activeTabId !== null)
+})
+await check('只剩一页时并发 closeTab 同一页：至少一个 rejected，页仍保留', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-close-race-one', {}, undefined, {}, { chromium })
+  const session = sessionOf('g-close-race-one')
+  const results = await Promise.allSettled([closeTab('g-close-race-one', 't1'), closeTab('g-close-race-one', 't1')])
+  assert.ok(results.some((item) => item.status === 'rejected'))
+  assert.equal(session.pages.size, 1)
 })
 
 // 清空会话注册表，避免假会话影响后续用例与进程退出。
