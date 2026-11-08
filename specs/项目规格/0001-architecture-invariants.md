@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/snapshot.js / lib/observation.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/errors.js / lib/hash.js / lib/viewport.js / lib/auth.js / lib/history.js / lib/gate.js / lib/frame.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/snapshot.js / lib/observation.js / lib/read.js / lib/recipe.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/errors.js / lib/hash.js / lib/viewport.js / lib/auth.js / lib/auth-state.js / lib/carrier.js / lib/doctor.js / lib/human.js / lib/history.js / lib/gate.js / lib/frame.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -23,8 +23,11 @@
 ```
 接口层   tools.js（工具表）              protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  auth.js  human.js  screencast.js  carrier.js  auth-state.js
-公共     invariants.js（不变量断言）       fence.js（安全围栏）
+实现层   session.js  page.js  snapshot.js  observation.js  read.js  recipe.js  capture.js  download.js
+         fetch.js  raw.js  auth.js  auth-state.js  carrier.js  doctor.js  human.js  history.js
+         gate.js  frame.js  screencast.js
+公共     invariants.js（不变量断言）       fence.js（安全围栏）      defaults.js（全局默认值）
+         errors.js（超时判定）  hash.js（SHA-256）  viewport.js（视口基准尺寸）
 ```
 
 | 文件 | 职责 | 明确不含 |
@@ -307,7 +310,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
 | `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |
 | `assertSessionContext(session)` | isolated 且 `state=ready` 的会话持有显式 context（方案 A 的每会话一个 context） | 隔离模式浏览器上下文缺失，请重新 browser_e2e_close 再 browser_e2e_start |
-| `assertRefBelongsToTab(tab, ref)` | ref 在该 tab 的 ref 表 | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |
+| `assertRefBelongsToTab(refs, ref)` | ref 在该 tab 的 ref 表（首参是该标签页条目的 `refs` Map，不是标签页条目） | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |
 | `assertRefRevalidated(ref, check)` | 元素仍命中且宽高 > 0 | ref {ref} 已失效…（两条原文案） |
 | `assertSingleScreencast(activeCdp)` | `activeCdp` 为 null/undefined（当前没有持有 CDP 会话） | 同一时刻只能有一个投屏会话（违反后果：画面串台） |
 
@@ -434,9 +437,9 @@ closed：终态，任何事件非法
 
 | 项 | 现状 | 未处置理由 |
 |---|---|---|
-| `page.js` 粒度过大 | 一期已处置（M2）：`snapshot.js` / `observation.js` 已拆出。拆分前后实测（HEAD `41957e9` → 本次）：`page.js` 4158 行 / 87 导出 → **2787 行 / 73 导出**；`snapshot.js` **880 行 / 4 导出**、`observation.js` **515 行 / 13 导出**。迁出的是快照引擎（含 delta / query / frame 与基线比较）与观察 / 网络正文（含 `SENSITIVE_HEADERS` / `decodeText`，B-A3 / B-A4 的归属随之落定）；`page.js` 保留标签页注册表与生命周期、`attachPageHooks` 的事件环写入、`snapshotBaselines` 失效、`navigate` / `followTab`、交互动作、等待、断言、剪贴板、`evaluate`、展示格式化。 | 二期待办：`interaction` / `wait` / `assert` / `clipboard` / `evaluate` 仍在 `page.js`（约 1900 行、5 类变化原因），拆它们要再改一次模块表与依赖图，按 0003 的决策节奏另立批次；本表一期的拆法不覆盖这几块。 |
+| `page.js` 粒度过大 | 一期已处置（M2）：`snapshot.js` / `observation.js` 已拆出。M2 施工前后实测（HEAD `41957e9` → M2 完成时）：`page.js` 4158 行 / 87 导出 → 2787 行 / 73 导出；`snapshot.js` 880 行 / 4 导出、`observation.js` 515 行 / 13 导出。**2026-11-08 在 HEAD `6057bd6` 复测（行数按 `(Get-Content).Count`、导出按 `^export` 计数）：`page.js` 2867 行 / 73 导出、`snapshot.js` 823 行 / 4 导出、`observation.js` 509 行 / 13 导出**。迁出的是快照引擎（含 delta / query / frame 与基线比较）与观察 / 网络正文（含 `SENSITIVE_HEADERS` / `decodeText`，B-A3 / B-A4 的归属随之落定）；`page.js` 保留标签页注册表与生命周期、`attachPageHooks` 的事件环写入、`snapshotBaselines` 失效、`navigate` / `followTab`、交互动作、等待、断言、剪贴板、`evaluate`、展示格式化。 | 二期待办：`interaction` / `wait` / `assert` / `clipboard` / `evaluate` 仍在 `page.js`（约 1900 行、5 类变化原因），拆它们要再改一次模块表与依赖图，按 0003 的决策节奏另立批次；本表一期的拆法不覆盖这几块。 |
 | 视口度量三份 | **已处置（M3）**：收敛到 `lib/viewport.js` 的单一 `viewportBounds`。实测（HEAD `ef93636` 工作区，M3 施工后）：定义 1 处（`lib/viewport.js`）；消费方 `lib/page.js` 1 处调用（`assertPointInViewport`）、`lib/capture.js` 2 处调用（clip 边界校验与 `shotBaseSize`）。`shotBaseSize` 的第三份内联改为调用同一函数，正常路径与原实现逐字等价；唯一差异是页内取值异常时该函数返回 `null`（原内联写法透传页面错误），只发生在页面已关闭 / 崩溃、截图本来也无法完成的路径。 | 已处置；保留行以便追溯。 |
-| `session.js` 粒度过大 | 约 680 行、16 个导出，混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
+| `session.js` 粒度过大 | 2026-11-08 实测 844 行、21 个导出（原记「约 680 行、16 个导出」为更早基线），混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
 | 会话解析入口不统一 | 10 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/tabs 的 follow/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs` 的 list / close 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
