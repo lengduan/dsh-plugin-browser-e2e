@@ -1,10 +1,10 @@
 # 原始 CDP / HTTP 逃生口
 
-状态: 已实现（仅 B1；cdp/server 待决策）
+状态: 已实现（仅 B1）；A（原始 CDP 与 `mode=server`）与 C（CDP 白名单子集）已否决（2026-11-08）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖方向、进程内对象契约、不变量清单、`invariants.js` 边界、验收命令）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位与投屏链路，本项不改协议）；specs/项目规格/0003-未处理项.md（本项待决策、P1-14 门控）；specs/功能规格/0008-cdp-attach.md（CDP 接管与「close 只断连」承诺）；specs/功能规格/0005-console-network-ring.md（事件环重置口径）；specs/功能规格/0019-evaluate-timeout.md（脚本超时与中断）；specs/功能规格/0015-network-response-body.md（请求详情与敏感头脱敏口径）；specs/功能规格/0016-download-integrity.md（既有浏览器上下文网络出口）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 字段与脏值口径）；specs/功能规格/0023-tool-permission-gating.md（工具定性 `access` 与门控判定矩阵）
 代码: 候选 B1 已落地：新增 `lib/raw.js`（`rawHttp`）、`lib/tools.js` 注册 `browser_e2e_http`、`lib/page.js` 导出复用符号，同步 `README.md`、`docs/architecture.html`、`package.json` 与 `specs/项目规格/0001-architecture-invariants.md`；原始 CDP（`rawCdp`）与 `mode=server` 未实现。不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
-本项原按任务书硬约束 1 判「**影响大 → 待决策**」；Lead 采纳候选 B1（只做 `browser_e2e_http` 的 `mode=context`）作为可独立施工的切片——它不动既有承诺、不改配置与门控，因此状态先改为「已确认」并只施工该切片；B1 验收通过后状态改为「已实现（仅 B1；cdp/server 待决策）」。下文「候选 A 的目标契约」仍是决策通过后的草案，原始 CDP 与 `mode=server` 仍待决策。判定依据见 `.scratch/browser-plugin-survey/plans/27-raw-cdp-http.md` §1 与 §6.4。
+本项原按任务书硬约束 1 判「**影响大 → 待决策**」；Lead 采纳候选 B1（只做 `browser_e2e_http` 的 `mode=context`）作为可独立施工的切片——它不动既有承诺、不改配置与门控，因此只施工该切片，B1 已落地。2026-11-08 进一步决策：候选 A（原始 CDP 与 `mode=server`）与候选 C（CDP 白名单子集）**均否决**（理由见「边界」的否决条）。下文「候选 A 的目标契约」仅作历史记录，不得据此实施。判定依据见 `.scratch/browser-plugin-survey/plans/27-raw-cdp-http.md` §1 与 §6.4。
 
 工具数量基线：取证时 HEAD `94cddf3` 的 `lib/tools.js` 的 `buildToolTable()` 是 22 个工具；本项不写死数量，实施与验收按 `buildToolTable()` 实际条数派生。
 
@@ -147,7 +147,8 @@ Playwright 的抽象覆盖不到一些验证点：`Performance.getMetrics` 的�
 - **干扰面板投屏**：`Page.stopScreencast` 会停掉同一 target 上的投屏（`lib/screencast.js` 的 `_start` 不感知外部 stop），面板画面停止更新，直到下一次 `configure` / `select-tab` 重开；`Page.startScreencast` 的帧不会进入面板。`0002` 的「面板只读」不禁止工具改浏览器状态，但这条联动必须在 README 写清。
 - **浏览器级 CDP 的范围**：候选 A 的 `target=browser` 只发 browser 域命令（`Browser.*`、`Target.getTargets`、`SystemInfo.*`、`Performance.*`），**不转发** `Target.attachToTarget` 的子会话消息（Playwright `CDPSession` 对扁平子会话的事件转发未验证，且它会绕开本会话的 `session.pages`）；需要操作其他 target 用 `target=page` + `tab_id`。
 - **HTTP 语义差异**：`mode=context` 不受 CORS 限制（不是页面内 `fetch`），共享 Cookie 与 `browser_e2e_start` 的 `proxy`；`mode=server` 走宿主 `fetch`，不带 Cookie、不走代理、可访问 loopback / 内网（含本机 DSH GUI 与云元数据端点）——与 `fence.js` 无关，`fence.js` 只保护面板路由。竞品 `ego_http` 的 `browser` 模式是页内 fetch（受 CORS），本项不采用那个语义。
-- **不做**：CDP 事件订阅（`Runtime.consoleAPICalled` 等，用 `browser_e2e_console`）；`Target.attachToTarget` / OOPIF 子会话转发；CDP 方法白名单之外的参数结构校验（CDP 自己报错）；HTTP 上传流式 body / multipart / 文件上传（用 `browser_e2e_upload`）；HTTP 落盘（用 `browser_e2e_download`）；浏览器上下文 cookie 的读写（P1-12 待决策）；`CONNECT` / `TRACE` / 任意扩展方法；WebSocket 帧级操作。
+- **不做**：CDP 事件订阅（`Runtime.consoleAPICalled` 等，用 `browser_e2e_console`）；`Target.attachToTarget` / OOPIF 子会话转发；CDP 方法白名单之外的参数结构校验（CDP 自己报错）；HTTP 上传流式 body / multipart / 文件上传（用 `browser_e2e_upload`）；HTTP 落盘（用 `browser_e2e_download`）；浏览器上下文 cookie 的读写（P1-12 已确认、待实现）；`CONNECT` / `TRACE` / 任意扩展方法；WebSocket 帧级操作。
+- **原始 CDP 逃生口与 `mode=server` 已否决（2026-11-08）**：A（任意 CDP 方法）会绕过既有不变量——`Page.close` 绕过 `assertCanCloseLastTab`、`Page.navigate` 绕过 `clearRings` / `refs.clear`、`Runtime.evaluate` 绕过 evaluate 的 `timeoutMs` 与 `terminateExecution`、`Page.stopScreencast` 停掉投屏、`Browser.close` 与 `0008`「CDP 模式不会关闭你的浏览器」的承诺冲突；门控现有的 `observe` / `interact` / `script` 三类装不下，需新增第 4 类 `escape`；`mode=server` 是宿主直连外发（不带 Cookie、不走代理、可打内网）。C（白名单子集）仍是通用命令通道，形态不对——将来需要暗色模式 / 网络节流 / 性能指标时，应做成具体的命名工具（如 `browser_e2e_emulate` / `browser_e2e_metrics`，走 Playwright `CDPSession` 在插件内部实现），而不是开旁路。
 - **明确不改变**：`lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`；协议版本与命令 / 事件 / 错误码表；`browser_e2e_close` 的语义；会话状态机与回收口径。
 
 ## 验收
