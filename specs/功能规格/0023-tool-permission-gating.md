@@ -1,10 +1,10 @@
 # 工具级权限门控
 
-状态: 待决策
+状态: 已确认（采纳方案 A；实施待排期）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、依赖方向、工具表单一来源、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表本项不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0006-plugin-config-and-live-apply.md（插件配置字段与即时生效口径）；specs/功能规格/0002-browser-launch-and-reuse.md（`start` / `close` 生命周期工具）；specs/功能规格/0004-snapshot-and-ref-table.md、0005-console-network-ring.md（纯观察能力的既有口径）；specs/功能规格/0008-cdp-attach.md（CDP 接管用户浏览器，方案 C 的冲突点）
-代码: 当前无代码改动（本项判为待决策）。推荐方案 A 落地时预计涉及 `lib/gate.js`（新建）/ `lib/index.js` / `lib/tools.js` / `tests/gate.mjs`（新建）/ `README.md`；不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
+代码: 当前无代码改动（本项已确认、实施待排期）。方案 A 落地时预计涉及 `lib/gate.js`（新建）/ `lib/index.js` / `lib/tools.js` / `tests/gate.mjs`（新建）/ `README.md`；不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
-本项按任务书硬约束 1 判「**影响大 → 待决策**」，因此状态不写「已确认」：下文「推荐方案 A 的目标契约」是决策通过后的草案，当前代码未实现。判定依据见 `.scratch/browser-plugin-survey/plans/15-tool-permission-gating.md` §1 与 §6.1。
+本项原判定为「**影响大 → 待决策**」，已于 2026-11-08 决策采纳方案 A；下文「方案 A 的目标契约」是实现契约，当前代码未实现。判定依据见 `.scratch/browser-plugin-survey/plans/15-tool-permission-gating.md` §1 与 §6.1。
 
 工具数量基线：取证时 HEAD `19e94f3` 的工具表是 19 个工具；取证期间工作树里另一席已往 `lib/tools.js` 加 `browser_e2e_download`（P1-7，未提交），因此下文出现的「19」是读取时点的快照数字，**实施与验收一律按 `buildToolTable()` 的实际条数派生，不写死数量**。
 
@@ -16,6 +16,11 @@
 
 目标是让部署方能按插件设置把工具收窄成「只读验证」或关掉页面脚本执行，误操作挡在工具层；默认不改变现有行为。竞品三种形态：wqty123 的模型可调白名单 + 操作者级动作开关（两层）、anweat 的 `automationMode` 四档 + 动作 `readOnly` 定性、omdsh 的高权限工具组条件注册 + 逐次审批。本项取「操作者持有、默认不改行为、可即时生效」的那一层（wqty123 设置开关 + anweat `readOnly` 定性），见计划 §2。
 
+## 决策记录
+
+- 2026-11-08：采纳**方案 A**（`accessMode` 两档 `full` / `readonly` + `allowScript` + 工具表 `access` 定性 + `execute` 早拒）；默认 `accessMode=full` / `allowScript=true`，默认不改变现有行为；`readonly` 下 `navigate` 按 `observe` 放行（否则只读模式无法开页）；**不做**注册期裁剪（候选 B），模型仍看得见全部工具，靠拒绝文案引导。B / C / D / E 均不采纳。
+- 状态为「已确认、实施待排期」：下文「方案 A 的目标契约」是实现契约，当前代码未实现；验收第 1、2 组仍是现在可跑的基线与缺口判定。
+
 ## 行为
 
 ### 当前行为（缺口与既有边界）
@@ -26,7 +31,7 @@
 - 面板：`lib/protocol.js` 的命令表只有 `attach` / `select-tab` / `close-tab` / `request-frame` / `configure`，`state` 不含工具清单；面板不发起工具调用。因此「工具级门控」在面板侧没有对应入口，也不需要动协议。
 - 宿主钩子：本仓全部源码与规格里没有 `tools/pre-execute`（或任何工具前置钩子）的使用，`ctx.on` 只有 `loader/volatile-update` 与 `session/disposed`；「人工二次确认」所需宿主能力在本仓**未验证**。
 
-### 推荐方案 A 的目标契约（决策通过后）
+### 方案 A 的目标契约（已确认、实施待排期）
 
 一句话：新增两个插件配置项；给工具表里的每个工具各加一个 `access` 定性（工具表仍是唯一声明处）；在 `lib/index.js` 的 `execute` **最开头**按配置拒绝，默认配置下行为逐字不变。
 

@@ -24,6 +24,7 @@
 - 配置默认值不会让已启动会话报 mode 不一致：`browser_e2e_start` 把默认值作为 `launch` 的第四参（`defaults`），不并进 `args`；已启动时的一致性校验只看显式传参（见 `0002-browser-launch-and-reuse.md`）。
 - `configure` 只改宿主进程内 `PanelHub` 的 `config` 字段，不写回 profile；插件重载后回到插件 `Config` 的值。
 - 脏值逐字段回退：单字段非法（越界、非整数、`null`、字符串如 `wide`）只丢该字段，同批合法字段仍然生效，不会整份配置失败；配置本身不是对象时 `configValue` 与 `screencastConfigOf` 都按「没配」处理。
+- 门控两项（P1-14 已确认、实施待排期）与本文件的脏值口径**相反**：`accessMode` / `allowScript` 采用「字段缺失取默认（`full` / `true`）、字段存在但不合法取更严一端（`readonly` / `false`）」，并由 `apply` 输出一次 warn。原因是安全向配置「读不懂」不得解析为「允许」。届时 Config 字段从六项变八项，本条与第 13 行的「六个字段」一并更新；本文件其余五项字段的回退口径不变。详见 `specs/功能规格/0023-tool-permission-gating.md`。
 - 投屏四项在 Config schema 里不设默认值：默认值与区间只由 `lib/protocol.js` 的 `DEFAULT_SCREENCAST_CONFIG` / `PANEL_CONFIG_LIMITS` 决定，避免宿主与 client 各写一份默认值。
 - 设置没有变化时 `applyConfig` 直接返回，一次保存不会无谓地重开投屏。
 - `Config` 为 `undefined`（schema 不可用）时：`launchDefaultsOf(undefined)` 返回 `{}`（`launch` 用内置缺省），`screencastConfigOf(undefined)` 给出四个 `undefined`，`initialConfigOf` 全部回退 `DEFAULT_SCREENCAST_CONFIG`。
