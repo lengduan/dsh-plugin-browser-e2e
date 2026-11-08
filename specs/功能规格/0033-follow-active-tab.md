@@ -6,22 +6,24 @@
 
 ## 需求
 
-用户在真实浏览器里切到另一个标签页后，不传 `tab_id` 的页面工具仍作用在会话内部的 active tab（`lib/page.js` 的 `currentTab` 只认显式 `tab_id`，否则取 `session.activeTabId`；`lib/tools.js` 的 `TAB_ID_PARAM` 描述为「缺省用当前 active tab」）。agent 想「跟随用户正看着的页」只能先 `browser_e2e_tabs` 再逐个工具传 `tab_id`。本规格固定一个新工具 `browser_e2e_follow_tab`：把后续页面工具的默认目标绑定到某个标签页；不给 `tab_id` 时自动判定用户当前正在看的标签页，`activate: true` 时把该页带到前台。只做一次显式绑定，不做静默自动跟随（理由见「边界」）。
+用户在真实浏览器里切到另一个标签页后，不传 `tab_id` 的页面工具仍作用在会话内部的 active tab（`lib/page.js` 的 `currentTab` 只认显式 `tab_id`，否则取 `session.activeTabId`；`lib/tools.js` 的 `TAB_ID_PARAM` 描述为「缺省用当前 active tab」）。agent 想「跟随用户正看着的页」只能先 `browser_e2e_tabs` 再逐个工具传 `tab_id`。本规格固定 `browser_e2e_tabs` 的 `action=follow`：把后续页面工具的默认目标绑定到某个标签页；不给 `tab_id` 时自动判定用户当前正在看的标签页，`activate: true` 时把该页带到前台。只做一次显式绑定，不做静默自动跟随（理由见「边界」）。原独立工具 `browser_e2e_follow_tab` 已在 2026-11-08 的工具面合并中并入 `browser_e2e_tabs`（决策与理由见 `specs/项目规格/0003-未处理项.md` #12），行为不变。
 
 ## 行为
 
 ### 工具与参数
 
-- 工具名 `browser_e2e_follow_tab`，定义在 `lib/tools.js` 的 `buildToolTable`，位置在 `browser_e2e_close_tab` 与 `browser_e2e_snapshot` 之间；能力实现在 `lib/page.js` 的导出 `followTab(session, options)`。
-- 根 schema 由 `params({...})` 生成：`required: []`、`additionalProperties: false`，两个参数都可省略。
+- 工具名 `browser_e2e_tabs`（`action=follow`），定义在 `lib/tools.js` 的 `buildToolTable`，位于 `browser_e2e_navigate` 与 `browser_e2e_snapshot` 之间；同一工具的 `action=list` / `action=close` 分别是列出标签页与关闭标签页；能力实现在 `lib/page.js` 的导出 `followTab(session, options)`（`action=follow` 分支调用）。
+- 根 schema 由 `params({...})` 生成：`required: []`、`additionalProperties: false`，三个参数都可省略；`action` 缺省为 `list`，所以 `action=follow` 必须显式传。
 
 | 参数 | 类型 | 缺省 | 语义 |
 |---|---|---|---|
+| `action` | string | `list` | `follow` 走本规格；`list` / `close` 见 README「多标签页」 |
 | `tab_id` | string | 未给（含空串） | 要绑定的标签页 id（`browser_e2e_tabs` 得到，形如 `t2`）。给了就跳过自动判定 |
 | `activate` | boolean | `false` | 绑定后把该页带到前台（`page.bringToFront()`）；只认 `=== true` |
 
+- `action` 不是 `list` / `close` / `follow` 时报 `action 只支持 list / close / follow，收到 "<值>"；不传 action 等于 list`；`action=follow` 传 `activate` 之外的组合没有额外互斥。
 - `tab_id` 不是字符串（number / boolean / object / null）报 `tab_id 必须是字符串（browser_e2e_tabs 得到的 t1、t2…）；不传表示自动判定用户当前标签页`。空串按未给处理，与 `currentTab` 的空串口径一致。
-- 两个参数不互斥，都不是必填；没有额外的互斥组合。
+- `action=follow` 的两个参数不互斥，都不是必填；没有额外的互斥组合。
 
 ### 目标解析
 
@@ -33,8 +35,8 @@
      1. 恰好一个候选 `focus === true` → 该页，来源 `focused`；
      2. 否则恰好一个候选 `visibility === 'visible'` → 该页，来源 `visible`；
      3. 否则 `session.activeTabId` 仍落在可探测候选里 → 保持当前页，来源 `current`，`ambiguous: true`（0 个可见或多于 1 个可见都走这条，不猜别的页）。
-   - 候选为空（所有页探测失败）报 `无法判定用户当前标签页：所有标签页都未能返回可见性（{首个失败原因}）；请先 browser_e2e_tabs，再带 tab_id 调用 browser_e2e_follow_tab`。
-   - 候选非空但既不唯一、当前页又不在候选里，报 `无法判定用户当前标签页：{N} 个标签页同时可见或都不可见，当前默认标签页也不在可探测结果里；请先 browser_e2e_tabs，再带 tab_id 调用 browser_e2e_follow_tab`。
+   - 候选为空（所有页探测失败）报 `无法判定用户当前标签页：所有标签页都未能返回可见性（{首个失败原因}）；请先 browser_e2e_tabs 获取标签页，再用 action=follow 带 tab_id 显式指定`。
+   - 候选非空但既不唯一、当前页又不在候选里，报 `无法判定用户当前标签页：{N} 个标签页同时可见或都不可见，当前默认标签页也不在可探测结果里；请先 browser_e2e_tabs 获取标签页，再用 action=follow 带 tab_id 显式指定`。
    - 候选按 `session.pages` 的登记顺序排列；返回与文本最多列 `FOLLOW_PROBE_DISPLAY_LIMIT`（10）条，其余以计数呈现。
 4. `activate: true` 只在「显式 `tab_id`」或「判定来源为 `focused` / `visible`」时执行 `page.bringToFront()`：成功记 `activated: true`；抛错报 `标签页 {id} 带到前台失败：{原始 message}；默认标签页未改变`，且不写 `activeTabId`。来源为 `current` 时即使传了 `activate` 也不切前台，返回 `activated: false`（避免在没判定准的情况下抢用户焦点）。
 5. 写 `session.activeTabId = tab.id`。ref 表、控制台 / 网络环形缓冲、快照基线、对话框记录都按页隔离，跟随不清理、不重建；旧页的 ref 仍然有效（与竞品「跟随后重排页面编号」的等价效果由按页隔离的架构保证）。
@@ -60,7 +62,7 @@
 - 不改变 active tab 的定义：仍然表示「不传 `tab_id` 时页面工具作用的页」，本工具只是新增一个写入方（与 `navigate` 带 `tab_id` 时写 `activeTabId` 同类）。
 - 不新增 `lib/invariants.js` 断言：未知 tab 用既有 `assertTabExists`，无页用既有 `assertBrowserRunning`；探测失败与页面被关是操作结果（P3 分类「运行时」），不是跨调用状态损坏；入参校验留在能力函数入口（「单次」）。
 - 不提供取消 / `AbortSignal` 参数：探测固定 2000ms 每页并行，整次调用约 2000ms 量级。
-- 并发：同一会话并发 follow 以最后落定者为准；follow 与 `browser_e2e_close_tab` 并发时，若目标在探测后被关，报 `标签页 {id} 在跟随过程中已关闭，请先 browser_e2e_tabs 确认最新标签页`，不把已摘除的 tab 写回 `activeTabId`。
+- 并发：同一会话并发 follow 以最后落定者为准；follow 与 `browser_e2e_tabs` 的 `action=close` 并发时，若目标在探测后被关，报 `标签页 {id} 在跟随过程中已关闭，请先 browser_e2e_tabs 确认最新标签页`，不把已摘除的 tab 写回 `activeTabId`。
 - 不选窗口、不做窗口级聚焦：`activate` 只对目标页调 `page.bringToFront()`，多窗口下哪个窗口在前台由浏览器决定。
 
 ## 验收
@@ -72,8 +74,8 @@
    - 用例 4（边界与并发）：`未知 tab_id 报「不存在」`、`tab_id 非字符串报错`、`未启动时报「浏览器尚未启动」`、`零页时报「浏览器尚未启动」`、`主线程卡死的页不阻塞判定（整次调用 5000ms 内返回）`、`并发 closeTab 与 follow 后 activeTabId 仍指向存在的页`。
    - 收尾：`msedge 主进程回落到运行前基线`。
 2. `node tests/cdp.mjs`：exit 0、无 FAIL。新增 `CDP 接管下显式 tab_id 绑定生效`、`CDP 接管下无参判定返回 adopted 页`、`CDP 绑定不改变浏览器进程与页面数`；找不到 Edge 时按现有 SKIP 口径以 0 退出。
-3. `node tests/panel.mjs`：exit 0、无 FAIL。`工具表共 33 个`（本项落地时由 28 更新为 29，P2-26/27/28 合入后现为 33）、`注册的工具与工具表逐项一致（顺序与名字）`、`作用于页面的工具都接受 tab_id`（名单加入 `follow_tab`）、`browser_e2e_follow_tab 的 tab_id 可选、activate 为布尔`。
-4. `node tests/tools.mjs`：exit 0、无 FAIL。`工具表共 33 个（含 read / dialog / follow_tab / fetch / http / history）`。
-5. `node tests/read.mjs`：exit 0、无 FAIL。`browser_e2e_read 注册且带 tab_id`（其中的工具总数断言同步为 29）。
+3. `node tests/panel.mjs`：exit 0、无 FAIL。`工具表共 30 个`、`注册的工具与工具表逐项一致（顺序与名字）`、`作用于页面的工具都接受 tab_id`（名单含 `tabs`）、`browser_e2e_tabs 的 action 枚举、tab_id 与 activate 可选`。
+4. `node tests/tools.mjs`：exit 0、无 FAIL。`工具表共 30 个（含 read / dialog / fetch / http / history）`。
+5. `node tests/read.mjs`：exit 0、无 FAIL。`browser_e2e_read 注册且带 tab_id`（其中的工具总数断言同步为 30）。
 6. `npm run test:unit` 与 `npm run test:integration`：exit 0、输出无 FAIL；`package.json` 的 `test:integration` 包含 `node tests/follow.mjs`。
 7. 客户端未变：`git status --porcelain lib/client.js lib/protocol.js lib/panel.js client/index.js` 输出为空。

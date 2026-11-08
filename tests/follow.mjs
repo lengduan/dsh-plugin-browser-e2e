@@ -1,5 +1,5 @@
 /**
- * P2-24 跟随当前标签页（browser_e2e_follow_tab）独立验收。
+ * P2-24 跟随当前标签页（browser_e2e_tabs 的 action=follow）独立验收。
  *
  * 按 specs/功能规格/0033-follow-active-tab.md「验收」覆盖：
  *   - 用例 1：假页面（不启浏览器）验证焦点 / 可见性判定与探测失败剔除；

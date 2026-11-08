@@ -111,7 +111,7 @@
 - **首个失败即停**，不重试、不跳过、不回滚；已产生的页面副作用（导航、填值、提交）保留。
 - **步骤失败不抛错**，由 `ok: false` 与 `failedStep` 表达；只有一级校验、浏览器未启动、`tab_id` 不存在、入口时页面已关闭才抛错。理由与 `0027` 相同：已执行前缀是事实，抛错会把结构化报告丢掉。
 - `ref` 只在「recipe 开始前最后一次 `browser_e2e_snapshot`」之后有效；含 `navigate` 步骤的 recipe 里，其后的 `ref` 步必然报 `ref @N 不存在`（`navigate` 清空 ref 表），此时只能用 `selector` / `x + y`。recipe 自己不产生 ref。
-- 一个 recipe 只作用于一个标签页：没有 `new_tab`、没有 `tab_id` 切换、没有 `close_tab` / `start` / `close` 步骤，也没有嵌套 recipe。
+- 一个 recipe 只作用于一个标签页：没有 `new_tab`、没有 `tab_id` 切换、没有关闭标签页（`browser_e2e_tabs` 的 `close`）/ `start` / `close` 步骤，也没有嵌套 recipe。
 - 预算只在**步骤之间**检查；正在执行的 Playwright 动作无法中断，单步可超出总预算，末步之后补一次检查并如实报 `budget_exceeded`。`wait` 步的实际超时取 `min(步 timeoutMs, 剩余预算)`，因此预算将尽时通常表现为该步等待超时（错误文案里的「上限」是被截断后的值）。
 - 空闲回收：`DSH_BROWSER_IDLE_MS` 小于单步最长耗时（如 `wait` 的 60000ms）时，浏览器可能在步骤执行期间被回收，随后调用报「浏览器尚未启动或没有可用标签页」——与 `0001` 已记录的 `browser_e2e_wait` 同类边界，规避方式相同。
 - `extract` 只读主文档：`document.querySelector` 不穿透 shadow DOM、不进入 iframe（iframe 待 P1-9）；`links` 模式只取 `a[href]` 的前 `limit` 条；`text` 取 `innerText`（渲染后可见文本），不做可读性清洗（`article-clean` / JSON-LD 不属本项，见 `0017`）。

@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：33 个 browser_e2e_* 工具用系统 Edge（或可选的系统 Chrome）驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：30 个 browser_e2e_* 工具用系统 Edge（或可选的系统 Chrome）驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 33 个 `browser_e2e_*` 工具，默认用本机系统 Edge（可显式选用本机 Google Chrome）完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 30 个 `browser_e2e_*` 工具，默认用本机系统 Edge（可显式选用本机 Google Chrome）完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -74,16 +74,14 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-33 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+30 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
 | `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸 |
 | `browser_e2e_auth_export` | 把当前 isolated 会话的登录态（cookie + localStorage）导出成 Playwright storageState JSON：`path` 必填且必须位于 `~/.dsh/browser-e2e/auth/` 下（`.json`），`domains` 可选按域名后缀过滤，`overwrite` 默认 false；返回路径 / 字节数 / 条目数与域名，不含任何 cookie 名或值；文件是明文凭据，勿提交仓库；CDP 模式拒绝导出 |
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
-| `browser_e2e_tabs` | 列出本会话标签页：`tab_id` / url / title / active / `loading` / `origin`（`created` 本会话新建 / `adopted` CDP 接管） |
-| `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭，结束整个浏览器用 `browser_e2e_close` |
-| `browser_e2e_follow_tab` | 绑定后续页面工具的默认标签页：`tab_id` 指定目标页（`browser_e2e_tabs` 得到），不给时自动判定用户当前正在看的页（窗口焦点页优先，其次唯一可见页，无法唯一判定时保持当前）；`activate: true` 把该页带到前台；绑定后不传 `tab_id` 的工具都默认作用到该页 |
+| `browser_e2e_tabs` | 标签页操作，`action` 三选一：`list`（缺省）列出本会话标签页（`tab_id` / url / title / active / `loading` / `origin`，`created` 本会话新建 / `adopted` CDP 接管）；`close` 关闭 `tab_id` 指定的标签页（最后一个不允许关，结束整个浏览器用 `browser_e2e_close`）；`follow` 把后续页面工具的默认标签页绑定到 `tab_id`，不给时自动判定用户当前正在看的页（窗口焦点页优先，其次唯一可见页，无法唯一判定时保持当前），`activate: true` 把该页带到前台，绑定后不传 `tab_id` 的工具都默认作用到该页 |
 | `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数。`delta: true` 只返回自上次快照以来的新增 / 变化 / 移除（与 `query` 互斥，默认 ref 继续有效）；`query`（`text` / `selector` / `role`，可加 `limit` 与 `includeHidden`）定位元素并返回可直接点击的 `selector`，不写快照基线；`frame` 读取指定同源 iframe（整数索引或 name / url 子串），子 frame 只读、不分配 ref |
 | `browser_e2e_read` | 结构化读取：按 `controls` / `links` / `tables` / `forms` 四节返回记录（控件带 `role` / `name` / `type` / `value` / `checked` / `options` / 所属表单，链接带绝对 `href`，表格带表头 / 行矩阵 / `totalRows`，表单带 `action` / `fieldCount`）；每条记录带页内校验过的 CSS `selector`，`unique: true` 时可直接传给 `click` / `fill`；`maxItems` 默认 50（1-100），`includeValues` 默认 false（`password` / `file` 永不返回值），`selector` 收窄范围；只读主文档，不写快照 ref |
 | `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一；`clickCount` 1-3（缺省 1，2 双击、3 三击），`button` 选 `left` / `right` / `middle`（缺省 `left`），`modifiers` 在点击期间额外按住 `Alt` / `Control` / `Meta` / `Shift`；`frame` 指定 iframe（0 主文档 / n≥1 索引 / name、url 字符串），只能与 `selector` 组合 |
@@ -100,8 +98,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_http` | 原始 HTTP（仅 `mode=context`）：用当前标签页所属浏览器上下文发任意 `method` / `headers` / `body`，不导航当前页、共享 Cookie、不受页面 CORS 限制（不是页面内 `fetch`）；返回状态码、响应头（敏感头脱敏）与正文（文本按 `max_chars` 截断，二进制只给字节数与 SHA-256），非 2xx 是结果不是错误（`ok=false`）；不落盘；方法限 GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS，`timeout_ms` 默认 30000（1000-120000） |
 | `browser_e2e_dialog` | 读取页面弹出的 alert / confirm / prompt 记录（类型、文案、prompt 默认值、实际应答），并按 `tab_id` 设置后续对话框的应答策略：`policy`（`dismiss` 默认 / `accept`，不传表示只读）、`prompt_text`（仅 accept 时可用，缺省用页面默认值）、`limit`（默认 20，最多 50）；对话框在打开时立即按策略应答并记录，策略必须在触发动作前设好 |
 | `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100）；`level` 只看不低于该严重级别的记录（`debug` < `log` < `info` < `warning` < `error`，`warn` 等同 `warning`），不可判级的记录类型（`table` / `assert` 等）始终保留 |
-| `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
-| `browser_e2e_network_detail` | 按 `request_id` 读取单条请求的详情：请求头、请求体、响应头、响应体（JSON 自动格式化）；`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头；二进制只回大小与 sha256，不返回 base64 |
+| `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure`。传 `request_id` 时改走详情模式：请求头、请求体、响应头、响应体（JSON 自动格式化），`max_chars`（1-65536，默认 65536）限制文本字符数，`timeout_ms`（100-30000，默认 5000）限制正文读取，`include_sensitive` 默认 false 隐藏敏感头，二进制只回大小与 sha256、不返回 base64；详情模式下不接受 `limit`，这三个详情参数只在传 `request_id` 时生效 |
 | `browser_e2e_wait` | 等待页面条件：`selector`（配合 `state`）、`expression`（页面内 JS 表达式，返回真值即满足）、`url`、`response` 四选一；`url` / `response` 用 `urlMatch`（includes / glob / regex）匹配 URL；response 还支持 `responseMethod` / `statusMin` / `statusMax` / `includeBuffered`（默认 true）/ `failOnRequestFailed`（默认 true）；`timeoutMs` 默认 10000，超时报实际等待并带诊断 |
 | `browser_e2e_captcha_check` | 非阻塞探测当前页有没有人机验证：结构选择器优先（reCAPTCHA / hCaptcha / Turnstile / Cloudflare 挑战 / 通用 captcha），未命中且 `textScan` 为 true 时读页面文本兜底；返回 `detected` / `kind` / `evidence`；loopback 主机名跳过文本检测；`detected:false` 只表示未检测到 |
 | `browser_e2e_wait_for_human` | 把页面交给用户完成人机验证并轮询等待：`reason`（自由文本，默认 confirm，保留前 200 字符）、`timeoutMs`（5000-300000，默认 60000）、`pollMs`（250-10000，默认 1500）、可选完成信号 `selector`、`textScan`；超时**不抛错**，返回 `resolved:false` 与 `hint`；结果带 `headless` 供判断用户能否看到窗口 |
@@ -123,7 +120,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 工具的定性写在 `lib/tools.js` 的每个定义上（`access` 字段），只有三类：
 
-- `observe`：不向页面派发输入、不跑调用方脚本——`start` / `auth_export` / `navigate` / `tabs` / `close_tab` / `follow_tab` / `snapshot` / `read` / `screenshot` / `fetch` / `console` / `network` / `network_detail` / `wait` / `captcha_check` / `assert` / `doctor` / `history` / `close`。
+- `observe`：不向页面派发输入、不跑调用方脚本——`start` / `auth_export` / `navigate` / `tabs`（含 `close` / `follow` 两个 action） / `snapshot` / `read` / `screenshot` / `fetch` / `console` / `network`（含详情模式） / `wait` / `captcha_check` / `assert` / `doctor` / `history` / `close`。
 - `interact`：派发鼠标 / 键盘 / 文件事件或触发页面事件处理器——`click` / `fill` / `hover` / `drag` / `upload` / `scroll` / `press` / `clipboard` / `download` / `dialog` / `wait_for_human` / `recipe` / `http`。
 - `script`：在页面上下文执行任意 JS——`evaluate`；`wait` 带 `expression` 条件时也按脚本处理。
 
@@ -180,14 +177,14 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 一个会话仍只起一个浏览器，但可以有多个标签页：
 
-- 每个页面分配稳定 `tab_id`（`t1`、`t2` …），`browser_e2e_tabs` 列出，`browser_e2e_close_tab` 关闭，最后一个不允许关。
+- 每个页面分配稳定 `tab_id`（`t1`、`t2` …），`browser_e2e_tabs`（`action: "list"`，缺省）列出，`action: "close"` 关闭（最后一个不允许关）。
 - `browser_e2e_navigate` 传 `new_tab: true` 新建页面并设为 active；传 `tab_id` 指定目标页。
 - ref 表、控制台与网络记录都按页隔离：切 tab 后旧 ref 失效，不会串到另一个页面。
 - 面板的 tab 条按页展示，tab id 是 `会话key#tab_id` 的组合 id。
 
 ### 跟随用户当前标签页
 
-`browser_e2e_follow_tab` 把后续页面工具的默认目标绑定到某一页，只做一次显式绑定：
+`browser_e2e_tabs` 的 `action: "follow"` 把后续页面工具的默认目标绑定到某一页，只做一次显式绑定：
 
 - 显式传 `tab_id`（`browser_e2e_tabs` 得到的 `t1`、`t2`…）时直接绑定到该页。
 - 不传 `tab_id` 时并行探测会话已登记页的主文档，按「唯一聚焦页 → 唯一可见页 → 保持当前 active tab」判定用户正在看的页；无法唯一判定且当前页不在候选时报错，不猜。
@@ -324,8 +321,8 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 - **出口**：用当前标签页所属浏览器上下文的请求客户端（`context.request.fetch`），不导航当前页；共享该页 Cookie / 登录态，走 `browser_e2e_start` 的 `proxy`。它不是页面内 `fetch`，因此**不受页面 CORS 限制**——e2e 断言接口时 CORS 不是被测对象，登录态才是。
 - **参数**：`method` 限 GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS（默认 GET，拒绝 CONNECT / TRACE 与扩展方法）；`headers` 最多 50 项、单项值最长 8192 字符；`body` 最长 262144 字符，GET / HEAD 带 body 报错；`timeout_ms` 默认 30000（1000-120000）；`max_chars` 默认 65536（1-65536）；`tab_id` 缺省当前 active tab。
 - **返回**：状态码、`ok`（200-299）、响应头对象、正文视图与重定向信息（`finalUrl` / 是否发生过重定向，最多跟随 20 次；Playwright 1.63 不暴露逐跳请求链，所以 `count` 只有 0 / 1）。文本类正文按 `max_chars` 截断并置 `truncated`；二进制只给字节数与 SHA-256，不返回 base64。非 2xx 是结果不是错误，`ok=false`，不抛错。
-- **敏感头**：`authorization` / `cookie` / `set-cookie` 等响应头替换为 `[已隐藏]`（与 `browser_e2e_network_detail` 同口径，没有「显示原值」开关）。
-- **不落盘**：只把正文回给模型。需要落盘文件或校验完整性用 `browser_e2e_download`；需要请求上下文（请求头、post data、重定向链）用 `browser_e2e_network_detail`。
+- **敏感头**：`authorization` / `cookie` / `set-cookie` 等响应头替换为 `[已隐藏]`（与 `browser_e2e_network` 详情模式同口径，没有「显示原值」开关）。
+- **不落盘**：只把正文回给模型。需要落盘文件或校验完整性用 `browser_e2e_download`；需要请求上下文（请求头、post data、重定向链）用 `browser_e2e_network` 的 `request_id`。
 - **不做**：原始 CDP（`mode=cdp` 之类）与服务端直连（`mode=server`，不带 Cookie、不走代理）均未实现，记入 `specs/项目规格/0003-未处理项.md` #9；也不支持上传流式 body / multipart / 文件上传、`CONNECT` / `TRACE`、WebSocket 帧操作、Cookie 读写。
 
 ### 鉴权补票（本机 DSH GUI）
@@ -516,7 +513,7 @@ node tests/auth-state.mjs
 # 面板宿主半区：围栏 / 设置 / 工具参数契约 / 真实 Edge + WebSocket 端到端协议（含 close-tab）
 node tests/panel.mjs
 
-# 多标签页：new_tab / tabs / close_tab / ref 按页隔离
+# 多标签页：new_tab / tabs（list / close / follow） / ref 按页隔离
 node tests/multitab.mjs
 
 # 跟随当前标签页：焦点 / 可见性判定、显式绑定、并发关页（假页面组不启动浏览器，其余真起无头 Edge）
@@ -582,7 +579,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（33 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（30 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  history.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -617,9 +614,9 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。33 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。30 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
-- **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
+- **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network` 传 `request_id` 时把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
 - **KV cache 影响**：工具结果以普通工具结果追加进会话日志（append-only），不替换系统提示与既有历史；快照、console / network 输出体积较大，会持续增长上下文，大页面建议直接用 `selector` 操作而不做全量快照。
 
@@ -634,18 +631,18 @@ npm run test:integration
 - **快照脚本 15 秒超时不可终止** —— 单次快照的页面脚本在宿主侧有 15000ms 超时，超时后本次调用报错，但页面脚本本身无法被终止，可能继续占用页面线程并让后续 `evaluate` 排队；遇到同步死循环页面请稍后重试或改用 `browser_e2e_evaluate` 小范围读取。扫描上限 20000 个元素，超过时 `scanTruncated` 为真且 `total` 表示已扫描到的可见元素数。
 - **快照只读同源 iframe** —— `frame` 参数只接受同源 iframe（空 url / `about:blank` / `about:srcdoc` 视为同源），跨源 iframe 直接报错；子 frame 只读，节点不分配 ref、不写主文档 ref 表，子 frame 内的元素操作（`f<N>@M` 之类）留给 P1-9。快照增量基线保存在会话内存中，不持久化、不跨会话复用。
 - **结构化读取的边界** —— `browser_e2e_read` 只读主文档，不进入任何 iframe（同源也不进）与 shadow root；不可见元素不列出，读隐藏表单需先让页面显示；表格不识别分页与虚拟滚动，`totalRows` 只是 DOM 行数；`input[type=file]` 只给 `hasValue`、不返回文件名；`href` 超过 500 字符时截断并置 `hrefTruncated: true`，截断值不可用于导航；`unique: false` 的 selector 在页面上不唯一，直接交给 click / fill 会因 Playwright strict 模式报错。页面脚本无超时与取消（与快照一致），耗时由 20000 元素扫描上限与 `maxItems` 限住；文本按 16000 字符预算分节截断，大页面请只请求一节或用 `selector` 收窄。
-- **跟随不做静默自动跟随** —— `browser_e2e_follow_tab` 只在显式调用时改绑默认标签页；用户随后切页，不传 `tab_id` 的工具仍作用在旧绑定页，需要再调一次。无参判定靠每页主文档的 `document.visibilityState` / `document.hasFocus()`（单页 2000ms 并行超时），无头模式与后台窗口区分度不稳，可能落到「保持当前」（`source=current`、`ambiguous=true`）；isolated 模式下用户自己新开的标签页不登记，只在会话已有页里选；受保护页面（`edge://` 等）与主线程卡死的页会被剔除出候选。确定性绑定请显式传 `tab_id`。
+- **跟随不做静默自动跟随** —— `browser_e2e_tabs` 的 `action: "follow"` 只在显式调用时改绑默认标签页；用户随后切页，不传 `tab_id` 的工具仍作用在旧绑定页，需要再调一次。无参判定靠每页主文档的 `document.visibilityState` / `document.hasFocus()`（单页 2000ms 并行超时），无头模式与后台窗口区分度不稳，可能落到「保持当前」（`source=current`、`ambiguous=true`）；isolated 模式下用户自己新开的标签页不登记，只在会话已有页里选；受保护页面（`edge://` 等）与主线程卡死的页会被剔除出候选。确定性绑定请显式传 `tab_id`。
 - **载体只支持 Edge 与系统 Chrome** —— isolated 模式可选 `carrier: edge / chrome / auto`，但只认本机已安装的 Google Chrome：不内置 Chromium（依赖 `playwright-core`，没有浏览器下载步骤），不做桌面侧栏 / Electron 宿主 / 桌面桥载体，也不接受工具传入的可执行路径（路径只来自 `DSH_BROWSER_CHROME_PATH` 与平台惯例位置）。Chrome 用 Playwright 的一次性 profile，不复用你正在运行的 Chrome、不读取你的登录态；要复用登录态用 cdp。已启动后不能热切换载体，必须 `browser_e2e_close` 后重开。`browser_e2e_doctor` 的 `edge` 项仍只体检系统 Edge，不检查 Chrome。
 - **登录态导入 / 导出的边界** —— storageState 只含 cookies 与各 origin 的 localStorage，不含 sessionStorage、IndexedDB、CacheStorage、Service Worker 缓存与 HTTP 认证凭据，因此仅靠 sessionStorage / IndexedDB 的登录（部分 SPA、OAuth PKCE 存储）不会恢复。不读系统 Chrome / Edge 的 cookie 库、不做 profile 命名与多 profile 切换、不做 cookie 过期刷新、不自动化登录表单、不新增高层登录工具。导出写侧只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json`（明文凭据；默认不覆盖、权限 0600，Windows 上 mode 位不生效），返回值与日志不含 cookie 名 / 值；导入读侧接受任意绝对路径，文件来源由调用方负责，插件不校验 cookie 的 `secure` / `sameSite` 与目标站策略是否兼容。**不自动持久化**：close（含空闲回收、会话销毁、卸载）不导出；已启动后不能热导入，必须 `browser_e2e_close` 再 `browser_e2e_start`；CDP 模式既不导入也不导出（那是用户自己的浏览器）。域过滤是安全边界而不是完整沙箱：不传 `storageDomains` 时按文件内全部条目导入。
 - **多标签页测试的进程计数是观察项** —— `tests/multitab.mjs` 收尾只打印剩余 msedge 主进程数与启动前基线，不据此断言；`tests/reclaim.mjs` 末尾打印的「应为 0」同样只是观察，真正的断言是「回落到 before 基线」——本机若已开着 Edge，基线不是 0，绝对值不可比。
 - **profile 里的版本是 git 快照** —— `dsh plugin add` 装的是指定 commit 的快照，改完源码必须 commit + push，再在 profile 里重新解析，否则跑的还是旧提交。
 - **插件卡片座位不注册** —— 客户端暂不注册 `web-ui.plugin.item` / `plugins.bundle.config`；在当前桌面宿主上注册会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），插件行改由宿主按 `Config` 自动渲染。
 - **静态页面没有新帧** —— 投屏只在实际产生帧时推送，静态页要看到画面需点面板刷新按钮，这是 CDP 投屏协议本身的行为。
-- **网络正文读取的边界** —— `browser_e2e_network_detail` 在调用时才回取正文，导航、浏览器内存回收或 Service Worker 响应可能让正文不再可读，此时报「响应体不可读」并提示在同一文档内重读；流式响应（SSE / 长轮询）在 `timeout_ms` 到点报超时，底层读取无法取消；正文在浏览器侧整块缓冲后才按 `max_chars` 截断，超大文件的内存开销不受该参数限制，也不提供 base64 正文与按 URL 猜测式脱敏（默认只隐藏敏感头）。
+- **网络正文读取的边界** —— `browser_e2e_network` 的详情模式在调用时才回取正文，导航、浏览器内存回收或 Service Worker 响应可能让正文不再可读，此时报「响应体不可读」并提示在同一文档内重读；流式响应（SSE / 长轮询）在 `timeout_ms` 到点报超时，底层读取无法取消；正文在浏览器侧整块缓冲后才按 `max_chars` 截断，超大文件的内存开销不受该参数限制，也不提供 base64 正文与按 URL 猜测式脱敏（默认只隐藏敏感头）。
 - **文件上传的边界** —— `browser_e2e_upload` 只处理主 frame（iframe 内的文件控件匹配不到），不支持 `webkitdirectory` 目录上传（目录按「路径不是文件」拒绝），不校验 `accept`、不按扩展名改写文件名或 MIME；`clear: false` 不支持追加（Playwright 无法把已选 `File` 还原成宿主路径），也不能与 `x`+`y` 组合（要先点击才读得到当前选择）。上传完成后不自动点提交、不等待上传请求。
 - **下载的边界** —— URL 模式把响应体整体读入内存（`APIResponse` 只有 `body()`），默认 100 MiB、硬上限 1 GiB 是内存风险边界，超大文件改用点击触发模式；URL 请求失败直接报错，不做导航捕获附件的回退；不支持取消、断点续传与重试；点击触发只接本次调用期间的第一个下载事件，`navigate` / `evaluate` 在工具调用之外触发的下载无法追溯；一次只处理一个文件；`Content-Disposition` 缺失且 URL 末段为空时文件名回退 `download`；不按扩展名过滤，也不解析 PDF / 压缩包。
 - **浏览器内抓取的边界** —— `browser_e2e_fetch` 用临时页抓取：isolated 下临时页在独立 context（无该页 Cookie，抓完连 context 一起关）、不可见；CDP 下临时页建在当前页所属 context，会在用户浏览器里新开又关闭一个标签页（一闪），但不进 `browser_e2e_tabs` 与面板；临时页不挂事件钩子，抓取不产生 console / network 记录。只取 `article` / `main` / `[role=main]` 或 `body` 的 `innerText`：隐藏节点与 `<script>` / `<style>` 天然剔除，表格按行文本流出、不保留结构，不进入 iframe 与 shadow root；iframe 内正文、`outerHTML`、PDF / 图片等非文本响应都取不到（后者返回 `empty: true` 与状态码，不解析、不落盘，要文件用 `browser_e2e_download`）。`timeoutMs` 只约束导航，`settleMs` 是固定等待，`evaluate` 无超时，整次调用不接取消；不做 UA / 指纹伪装、不点击、不等特定元素，反爬强校验站点仍会失败。单次抓取超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能被空闲回收（与等待类工具的同一已知边界）。
-- **原始 HTTP 只有页面上下文模式** —— `browser_e2e_http` 的 `mode` 只接受 `context`；原始 CDP 与服务端直连（`mode=server`，不带 Cookie、不走 `browser_e2e_start` 的代理）均未实现，已记入 `specs/项目规格/0003-未处理项.md` #9。`context` 模式共享当前页 Cookie 与登录态、不受页面 CORS 限制，但不执行页面脚本、不共享页面 localStorage / sessionStorage，也不是「页面内 fetch」语义；CDP 接管模式下请求走同一个用户浏览器的网络栈，但不在用户页面上发起、不占标签页。正文整体读入内存后再按 `max_chars` 截断，大响应请调小该值或改用 `browser_e2e_network_detail`；二进制只回字节数与 SHA-256、不返回 base64；不落盘（要文件与完整性校验用 `browser_e2e_download`）；不支持取消、重试、上传流式 body / multipart、`CONNECT` / `TRACE` 与 WebSocket。敏感响应头恒隐藏且没有「显示原值」开关；重定向最多跟随 20 次，超出按请求失败报错，`redirect.count` 只能给 0（未重定向）/ 1（重定向过），不是逐跳计数（Playwright 1.63 的 `APIResponse` 不提供请求链）。单次调用超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能被空闲回收，随后报「浏览器尚未启动」。
+- **原始 HTTP 只有页面上下文模式** —— `browser_e2e_http` 的 `mode` 只接受 `context`；原始 CDP 与服务端直连（`mode=server`，不带 Cookie、不走 `browser_e2e_start` 的代理）均未实现，已记入 `specs/项目规格/0003-未处理项.md` #9。`context` 模式共享当前页 Cookie 与登录态、不受页面 CORS 限制，但不执行页面脚本、不共享页面 localStorage / sessionStorage，也不是「页面内 fetch」语义；CDP 接管模式下请求走同一个用户浏览器的网络栈，但不在用户页面上发起、不占标签页。正文整体读入内存后再按 `max_chars` 截断，大响应请调小该值或改用 `browser_e2e_network` 的 `request_id` 详情模式；二进制只回字节数与 SHA-256、不返回 base64；不落盘（要文件与完整性校验用 `browser_e2e_download`）；不支持取消、重试、上传流式 body / multipart、`CONNECT` / `TRACE` 与 WebSocket。敏感响应头恒隐藏且没有「显示原值」开关；重定向最多跟随 20 次，超出按请求失败报错，`redirect.count` 只能给 0（未重定向）/ 1（重定向过），不是逐跳计数（Playwright 1.63 的 `APIResponse` 不提供请求链）。单次调用超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能被空闲回收，随后报「浏览器尚未启动」。
 - **悬停与拖拽只作用于主 frame** —— `browser_e2e_hover` / `browser_e2e_drag` 与 `browser_e2e_click` 一致，只查主框架、不进入 iframe；坐标目标按视口 CSS 像素校验，元素目标不暴露 `force` / `sourcePosition` / `targetPosition`，被遮挡时报 Playwright 超时。拖拽中途页面导航会由 Playwright 报执行上下文销毁；HTML5 目标若不在 `dragover` 里 `preventDefault()`，浏览器会拒绝 drop，这是页面行为，不是工具失败。
 - **逐键输入（`mode=keystrokes`）的边界** —— 不支持坐标目标（无法可靠清空与校验可编辑性）；不支持真实 IME 与组合键，中文 / emoji 走 `Input.insertText`、不产生 keydown / keyup，`\t` 不会移动焦点；`\n` / `\r` 映射为 Enter，单行 input 里可能触发表单提交。工具在最后一个按键后立即返回，不等防抖落定；掩码与受控组件可能改写最终值，工具不回读。后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略按键（不做 focus emulation）。
 - **按住键会残留** —— `browser_e2e_press action=down` 按住的键没有自动释放计时，忘记 `action=up` 时它会一直影响后续 click / fill；`navigate` 前会自动释放，但页面自行导航（页面脚本跳转、链接点击）工具感知不到，需要显式 `action=up`。跨 tab 不自动释放，按住状态只属于按下时的标签页。

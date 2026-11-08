@@ -38,7 +38,7 @@
 - 控制台文本每行 `${timeOf(at)} ${level} ${oneLine(text)}`；网络文本每行由 `timeOf(at)`、`[${request_id}]`、`method`、`status`、`mimeType || '-'`、`url` 依次拼成，`status <= 0` 显示 `0(无响应)`，`failure` 非空时追加 `失败: ${failure}`。单条请求的请求头 / 请求体 / 响应头 / 响应体读取见 `0015-network-response-body.md`。
 - `timeOf` 取 `at.slice(11, 23)`，即 ISO 串里的 `HH:MM:SS.mmm`（UTC，不是本地时区）；`oneLine` 把换行压成空格，保证一条记录占一行。
 - 空记录文案：控制台 `（暂无控制台记录）`，网络 `（暂无网络记录）`。摘要：`控制台记录 N 条`、`网络请求 N 条`。控制台给了 `level` 且 `total > 0`、`matched === 0` 时文案为 `（缓冲 N 条记录，没有 level ≥ X 的条目）`；摘要为 `控制台记录 N 条（level ≥ X，命中 M 条 / 缓冲 T 条）`，未给 `level` 时摘要保持 `控制台记录 N 条` 逐字不变。
-- 工具层（`browser_e2e_console` / `browser_e2e_network`）：参数为 `limit`（integer，缺省 100）、`tab_id` 与 console 专有的 `level`（string，取值与别名见 `0026-console-level-filter.md`）；`args.limit ?? 100` 传给能力函数，`total > count` 时在摘要后追加 `（缓冲共 ${info.total} 条，只取尾部 ${info.count} 条）`，换行后接 `text`。控制台给了 `level` 且 `matched > count` 时 note 改为 `（命中 ${info.matched} 条，只取尾部 ${info.count} 条）`，否则为空串。两个工具用 `requireSession(sessionKey(exec))` 取会话，不经 `sessionOf` 创建会话。
+- 工具层（`browser_e2e_console` / `browser_e2e_network`）：参数为 `limit`（integer，缺省 100）、`tab_id` 与 console 专有的 `level`（string，取值与别名见 `0026-console-level-filter.md`）；`browser_e2e_network` 另有 `request_id` / `max_chars` / `timeout_ms` / `include_sensitive` 四个详情参数（传 `request_id` 时走详情分支，见 `0015-network-response-body.md`）。`args.limit ?? 100` 传给能力函数，`total > count` 时在摘要后追加 `（缓冲共 ${info.total} 条，只取尾部 ${info.count} 条）`，换行后接 `text`。控制台给了 `level` 且 `matched > count` 时 note 改为 `（命中 ${info.matched} 条，只取尾部 ${info.count} 条）`，否则为空串。两个工具用 `requireSession(sessionKey(exec))` 取会话，不经 `sessionOf` 创建会话。
 
 ## 边界
 

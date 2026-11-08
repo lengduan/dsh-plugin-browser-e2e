@@ -4,7 +4,7 @@
  * 分四段：
  *   A. loopback 围栏的判定（纯函数）；
  *   B. 设置合并与越界拒绝（纯函数）；
- *   C. 插件注册面：33 个工具的参数契约；
+ *   C. 插件注册面：30 个工具的参数契约；
  *   D. 端到端：用真实 http 服务模拟宿主 webServer，注册插件自己的路由与 socket，
  *      真起无头 Edge，走完整协议（attach / hello / 帧 / 动作 / configure /
  *      request-frame / 未知命令 / 协议版本不符 / 关闭后状态清空），并校验围栏
@@ -151,7 +151,7 @@ let upgradeHandler = null
   apply(ctx, { quality: 30, maxWidth: 640 })
   check('注册的工具与工具表逐项一致（顺序与名字）',
     JSON.stringify(toolNames) === JSON.stringify(TOOL_TABLE.map((definition) => definition.name)), JSON.stringify(toolNames))
-  check('工具表共 33 个', TOOL_TABLE.length === 33, String(TOOL_TABLE.length))
+  check('工具表共 30 个', TOOL_TABLE.length === 30, String(TOOL_TABLE.length))
   check('工具名唯一且统一带 browser_e2e_ 前缀',
     new Set(toolNames).size === toolNames.length && toolNames.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(toolNames))
   check('每个工具都有 description 与合法参数 schema（required 是 properties 子集）',
@@ -164,18 +164,28 @@ let upgradeHandler = null
   check('新增 read 工具已注册且带 tab_id', tools.has('browser_e2e_read')
     && ['sections', 'maxItems', 'includeValues', 'selector', 'tab_id']
       .every((field) => field in tools.get('browser_e2e_read').parameters.properties))
-  check('browser_e2e_follow_tab 的 tab_id 可选、activate 为布尔', (() => {
-    const followTool = tools.get('browser_e2e_follow_tab')
-    if (!followTool) return false
-    const parameters = followTool.parameters
+  check('browser_e2e_tabs 的 action 枚举、tab_id 与 activate 可选', (() => {
+    const tabsTool = tools.get('browser_e2e_tabs')
+    if (!tabsTool) return false
+    const parameters = tabsTool.parameters
     return parameters.type === 'object'
       && parameters.additionalProperties === false
+      && JSON.stringify(parameters.properties.action?.enum) === JSON.stringify(['list', 'close', 'follow'])
       && parameters.properties.tab_id?.type === 'string'
       && parameters.properties.activate?.type === 'boolean'
       && JSON.stringify(parameters.required) === '[]'
   })())
-  check('作用于页面的工具都接受 tab_id', ['navigate', 'snapshot', 'read', 'click', 'fill', 'scroll', 'press', 'screenshot', 'console', 'network', 'wait', 'evaluate', 'hover', 'drag', 'download', 'fetch', 'dialog', 'clipboard', 'assert', 'recipe', 'captcha_check', 'wait_for_human', 'follow_tab']
+  check('作用于页面的工具都接受 tab_id', ['navigate', 'tabs', 'snapshot', 'read', 'click', 'fill', 'scroll', 'press', 'screenshot', 'console', 'network', 'wait', 'evaluate', 'hover', 'drag', 'download', 'fetch', 'dialog', 'clipboard', 'assert', 'recipe', 'captcha_check', 'wait_for_human']
     .every((suffix) => 'tab_id' in tools.get(`browser_e2e_${suffix}`).parameters.properties))
+  check('browser_e2e_network 声明 limit / request_id / max_chars / timeout_ms / include_sensitive / tab_id', (() => {
+    const networkTool = tools.get('browser_e2e_network')
+    if (!networkTool) return false
+    const parameters = networkTool.parameters
+    return parameters.additionalProperties === false
+      && JSON.stringify(parameters.required ?? []) === '[]'
+      && ['limit', 'request_id', 'max_chars', 'timeout_ms', 'include_sensitive', 'tab_id']
+        .every((field) => field in parameters.properties)
+  })())
   check('browser_e2e_assert 声明 checks（1-20 条四选一对象）与 tab_id', (() => {
     const assertTool = tools.get('browser_e2e_assert')
     if (!assertTool) return false
@@ -308,7 +318,7 @@ let upgradeHandler = null
     === JSON.stringify(['isolated', 'cdp']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode))
   check('browser_e2e_start 的 carrier 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier?.enum)
     === JSON.stringify(['edge', 'chrome', 'auto']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier))
-  check('工具总数不因本项变化', tools.size === TOOL_TABLE.length && tools.size === 33, String(tools.size))
+  check('工具总数不因本项变化', tools.size === TOOL_TABLE.length && tools.size === 30, String(tools.size))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
 }

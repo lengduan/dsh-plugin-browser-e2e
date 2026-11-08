@@ -55,7 +55,7 @@
 | `lib/gate.js` | 工具级权限门控的纯函数层：配置归一（缺失取默认、非法 fail-closed）、工具定性读取（缺失按 `interact`）、`wait + expression` 的按参数升级、判定与拒绝文案；不做 I/O、不碰会话状态 | 会话状态、页面能力、面板、协议 |
 | `lib/frame.js` | 页面 frame 定位：主文档索引 0、其余按 `page.frames()` 顺序过滤主文档编号、字符串按 name / url 匹配、可用索引文案；快照与 `click` / `fill` / `scroll` 共用同一份实现，不做同源检查（由调用方决定） | 会话状态、页面能力、面板、协议 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 33 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 30 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -151,15 +151,14 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`（`storageState` 计数只在 `run` 之外被测试读取，`run` 只读 `summary`）；
   - `browser_e2e_auth_export`：`run` 只读 `summary`，返回格式化字符串；`file` / `bytes` / `cookies` / `origins` / `domains` / `overwrite` 由能力函数返回但 `run` 不读，不会到达模型；
   - `browser_e2e_navigate`：`summary` / `title` / `tabId`；
-  - `browser_e2e_tabs`：`summary` / `mode` / `text`；
-  - `browser_e2e_follow_tab`：`run` 读 `summary` / `source` / `previousTabId` / `candidates` / `tabs` / `failedProbeCount` / `activated` / `tabId`，返回格式化字符串；`changed` / `ambiguous` / `url` / `title` 由能力函数返回但 `run` 不读；
-  - `browser_e2e_close_tab`：`summary` / `activeTabId`；
+  - `browser_e2e_tabs`：`action=list` 读 `summary` / `mode` / `text`；`action=close` 读 `summary` / `activeTabId`；
+    `action=follow` 读 `summary` / `source` / `previousTabId` / `candidates` / `tabs` / `failedProbeCount` / `activated` / `tabId`，返回格式化字符串，`changed` / `ambiguous` / `url` / `title` 由能力函数返回但 `run` 不读；
   - `browser_e2e_snapshot`：`summary` / `url` / `tabId` / `text` / `mode` / `frame` / `baseline` / `added` / `changed` / `removed` / `matches` / `truncated` / `scanTruncated`（`mode` / `frame` / `scanTruncated` 各模式都返回；`baseline` / `added` / `changed` / `removed` 只在 delta，`matches` 只在 query）；
   - `browser_e2e_read`：`summary` / `url` / `tabId` / `text` / `mode` / `sections` / `truncated` / `scanTruncated`；
   - `browser_e2e_screenshot`：`file` / `data` / `meta`（`summary`、`mediaType`、`name`、`bytes` 等）；
   - `browser_e2e_console`：`summary` / `total` / `matched` / `count` / `level` / `text`；
-  - `browser_e2e_network`：`summary` / `count` / `total` / `text`；
-  - `browser_e2e_network_detail`：`summary` / `text`；
+  - `browser_e2e_network`：列表模式（不传 `request_id`）读 `summary` / `count` / `total` / `text`；
+    详情模式（传 `request_id`）读 `summary` / `text`；
   - `browser_e2e_wait`：`summary` / `mode` / `timeoutMs` / `elapsedMs`；
     selector 条件另读 `state`；url 条件另读 `urlMatch` / `matchedUrl` / `matchedCurrent`；
     response 条件另读 `urlMatch` / `responseMethod` / `statusMin` / `statusMax` / `includeBuffered` /
@@ -439,7 +438,7 @@ closed：终态，任何事件非法
 | 视口度量三份 | **已处置（M3）**：收敛到 `lib/viewport.js` 的单一 `viewportBounds`。实测（HEAD `ef93636` 工作区，M3 施工后）：定义 1 处（`lib/viewport.js`）；消费方 `lib/page.js` 1 处调用（`assertPointInViewport`）、`lib/capture.js` 2 处调用（clip 边界校验与 `shotBaseSize`）。`shotBaseSize` 的第三份内联改为调用同一函数，正常路径与原实现逐字等价；唯一差异是页内取值异常时该函数返回 `null`（原内联写法透传页面错误），只发生在页面已关闭 / 崩溃、截图本来也无法完成的路径。 | 已处置；保留行以便追溯。 |
 | `session.js` 粒度过大 | 约 680 行、16 个导出，混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
-| 会话解析入口不统一 | 10 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/follow_tab/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs`/`close_tab` 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
+| 会话解析入口不统一 | 10 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/tabs 的 follow/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs` 的 list / close 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
 | client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
 | 工具描述里的 limit / timeoutMs 默认值 | 已处置（M1）：`wait` 的默认超时（`DEFAULT_WAIT_TIMEOUT_MS`）与 status 区间（`WAIT_STATUS_MIN` / `WAIT_STATUS_MAX`）、`console` / `network` 的默认 limit（`DEFAULT_RING_QUERY_LIMIT`）、`download` 的默认总预算（`DEFAULT_DOWNLOAD_TIMEOUT_MS`）、`assert` 条数（`ASSERT_MAX_CHECKS`）、`recipe` 的逐键延迟 / hover 等待（`KEYSTROKE_MAX_DELAY_MS` / `MAX_SETTLE_MS` / `DEFAULT_SETTLE_MS`）、`upload` 的 MiB 上限（`sizeText` 从字节常量派生）都改由能力模块导出的常量插值；`evaluate` 仍为 `DEFAULT_EVALUATE_TIMEOUT_MS` / `MIN_EVALUATE_TIMEOUT_MS` / `MAX_EVALUATE_TIMEOUT_MS`。 | 已处置；保留行以便追溯。 |

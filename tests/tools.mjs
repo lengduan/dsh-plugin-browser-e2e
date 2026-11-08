@@ -1650,7 +1650,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 33 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / follow_tab / history）', table.length === 33 && names.length === 33, String(table.length))
+    check('工具表共 30 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / history）', table.length === 30 && names.length === 30, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const startTool = definitions.find((definition) => definition.name === 'browser_e2e_start')
@@ -1836,14 +1836,38 @@ try {
     check('附件服务可用时 render 返回文本 + image 块', content.length === 2 && content[1].type === 'image' && content[1].attachment.attachmentId === 'att-1', JSON.stringify(content))
     check('图片实际存入附件服务', saved.length === 1 && saved[0].bytes > 0, JSON.stringify(saved))
 
-    // close_tab 工具：新开一页再按 tab_id 关闭，active tab 提示跟随剩余页。
-    const closeTabTool = definitions.find((definition) => definition.name === 'browser_e2e_close_tab')
+    // tabs 工具：新开一页再以 action=close 关闭，active tab 提示跟随剩余页。
+    const tabsTool = definitions.find((definition) => definition.name === 'browser_e2e_tabs')
     const extraTab = await navigate(session, 'data:text/html,<h1>close-me</h1>', 'load', { new_tab: true })
-    check('close_tab 前置：新开第二个页', session.pages.size === 2, String(session.pages.size))
-    const closeTabResult = await closeTabTool.execute({ tab_id: extraTab.tabId }, exec)
-    check('browser_e2e_close_tab 关闭指定页并提示下一个 active', session.pages.size === 1
+    check('tabs close 前置：新开第二个页', session.pages.size === 2, String(session.pages.size))
+    const closeTabResult = await tabsTool.execute({ action: 'close', tab_id: extraTab.tabId }, exec)
+    check('browser_e2e_tabs action=close 关闭指定页并提示下一个 active', session.pages.size === 1
       && !session.pages.has(extraTab.tabId) && typeof closeTabResult === 'string'
       && closeTabResult.includes('关闭标签页') && closeTabResult.includes(extraTab.tabId), String(closeTabResult))
+    const closeMissingId = await expectThrow(() => tabsTool.execute({ action: 'close' }, exec))
+    check('browser_e2e_tabs action=close 缺 tab_id 报「缺少必填参数」',
+      typeof closeMissingId === 'string' && closeMissingId.includes('缺少必填参数 tab_id'), String(closeMissingId))
+    const listWithTabId = await expectThrow(() => tabsTool.execute({ tab_id: 't1' }, exec))
+    check('browser_e2e_tabs action=list 传 tab_id 报错（不静默忽略）',
+      typeof listWithTabId === 'string' && listWithTabId.includes('action=list 不接受'), String(listWithTabId))
+    const badAction = await expectThrow(() => tabsTool.execute({ action: 'pin' }, exec))
+    check('browser_e2e_tabs 非法 action 报枚举错误',
+      typeof badAction === 'string' && badAction.includes('action 只支持 list / close / follow'), String(badAction))
+
+    // network 工具：列表 / 详情两个模式由 request_id 分流。
+    const networkTool = definitions.find((definition) => definition.name === 'browser_e2e_network')
+    const networkListText = await networkTool.execute({ limit: 5 }, exec)
+    check('browser_e2e_network 缺省走列表模式', typeof networkListText === 'string'
+      && networkListText.includes('网络请求'), String(networkListText).slice(0, 200))
+    const networkUnknownDetail = await expectThrow(() => networkTool.execute({ request_id: 'n999999' }, exec))
+    check('browser_e2e_network 传 request_id 走详情模式（未知 id 报记录不存在）',
+      typeof networkUnknownDetail === 'string' && networkUnknownDetail.includes('网络记录里没有 request_id'), String(networkUnknownDetail))
+    const networkLimitWithDetail = await expectThrow(() => networkTool.execute({ request_id: 'n1', limit: 5 }, exec))
+    check('browser_e2e_network request_id 与 limit 互斥报错',
+      typeof networkLimitWithDetail === 'string' && networkLimitWithDetail.includes('request_id 模式下不接受 limit'), String(networkLimitWithDetail))
+    const networkDetailParamAlone = await expectThrow(() => networkTool.execute({ max_chars: 100 }, exec))
+    check('browser_e2e_network 详情参数缺 request_id 时报错（不静默忽略）',
+      typeof networkDetailParamAlone === 'string' && networkDetailParamAlone.includes('只在传 request_id 时生效'), String(networkDetailParamAlone))
 
     // 附件服务不可用时只返回文本路径。
     const noAttachmentDefs = []

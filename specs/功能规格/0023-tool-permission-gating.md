@@ -2,7 +2,7 @@
 
 状态: 已实现（方案 A）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、依赖方向、工具表单一来源、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表本项不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0006-plugin-config-and-live-apply.md（插件配置字段与即时生效口径）；specs/功能规格/0002-browser-launch-and-reuse.md（`start` / `close` 生命周期工具）；specs/功能规格/0004-snapshot-and-ref-table.md、0005-console-network-ring.md（纯观察能力的既有口径）；specs/功能规格/0008-cdp-attach.md（CDP 接管用户浏览器，方案 C 的冲突点）
-代码: 已落地：新增 `lib/gate.js`（纯函数：`ACCESS_KINDS` / `accessModeOf` / `allowScriptOf` / `accessOf` / `effectiveAccess` / `toolNamesWithAccess` / `decide`）；`lib/index.js` 的 Config 新增 `accessMode` / `allowScript`、`execute` 最开头门控早拒；`lib/tools.js` 的 33 个定义各加 `access`；`tests/gate.mjs`（新建，30 条用例）与 `package.json` 的 `test:unit`；`README.md`（配置表 / 工具权限门控节 / Known Limitations / 验证）；`specs/项目规格/0001`（模块表与依赖图）。不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
+代码: 已落地：新增 `lib/gate.js`（纯函数：`ACCESS_KINDS` / `accessModeOf` / `allowScriptOf` / `accessOf` / `effectiveAccess` / `toolNamesWithAccess` / `decide`）；`lib/index.js` 的 Config 新增 `accessMode` / `allowScript`、`execute` 最开头门控早拒；`lib/tools.js` 的每个工具定义各加 `access`（当前 30 个）；`tests/gate.mjs`（新建，30 条用例）与 `package.json` 的 `test:unit`；`README.md`（配置表 / 工具权限门控节 / Known Limitations / 验证）；`specs/项目规格/0001`（模块表与依赖图）。不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
 本项原判定为「**影响大 → 待决策**」，已于 2026-11-08 决策采纳方案 A 并实现；下文「方案 A 的目标契约」即当前实现契约。判定依据见 `.scratch/browser-plugin-survey/plans/15-tool-permission-gating.md` §1 与 §6.1。
 
@@ -54,6 +54,7 @@
 | `script` | `evaluate` | 1 | 在页面上下文执行任意 JS |
 
 - `wait` 本身是 `observe`，但当次调用带 `expression` 条件时按 `script` 处理（`wait` 的 `expression` 同样在页面上下文执行脚本）。这是唯一的按参数升级规则，实现写在 `lib/gate.js` 里并加注释。
+- 上表与本节的失败文案示例是 P1-14 落地时（19 个工具）的快照。此后新增工具与 2026-11-08 的工具面合并（`specs/项目规格/0003-未处理项.md` #12：`tabs` 吸收 `close_tab` / `follow_tab`，`network` 吸收 `network_detail`）改变了清单与数量：当前定性以 `lib/tools.js` 各定义的 `access` 为准（`observe` 16 / `interact` 13 / `script` 1），拒绝文案的工具清单由 `lib/gate.js` 从同一张表派生。
 - **缺失 `access` 视为 `interact`**（最严）：将来新增工具忘了定性时，只读模式下默认被拒，不会静默放行。
 - `access` 只参与门控，不改变任何工具的参数、返回值、摘要与既有行为。
 

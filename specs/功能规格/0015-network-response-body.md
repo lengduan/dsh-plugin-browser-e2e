@@ -6,27 +6,28 @@
 
 ## 需求
 
-`browser_e2e_network` 只回 url / method / status / mimeType / failure，验证接口返回内容时模型只能从 DOM 反推。本项让模型按 `request_id` 读取单条请求的请求头、请求体、响应头与响应体：JSON 自动格式化，文本有字符上限，二进制只回大小与摘要；列表工具原有参数与语义保持不变。
+`browser_e2e_network` 只回 url / method / status / mimeType / failure，验证接口返回内容时模型只能从 DOM 反推。本项让模型按 `request_id` 读取单条请求的请求头、请求体、响应头与响应体：JSON 自动格式化，文本有字符上限，二进制只回大小与摘要；列表模式原有参数与语义保持不变。详情读取最初是独立工具 `browser_e2e_network_detail`，2026-11-08 的工具面合并后并入 `browser_e2e_network` 的 `request_id` 分支（决策与理由见 `specs/项目规格/0003-未处理项.md` #12），行为不变。
 
 ## 行为
 
 ### 列表与 request_id
 
-- `browser_e2e_network` 的参数仍只有 `limit` 与 `tab_id`，默认值、尾部截取、`summary` / `count` / `total`、空记录文案与失败记录文案都不变。
+- `browser_e2e_network` 的列表参数仍是 `limit` 与 `tab_id`（另见「详情模式」的四个参数），默认值、尾部截取、`summary` / `count` / `total`、空记录文案与失败记录文案都不变。
 - 每条网络记录新增 `request_id`：`attachPageHooks` 在 `request` 事件里按标签页自增分配 `n1`、`n2`…；同一个 id 在标签页存续期内不复用，`clearRings` 清空记录也不重置计数。
 - 列表文本每行在时间后加 `[n<N>]`，例如 `12:00:00.000 [n3] GET 200 application/json http://…`；`networkRing` 条目仍是最新在最后。
 - `networkRing`、`networkByRequest` 之外新增内部容器 `networkContext`（`request_id` → `{ request, response }`），由 `lib/page.js` 写入、`lib/observation.js` 读取。`RING_LIMIT` 淘汰、`clearRings`、关页 / 崩溃都同步删掉对应上下文；`request` 事件保存 Request，`response` 事件补上 Response。
 
-### 新工具 `browser_e2e_network_detail`
+### 详情模式（`browser_e2e_network` 传 `request_id`）
 
-- 作用：按 `request_id` 读一条仍在环形缓冲里的记录；不复用 `browser_e2e_network` 的列表语义，因此新增独立工具，列表工具的参数与返回条数不动。
+- 作用：按 `request_id` 读一条仍在环形缓冲里的记录；列表语义不变，`request_id` 缺省时仍走列表分支，传入时走详情分支。
 - 参数（`additionalProperties: false`）：
-  - `request_id`：string，必填，形如 `n3`，来自 `browser_e2e_network`。
+  - `request_id`：string，可选；给了就按 `n1`、`n2`… 读详情，形如 `n3`，来自 `browser_e2e_network` 列表。空串与非字符串按「缺少必填参数」报错，省略等于列表模式。
   - `tab_id`：string，可选；语义与其它页面工具一致，缺省用 active tab。
   - `max_chars`：integer，可选，1..`NETWORK_BODY_TEXT_LIMIT`（65536），默认 `NETWORK_BODY_TEXT_LIMIT`；控制文本正文与请求体最多返回多少字符，二进制不受此参数影响。
   - `timeout_ms`：integer，可选，`NETWORK_BODY_TIMEOUT_MIN_MS`（100）..`NETWORK_BODY_TIMEOUT_MAX_MS`（30000），默认 `NETWORK_BODY_TIMEOUT_MS`（5000）。
   - `include_sensitive`：boolean，可选，默认 false；为 false 时 `authorization` / `cookie` / `set-cookie` / `proxy-authorization` / `x-api-key` / `x-auth-token` / `x-csrf-token` / `x-xsrf-token` 等头的值显示 `[已隐藏]`。
-- 入口：能力函数 `networkDetail(session, requestId, options, tabId)`（`lib/observation.js`），先 `session.touch()`，再经 `currentTab(session, tabId)` 取标签页；工具层用 `requireSession(sessionKey(exec))`，未启动时不创建 idle 会话，报错口径与 `browser_e2e_network` 一致。
+- 参数互斥：`request_id` 与 `limit` 不能同时给（报 `request_id 模式下不接受 limit：看列表用 limit，读详情用 request_id`）；`max_chars` / `timeout_ms` / `include_sensitive` 只在传 `request_id` 时生效，列表模式下传了报错（不静默忽略）。
+- 入口：能力函数 `networkDetail(session, requestId, options, tabId)`（`lib/observation.js`），先 `session.touch()`，再经 `currentTab(session, tabId)` 取标签页；工具层用 `requireSession(sessionKey(exec))`，未启动时不创建 idle 会话，报错口径与列表模式一致。
 - 返回：工具只渲染 `summary` 一行与多行 `text`；能力函数同时返回结构化对象：`{ tabId, request_id, url, method, status, mimeType, failure, at, redirect, request: { headers, postData }, response: { headers, body }, summary, text }`。
 
 ### 读取时机
@@ -57,7 +58,7 @@
 
 ## 边界
 
-- `request_id` 非字符串或空：工具层报 `缺少必填参数 request_id（非空字符串）`。
+- `request_id` 传了但不是字符串、或是空串：工具层报 `缺少必填参数 request_id（非空字符串）`；省略 `request_id` 是列表模式，不是错误。
 - 格式不是 `n` 加正整数：报 `request_id 格式不对：需要 browser_e2e_network 返回的 n<N>（例如 n3），收到 …`。
 - id 不在当前标签页记录里（已淘汰、已导航重置、从没出现过）：报 `网络记录里没有 request_id …（当前环形缓冲 N 条）：可能已被 500 条上限淘汰，或页面已导航导致记录重置；请重新调用 browser_e2e_network 获取最新 request_id`。
 - `max_chars` 不是 1..65536 的整数、`timeout_ms` 不是 100..30000 的整数：在能力函数入口报错，不读正文。
@@ -94,4 +95,5 @@
    - `网络上下文随环形缓冲淘汰`
    - `detail 按 tab_id 隔离`
 2. `npm run test:unit`：exit 0、无 FAIL；`tests/invariants.mjs` 用例 K 的 `tools.js 的工具描述从常量插值，不写死默认值` 仍通过（新描述里的字符上限与超时默认值必须从 `lib/observation.js` 导出的常量插值）。
-3. `npm run test:integration`：exit 0、无 FAIL（串行真起无头 Edge；`tests/panel.mjs` 按工具表派生断言，新工具注册后自动纳入表驱动契约）。
+3. `npm run test:integration`：exit 0、无 FAIL（串行真起无头 Edge；`tests/panel.mjs` 按工具表派生断言，合并后的 `browser_e2e_network` 自动纳入表驱动契约）。
+4. `node tests/panel.mjs`：exit 0、无 FAIL；`browser_e2e_network 声明 limit / request_id / max_chars / timeout_ms / include_sensitive / tab_id`。
