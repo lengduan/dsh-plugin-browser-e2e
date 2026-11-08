@@ -4,7 +4,7 @@
  * 分四段：
  *   A. loopback 围栏的判定（纯函数）；
  *   B. 设置合并与越界拒绝（纯函数）；
- *   C. 插件注册面：31 个工具的参数契约；
+ *   C. 插件注册面：32 个工具的参数契约；
  *   D. 端到端：用真实 http 服务模拟宿主 webServer，注册插件自己的路由与 socket，
  *      真起无头 Edge，走完整协议（attach / hello / 帧 / 动作 / configure /
  *      request-frame / 未知命令 / 协议版本不符 / 关闭后状态清空），并校验围栏
@@ -13,10 +13,18 @@
  * 运行：node tests/panel.mjs
  */
 import { createServer, request as httpRequest } from 'node:http'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { WebSocket } from 'ws'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
+// 动作历史写入临时目录：本测试会多次 apply 并执行真实工具，必须在 apply 之前注入，
+// 否则 lib/index.js 的写入接线会落到真实用户目录 ~/.dsh/browser-e2e/history/。
+const HISTORY_DIR = mkdtempSync(join(tmpdir(), 'dsh-panel-history-'))
+process.env.DSH_BROWSER_HISTORY_FILE = join(HISTORY_DIR, 'actions.jsonl')
+delete process.env.DSH_BROWSER_HISTORY
 
 const { mergeConfig, PanelHub } = await import('../lib/panel.js')
 const { PANEL_STATE_PATH, PANEL_SOCKET_PATH, PANEL_PROTOCOL_VERSION, PANEL_COMMANDS, PANEL_EVENTS, PANEL_ERROR_CODES } = await import('../lib/protocol.js')
@@ -143,7 +151,7 @@ let upgradeHandler = null
   apply(ctx, { quality: 30, maxWidth: 640 })
   check('注册的工具与工具表逐项一致（顺序与名字）',
     JSON.stringify(toolNames) === JSON.stringify(TOOL_TABLE.map((definition) => definition.name)), JSON.stringify(toolNames))
-  check('工具表共 31 个', TOOL_TABLE.length === 31, String(TOOL_TABLE.length))
+  check('工具表共 32 个', TOOL_TABLE.length === 32, String(TOOL_TABLE.length))
   check('工具名唯一且统一带 browser_e2e_ 前缀',
     new Set(toolNames).size === toolNames.length && toolNames.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(toolNames))
   check('每个工具都有 description 与合法参数 schema（required 是 properties 子集）',
@@ -230,6 +238,18 @@ let upgradeHandler = null
   check('browser_e2e_fill 把 value 列为必填，且提供 ref/selector/x/y 目标参数', (() => {
     const fill = tools.get('browser_e2e_fill').parameters
     return fill.required.includes('value') && ['ref', 'selector', 'x', 'y'].every((field) => field in fill.properties)
+  })())
+  check('browser_e2e_history 声明 limit / tool / ok / scope 参数', (() => {
+    const historyTool = tools.get('browser_e2e_history')
+    if (!historyTool) return false
+    const parameters = historyTool.parameters
+    return typeof historyTool.description === 'string' && historyTool.description.includes('动作历史')
+      && parameters.additionalProperties === false && parameters.required.length === 0
+      && parameters.properties.limit?.type === 'integer'
+      && parameters.properties.tool?.type === 'string'
+      && parameters.properties.ok?.type === 'boolean'
+      && parameters.properties.scope?.type === 'string'
+      && JSON.stringify(parameters.properties.scope?.enum) === JSON.stringify(['self', 'all'])
   })())
   check('browser_e2e_screenshot 参数含 clip/format/quality/scale', ['name', 'fullPage', 'clip', 'format', 'quality', 'scale'].every((k) => k in tools.get('browser_e2e_screenshot').parameters.properties))
   check('browser_e2e_console 的 level 参数声明枚举', (() => {
@@ -378,6 +398,25 @@ check('动作带摘要与时间', typeof action?.trace?.summary === 'string' && 
 const titledState = await waitFor(() => panel.events.filter((event) => event.kind === 'state')
   .find((event) => event.state.tabs.some((tab) => tab.title === 'panel')))
 check('tab 标题透传', Boolean(titledState), JSON.stringify(panel.events.filter((e) => e.kind === 'state').slice(-3)))
+
+// 动作历史：真实 fill 的明文只存在于入参，落盘与读回都应只剩掩码。
+console.log('== 用例 C2：动作历史（真实 fill 落盘与读回）==')
+{
+  const historyFile = process.env.DSH_BROWSER_HISTORY_FILE
+  const SECRET = 'secret-P@ss-2026'
+  await tools.get('browser_e2e_navigate').execute({ url: 'data:text/html,<title>history</title><input id="secret">' }, exec)
+  await tools.get('browser_e2e_fill').execute({ selector: '#secret', value: SECRET }, exec)
+  const raw = readFileSync(historyFile, 'utf8')
+  check('真实 fill 的明文不出现在历史文件里', !raw.includes(SECRET) && raw.includes('[已脱敏'), raw.slice(-400))
+  const text = await tools.get('browser_e2e_history').execute({ tool: 'browser_e2e_fill', limit: 5, scope: 'self' }, exec)
+  const lines = text.split('\n')
+  check('browser_e2e_history 读回刚发生的 fill（摘要为掩码）',
+    lines[0].includes('；tool=browser_e2e_fill）')
+      && lines[1] === `文件：${historyFile}`
+      && text.includes(`[已脱敏 ${Array.from(SECRET).length} 个字符]`)
+      && !text.includes(SECRET),
+    text)
+}
 
 // 再开一个 tab，然后用面板命令关掉它。
 // 断言只看本次操作之后的事件，避免命中较早遗留的 state（历史事件会让「已关闭」误判成立）。
@@ -617,5 +656,6 @@ const sessionsCleared = await waitFor(() => activeSessionKeys().length === 0, 50
 check('收尾后 sessions 为空', sessionsCleared === true, JSON.stringify(activeSessionKeys()))
 
 console.log('')
+console.log(`动作历史文件（本次临时）：${process.env.DSH_BROWSER_HISTORY_FILE}`)
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
 process.exit(fail === 0 ? 0 : 1)

@@ -8,7 +8,9 @@
  * 运行：node tests/invariants.mjs
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   assertBrowserRunning, assertCanCloseLastTab, assertCdpConnected, assertCdpContext, assertCdpHasPages,
@@ -20,8 +22,12 @@ import {
   tabs,
 } from '../lib/session.js'
 import {
-  consoleLevelRank, CONSOLE_LEVELS, createPage, navigate, normalizeConsoleLevel, titleOf,
+  consoleLevelRank, CONSOLE_LEVELS, createPage, navigate, normalizeConsoleLevel, timeOf, titleOf,
 } from '../lib/page.js'
+import {
+  actionHistoryPath, appendAction, DEFAULT_HISTORY_LIMIT, HISTORY_MAX_ENTRIES, HISTORY_PRUNE_SLACK,
+  HISTORY_SUMMARY_LIMIT, MAX_HISTORY_LIMIT, SENSITIVE_ARGS, historyEnabled, listActions, redactActionSummary,
+} from '../lib/history.js'
 import { captureJpeg } from '../lib/capture.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
@@ -799,6 +805,319 @@ await check('consoleLevelRank 对五级递增、对不可判级类型返回 -1',
     assert.equal(consoleLevelRank(type), -1, `${type} 应返回 -1`)
   }
 })
+
+// 用例 L 已被 console 级别占用（见上），动作历史顺延为用例 M；子用例名按规格 0037 照抄。
+console.log('== 用例 M：动作历史落盘与脱敏 ==')
+// 所有历史写入都落在本次运行的临时目录：绝不碰真实 ~/.dsh/browser-e2e/history/。
+const historyRoot = mkdtempSync(join(tmpdir(), 'dsh-history-'))
+let historyCaseSeq = 0
+
+/** 每个用例一份独立历史文件：隔离 seq 与裁剪状态，且不碰真实用户目录。 */
+function freshHistoryFile() {
+  historyCaseSeq += 1
+  const file = join(historyRoot, `case-${historyCaseSeq}.jsonl`)
+  process.env.DSH_BROWSER_HISTORY_FILE = file
+  delete process.env.DSH_BROWSER_HISTORY
+  delete process.env.DSH_BROWSER_HISTORY_MAX
+  return file
+}
+
+/** 测试侧独立解析历史文件（不复用被测的 readEntries，避免自证）。 */
+function historyRecords(file) {
+  return readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line))
+}
+
+await check('脱敏：fill 的写入值不落盘', () => {
+  const file = freshHistoryFile()
+  const value = 'secret-P@ss'
+  const record = appendAction({
+    tool: 'browser_e2e_fill',
+    summary: `填写 @3 (input "密码") <- "${value}"`,
+    args: { value },
+    ok: true,
+    session: 's1',
+  })
+  const raw = readFileSync(file, 'utf8')
+  const [stored] = historyRecords(file)
+  const masked = `[已脱敏 ${Array.from(value).length} 个字符]`
+  assert.ok(!raw.includes(value), `历史文件不应含明文：${raw}`)
+  // 脱敏只替换值本身，页层摘要里的包裹引号保留（spec 0037 的示例省略了引号，以规则文字为准）。
+  assert.equal(stored.summary, `填写 @3 (input "密码") <- "${masked}"`)
+  assert.equal(record.summary, stored.summary)
+  assert.deepEqual(Object.keys(stored), ['seq', 'at', 'tool', 'ok', 'summary', 'session'])
+})
+
+await check('脱敏：keystrokes 形态同样掩码', () => {
+  const file = freshHistoryFile()
+  const value = 'abc123'
+  appendAction({
+    tool: 'browser_e2e_fill',
+    summary: `逐键填写 @3 (input "code") <- "${value}"（6 个字符，delayMs=10）`,
+    args: { value },
+    ok: true,
+  })
+  const [stored] = historyRecords(file)
+  assert.equal(stored.summary, '逐键填写 @3 (input "code") <- "[已脱敏 6 个字符]"（6 个字符，delayMs=10）')
+  assert.ok(!stored.summary.includes(value), stored.summary)
+})
+
+await check('脱敏：dialog 的 prompt_text 不落盘', () => {
+  const file = freshHistoryFile()
+  const promptText = 'my-prompt-1'
+  appendAction({
+    tool: 'browser_e2e_dialog',
+    summary: `对话框策略已设为 accept（自动确认，prompt 文本 "${promptText}"）`,
+    args: { policy: 'accept', prompt_text: promptText },
+    ok: true,
+  })
+  const [stored] = historyRecords(file)
+  assert.equal(stored.summary, '对话框策略已设为 accept（自动确认，prompt 文本 "[已脱敏 11 个字符]"）')
+  assert.ok(!readFileSync(file, 'utf8').includes(promptText), '历史文件不应含 prompt 明文')
+})
+
+await check('脱敏：值含引号与换行仍整段掩码', () => {
+  const file = freshHistoryFile()
+  const value = 'a"b\'\nc'
+  appendAction({
+    tool: 'browser_e2e_fill',
+    summary: `填写 selector "#p" <- "${value}"`,
+    args: { value },
+    ok: true,
+  })
+  const raw = readFileSync(file, 'utf8')
+  const [stored] = historyRecords(file)
+  // 文件里是 JSON 转义形态，按转义后的值判「没有落盘」才有意义。
+  assert.ok(!raw.includes(JSON.stringify(value).slice(1, -1)), `历史文件不应含转义明文：${raw}`)
+  assert.equal(stored.summary, `填写 selector "#p" <- "[已脱敏 ${Array.from(value).length} 个字符]"`)
+})
+
+await check('脱敏：空值与其它工具不改摘要', () => {
+  const summary = '填写 @4 (input "x") <- ""'
+  assert.equal(redactActionSummary('browser_e2e_fill', summary, { value: '' }), summary)
+  assert.equal(redactActionSummary('browser_e2e_fill', summary, {}), summary)
+  assert.equal(redactActionSummary('browser_e2e_fill', summary, { value: 123 }), summary)
+  assert.equal(redactActionSummary('browser_e2e_fill', summary, null), summary)
+  // 规则表只覆盖 fill / dialog：别的工具即使入参里有同名字段也不改摘要。
+  assert.equal(redactActionSummary('browser_e2e_click', '点击 @1 (button "go")', { value: 'go' }), '点击 @1 (button "go")')
+  assert.equal(redactActionSummary('browser_e2e_fill', '填写 @1 <- "go"', { other: 'go' }), '填写 @1 <- "go"')
+  assert.deepEqual(SENSITIVE_ARGS, { browser_e2e_fill: ['value'], browser_e2e_dialog: ['prompt_text'] })
+})
+
+await check('落盘：追加一条且字段完整', () => {
+  // 默认路径不写盘：只读地确认后缀（真实目录的创建/写入由 DSH_BROWSER_HISTORY_FILE 全部避开）。
+  delete process.env.DSH_BROWSER_HISTORY_FILE
+  assert.ok(actionHistoryPath().endsWith(join('.dsh', 'browser-e2e', 'history', 'actions.jsonl')),
+    actionHistoryPath())
+  const file = freshHistoryFile()
+  assert.equal(actionHistoryPath(), file)
+  const before = Date.now()
+  const record = appendAction({
+    tool: 'browser_e2e_click',
+    summary: '点击 @1 (button "go")',
+    args: { ref: '@1' },
+    ok: true,
+    session: 'sess-1',
+  })
+  const after = Date.now()
+  const [stored] = historyRecords(file)
+  assert.deepEqual(Object.keys(stored), ['seq', 'at', 'tool', 'ok', 'summary', 'session'])
+  assert.equal(stored.seq, 1)
+  assert.ok(Number.isInteger(stored.at) && stored.at >= before && stored.at <= after, String(stored.at))
+  assert.equal(stored.tool, 'browser_e2e_click')
+  assert.equal(stored.ok, true)
+  assert.equal(stored.summary, '点击 @1 (button "go")')
+  assert.equal(stored.session, 'sess-1')
+  assert.ok(!('args' in stored) && !('value' in stored), JSON.stringify(stored))
+  assert.deepEqual(record, stored)
+})
+
+await check('落盘：已有文件时 seq 从末尾继续', () => {
+  const file = freshHistoryFile()
+  const seed = { seq: 7, at: Date.now() - 1000, tool: 'browser_e2e_snapshot', ok: true, summary: '旧记录', session: 'sess-1' }
+  writeFileSync(file, `${JSON.stringify(seed)}\n`, 'utf8')
+  const record = appendAction({ tool: 'browser_e2e_click', summary: '点击 @2', ok: true, session: 'sess-1' })
+  assert.equal(record.seq, 8)
+  assert.deepEqual(historyRecords(file).map((item) => item.seq), [7, 8])
+})
+
+await check('落盘：超过上限加余量后裁剪最旧', () => {
+  assert.equal(HISTORY_MAX_ENTRIES, 2000)
+  assert.equal(HISTORY_PRUNE_SLACK, 200)
+  const file = freshHistoryFile()
+  process.env.DSH_BROWSER_HISTORY_MAX = '3'
+  // 预置 上限 + 余量 = 203 条，再追加一条即越过阈值：整份重写为最后 上限 条。
+  const seeded = Array.from({ length: 3 + HISTORY_PRUNE_SLACK }, (_, index) => ({
+    seq: index + 1,
+    at: 1700000000000 + index,
+    tool: 'browser_e2e_snapshot',
+    ok: true,
+    summary: `记录 ${index + 1}`,
+  }))
+  writeFileSync(file, seeded.map((item) => `${JSON.stringify(item)}\n`).join(''), 'utf8')
+  const record = appendAction({ tool: 'browser_e2e_click', summary: '点击 @9', ok: true })
+  assert.equal(record.seq, 204)
+  const kept = historyRecords(file)
+  assert.deepEqual(kept.map((item) => item.seq), [202, 203, 204])
+  assert.ok(!existsSync(`${file}.tmp`), '裁剪后不应残留临时文件')
+})
+
+await check('落盘：坏行与 BOM 不影响读回', () => {
+  const file = freshHistoryFile()
+  const first = { seq: 1, at: 1700000000000, tool: 'browser_e2e_snapshot', ok: true, summary: '第一条' }
+  const second = { seq: 2, at: 1700000001000, tool: 'browser_e2e_click', ok: false, summary: 42 }
+  const badLines = [
+    JSON.stringify(first),
+    'not-json',
+    '',
+    JSON.stringify(second),
+    JSON.stringify({ seq: 3, at: 'x', tool: 'browser_e2e_click', ok: true }),
+    JSON.stringify(null),
+    JSON.stringify([1, 2]),
+  ]
+  writeFileSync(file, `\uFEFF${badLines.join('\n')}\n`, 'utf8')
+  const result = listActions({ limit: 10 })
+  assert.equal(result.total, 2)
+  assert.deepEqual(result.entries.map((entry) => entry.seq), [2, 1])
+  assert.equal(result.entries[0].summary, '', 'summary 非字符串按空串')
+  assert.equal(result.entries[0].ok, false)
+  assert.equal(result.text.split('\n')[0], '动作历史 2 条（共 2 条）')
+})
+
+await check('落盘：DSH_BROWSER_HISTORY=0 不建文件', () => {
+  const file = freshHistoryFile()
+  process.env.DSH_BROWSER_HISTORY = '0'
+  assert.equal(historyEnabled(), false)
+  assert.equal(appendAction({ tool: 'browser_e2e_click', summary: '点击 @1', ok: true }), null)
+  assert.ok(!existsSync(file), `开关关闭时不应创建文件：${file}`)
+  // 读回不受开关影响：既有文件仍可读。
+  writeFileSync(file, `${JSON.stringify({ seq: 1, at: 1700000000000, tool: 'browser_e2e_click', ok: true, summary: '旧记录' })}\n`, 'utf8')
+  assert.equal(listActions({}).total, 1)
+})
+
+await check('落盘：摘要超长按上限截断', () => {
+  assert.equal(HISTORY_SUMMARY_LIMIT, 500)
+  const file = freshHistoryFile()
+  appendAction({ tool: 'browser_e2e_click', summary: 'x'.repeat(HISTORY_SUMMARY_LIMIT + 37), ok: true })
+  const [stored] = historyRecords(file)
+  assert.equal(stored.summary, `${'x'.repeat(HISTORY_SUMMARY_LIMIT)}...(已截断)`)
+})
+
+await check('读回：最新在前、limit 截断、total 正确', () => {
+  assert.equal(DEFAULT_HISTORY_LIMIT, 20)
+  assert.equal(MAX_HISTORY_LIMIT, 200)
+  const file = freshHistoryFile()
+  for (let index = 1; index <= 5; index += 1) {
+    appendAction({ tool: 'browser_e2e_snapshot', summary: `记录 ${index}`, ok: true })
+  }
+  const result = listActions({ limit: 2 })
+  assert.equal(result.total, 5)
+  assert.equal(result.count, 2)
+  assert.deepEqual(result.entries.map((entry) => entry.seq), [5, 4])
+  const lines = result.text.split('\n')
+  assert.equal(lines[0], '动作历史 2 条（共 5 条）')
+  assert.equal(lines[1], `文件：${file}`)
+  assert.equal(lines[2], `#5 ${timeOf(new Date(result.entries[0].at).toISOString())} browser_e2e_snapshot 记录 5`)
+  // limit 口径：非正整数回退默认，超过上限截到 200，都不抛错。
+  assert.equal(listActions({ limit: 0 }).count, 5)
+  assert.equal(listActions({ limit: -1 }).count, 5)
+  assert.equal(listActions({ limit: 1.5 }).count, 5)
+  assert.equal(listActions({ limit: MAX_HISTORY_LIMIT + 1 }).count, 5)
+})
+
+await check('读回：tool / ok / scope 过滤', () => {
+  freshHistoryFile()
+  appendAction({ tool: 'browser_e2e_fill', summary: '填写 @1 <- [已脱敏 5 个字符]', ok: true, session: 'A' })
+  appendAction({ tool: 'browser_e2e_fill', summary: '失败：ref @9 已失效，请重新 browser_e2e_snapshot', ok: false, session: 'A' })
+  appendAction({ tool: 'browser_e2e_click', summary: '点击 @1 (button "go")', ok: true, session: 'B' })
+
+  const self = listActions({ session: 'A' })
+  // total 是「保留窗口内的有效记录数」（未过滤），过滤只影响 count 与条目。
+  assert.equal(self.total, 3)
+  assert.equal(self.count, 2)
+  assert.deepEqual(self.entries.map((entry) => entry.tool), ['browser_e2e_fill', 'browser_e2e_fill'])
+  assert.equal(self.text.split('\n')[0], '动作历史 2 条（共 3 条）')
+
+  const all = listActions({ session: 'A', scope: 'all' })
+  assert.equal(all.total, 3)
+  assert.equal(all.count, 3)
+  assert.equal(all.text.split('\n')[0], '动作历史 3 条（共 3 条；scope=all）')
+
+  const byTool = listActions({ session: 'A', tool: 'browser_e2e_fill' })
+  assert.equal(byTool.count, 2)
+  assert.equal(byTool.total, 3)
+  assert.equal(byTool.text.split('\n')[0], '动作历史 2 条（共 3 条；tool=browser_e2e_fill）')
+
+  const byOk = listActions({ session: 'A', ok: true })
+  assert.equal(byOk.count, 1)
+  assert.equal(byOk.entries[0].tool, 'browser_e2e_fill')
+  assert.equal(byOk.text.split('\n')[0], '动作历史 1 条（共 3 条；ok=true）')
+
+  const combined = listActions({ session: 'A', tool: 'browser_e2e_fill', ok: false, scope: 'all' })
+  assert.equal(combined.count, 1)
+  assert.equal(combined.total, 3)
+  assert.equal(combined.text.split('\n')[0], '动作历史 1 条（共 3 条；tool=browser_e2e_fill；ok=false；scope=all）')
+
+  const none = listActions({ session: 'A', tool: 'browser_e2e_click' })
+  assert.equal(none.count, 0)
+  const noneLines = none.text.split('\n')
+  assert.equal(noneLines[0], '动作历史 0 条（共 3 条；tool=browser_e2e_click）')
+  assert.equal(noneLines[2], '（没有匹配的记录）')
+})
+
+await check('读回：文件不存在时返回空而不是报错', () => {
+  const file = freshHistoryFile()
+  const result = listActions({ limit: 5 })
+  assert.equal(result.total, 0)
+  assert.equal(result.count, 0)
+  assert.equal(result.entries.length, 0)
+  assert.equal(result.error, undefined)
+  assert.equal(result.text, `还没有动作记录（文件：${file}）`)
+})
+
+// 接线用例共用一次 apply：假 ctx 只收集注册表，不挂面板、不启动浏览器。
+const wiringFile = freshHistoryFile()
+const wiringTools = new Map()
+const { apply } = await import('../lib/index.js')
+apply({
+  get: () => undefined,
+  tools: {
+    register(definition) {
+      wiringTools.set(definition.name, definition)
+      return () => {}
+    },
+  },
+  on: () => () => {},
+  effect: () => () => {},
+})
+const wiringExec = { agent: { id: 'invariants-history' } }
+
+await check('接线：注册的工具失败时写入 ok=false 记录', async () => {
+  const error = await wiringTools.get('browser_e2e_navigate').execute({}, wiringExec).catch((thrown) => thrown)
+  assert.match(String(error?.message), /缺少必填参数 url/)
+  const records = historyRecords(wiringFile)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].tool, 'browser_e2e_navigate')
+  assert.equal(records[0].ok, false)
+  assert.equal(records[0].session, 'invariants-history')
+  assert.equal(records[0].summary, '失败：缺少必填参数 url（非空字符串）')
+})
+
+await check('接线：browser_e2e_history 自身不记录', async () => {
+  const text = await wiringTools.get('browser_e2e_history').execute({}, wiringExec)
+  assert.equal(text.split('\n')[0], '动作历史 1 条（共 1 条）')
+  assert.equal(text.split('\n')[1], `文件：${wiringFile}`)
+  assert.equal(historyRecords(wiringFile).length, 1, '读历史这个动作不应再写一条')
+  assert.equal(listActions({ session: 'invariants-history' }).count, 1)
+})
+
+// 收尾：恢复环境变量并删掉本次的临时历史目录。
+delete process.env.DSH_BROWSER_HISTORY_FILE
+delete process.env.DSH_BROWSER_HISTORY
+delete process.env.DSH_BROWSER_HISTORY_MAX
+rmSync(historyRoot, { recursive: true, force: true })
 
 await closeAll()
 await check('收尾检查：会话注册表已清空', () => {

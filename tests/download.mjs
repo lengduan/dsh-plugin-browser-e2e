@@ -28,6 +28,8 @@ import { join, sep } from 'node:path'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
+// 本测试会经 index.js 接线执行工具：历史写入关闭，避免污染真实 ~/.dsh 历史目录。
+process.env.DSH_BROWSER_HISTORY = '0'
 // 避免宿主环境里遗留的覆盖目录影响默认目录用例。
 delete process.env.DSH_BROWSER_DOWNLOAD_DIR
 

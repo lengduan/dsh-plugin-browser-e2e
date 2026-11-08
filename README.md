@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：31 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：32 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 31 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 32 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -64,7 +64,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-31 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+32 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -98,6 +98,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_recipe` | 一次按顺序执行 1-20 个声明式步骤（`navigate` / `wait` / `click` / `fill` / `press` / `hover` / `scroll` / `extract`）：首个失败即停、已执行步骤不回滚，返回逐步 PASS / FAIL、失败步号与 `extract` 输出；步骤字段与对应工具同名，`wait` 步不接受 `expression`、没有 `evaluate` 步骤（不执行调用方脚本）；总预算 `timeoutMs` 默认 60000（1000-120000），只在步骤之间检查；全部输出合计上限 20000 字符 |
 | `browser_e2e_evaluate` | 在页面上下文执行 JavaScript 表达式并返回 JSON 结果；多行逻辑用 IIFE 包装。`timeoutMs` 是执行上限（默认 30000，允许 1000-120000），到点中断页面内正在执行的脚本并报错，页面与标签页保持打开 |
 | `browser_e2e_doctor` | 环境诊断（只读，不启动浏览器）：一次给 `runtime` / `edge` / `cdp` / `session` / `paths` / `env` 六项检查，每项 `OK` / `WARN` / `FAIL` / `SKIP` + 证据，非 `OK` 项附修法；`mode` 缺省取插件设置，检查 CDP 接管环境传 `mode: "cdp"`；`probeTimeoutMs` 100-10000（默认 1500）；`cdpEndpoint` 非法只报 `cdp` 项 FAIL，不抛错 |
+| `browser_e2e_history` | 读取本机动作历史（宿主落盘、已脱敏）：每次 `browser_e2e_*` 调用结束写一条，按时间倒序返回 `#seq` / UTC 时间 / 工具名 / 摘要；`limit` 1-200（默认 20）、`tool` 精确过滤、`ok` 只取成功 / 失败、`scope=self`（默认，只看本会话）/ `all`（含同机其它会话）；不依赖浏览器，读历史本身不写入历史 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
 ### 逐键输入（mode=keystrokes）
@@ -310,8 +311,8 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - **工具条**：连接状态灯、模式 chip（「隔离」/「CDP 接管」，CDP 时右侧附带端点，均取自当前选中 tab 所属会话的实际 mode / endpoint）、只读地址栏（`readOnly`，聚焦时自动全选，无页面时显示「无页面」）、刷新按钮、历史按钮。
 - **刷新按钮**：静态页面不会产生新帧，点刷新由宿主直接截一帧 JPEG，保证「按一下就有画面」。
 - **设置卡片**：`quality`(10-100)、`maxWidth`(100-4096)、`maxHeight`(100-4096)、`everyNthFrame`(1-10)，输入后客户端按区间取整 clamp，再经 socket `configure` 推给宿主（宿主 `mergeConfig` 再校验一次，非整数或越界报错）；只改宿主进程内的 `PanelHub` 配置，不写回 profile，插件重载后回到插件 Config 的值。
-- **动作提示**：每次 `browser_e2e_*` 工具调用后，面板收到一条 `action` 事件（工具名 + 一句话摘要），动作提示里显示最近 5 条，新的在前。
-- **历史抽屉**：点工具条的「历史」按钮把画面区换成操作历史抽屉，可回看本次面板会话内最近 50 条动作（时间 + 工具名 + 摘要，新的在前，行内 ellipsis 截断、`title` 给全文）；再点抽屉里的「关闭」回画面。历史只在前端内存，刷新面板或卸载组件后清空；无动作时打开显示「还没有动作」。
+- **动作提示**：每次 `browser_e2e_*` 工具调用后，面板收到一条 `action` 事件（工具名 + 一句话摘要），动作提示里显示最近 5 条，新的在前。同一份摘要还会由宿主追加到动作历史文件（写入前脱敏），可用 `browser_e2e_history` 读回，见「动作历史落盘」。
+- **历史抽屉**：点工具条的「历史」按钮把画面区换成操作历史抽屉，可回看本次面板会话内最近 50 条动作（时间 + 工具名 + 摘要，新的在前，行内 ellipsis 截断、`title` 给全文）；再点抽屉里的「关闭」回画面。历史只在前端内存，刷新面板或卸载组件后清空；无动作时打开显示「还没有动作」。宿主侧的持久副本由 `browser_e2e_history` 读回，抽屉不读它。
 - **设置页**：Plugins 页的插件行由宿主按本插件导出的 `Config`（6 项）自动渲染「配置」入口，保存经宿主 `form.mutate` 写 profile，不重载插件；客户端不注册 `plugins.row.config` 座位。
 - 面板是只读视图：它不启动浏览器、不操作页面，所有行为仍然只能由 `browser_e2e_*` 工具发起。唯一例外是协议命令 `close-tab`（用户主动关页，宿主调用 `session.closeTab`）；刷新按钮的 `request-frame` 只触发一次 `captureJpeg` 截图，不改变页面状态。
 
@@ -383,8 +384,22 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `DSH_BROWSER_IDLE_MS` | `600000`（10 分钟） | 无调用多久后关闭该会话浏览器；`0` 关闭空闲回收 |
 | `DSH_BROWSER_CLOSE_TIMEOUT_MS` | `5000` | 关闭浏览器时等待 graceful close 的毫秒上限 |
 | `DSH_BROWSER_DOWNLOAD_DIR` | 空 | `browser_e2e_download` 的下载目录（绝对路径）；空表示用 `<产物目录>/downloads/`，相对路径报错 |
+| `DSH_BROWSER_HISTORY` | 空 | 设 `0`（或 `false`）时不写动作历史，也不建目录；读回不受影响 |
+| `DSH_BROWSER_HISTORY_MAX` | `2000` | 动作历史保留条数上限；只接受正整数，非法值回退默认 |
+| `DSH_BROWSER_HISTORY_FILE` | 空 | 动作历史文件路径（绝对路径）；空表示用默认路径，相对路径按默认处理 |
 
-截图落在 `~/.dsh/browser-e2e/artifacts/<时间戳>/`；下载落在该目录的 `downloads/` 子目录（可用 `DSH_BROWSER_DOWNLOAD_DIR` 覆盖）。
+截图落在 `~/.dsh/browser-e2e/artifacts/<时间戳>/`；下载落在该目录的 `downloads/` 子目录（可用 `DSH_BROWSER_DOWNLOAD_DIR` 覆盖）；动作历史落在同根的独立子目录 `~/.dsh/browser-e2e/history/actions.jsonl`。
+
+### 动作历史落盘
+
+每次 `browser_e2e_*` 工具调用结束（成功或失败）由宿主向一个 append-only JSONL 追加一条记录：`seq` / `at` / `tool` / `ok` / `summary` / `session`。工具入参与返回值不落盘；`browser_e2e_history` 自身不记录，避免「读历史」这个动作反复进入历史。
+
+- **目录**：`~/.dsh/browser-e2e/history/actions.jsonl`，与截图产物同根、另立 `history` 子目录；`DSH_BROWSER_HISTORY_FILE` 给绝对路径时以它为准（测试与多实例隔离用）。
+- **脱敏**：只在写入前执行一次，按字段表覆盖 `browser_e2e_fill` 的 `value` 与 `browser_e2e_dialog` 的 `prompt_text`，把摘要里所有出现替换成 `[已脱敏 N 个字符]`（N 按码点计）。`action` 事件载荷、面板显示与工具返回值都不变。`navigate` / `wait` 摘要里的 URL 查询参数不脱敏。
+- **上限与轮转**：默认保留最近 2000 条（`DSH_BROWSER_HISTORY_MAX` 覆盖）；追加后超过「上限 + 200 条余量」时整份重写为最后 `上限` 条（同目录临时文件 + `rename`），重写失败保留原文件、下次追加再试。不按天过期、不压缩、不导出。
+- **截断**：单条摘要落盘前截到 500 个 UTF-16 码元，超出追加 `...(已截断)`。
+- **开关**：`DSH_BROWSER_HISTORY=0` 时不写、不建目录；既有文件仍可读。
+- **读回**：`browser_e2e_history` 不需要浏览器已启动，默认 `scope=self` 只看本会话（`session` 字段等于本次调用的会话 key），`scope=all` 含同机其它会话；`limit` 非正整数回退 20、超过 200 截到 200，不抛错；文件不存在按空历史返回。
 
 ### 使用示例
 
@@ -485,6 +500,9 @@ node tests/upload.mjs
 # 环境诊断：报告骨架 / 六项检查 / CDP 探测与超时 / 入参与工具表（不启动浏览器）
 node tests/doctor.mjs
 
+# 动作历史落盘路径（默认 ~/.dsh/browser-e2e/history/actions.jsonl；设了 DSH_BROWSER_HISTORY_FILE 时等于该值）
+node -e "import('./lib/history.js').then(m=>console.log(m.actionHistoryPath()))"
+
 # 分层聚合
 npm run test:unit
 npm run test:integration
@@ -503,20 +521,20 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（31 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（32 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  screencast.js
+实现层   session.js  page.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  history.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
-- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`fetch.js` 持浏览器内抓取（临时页 + 正文提取），只依赖 `page.js` 的 `currentTab` / `createTransientPage` 与 `read.js` 的正文预算常量，不 import 会话层、不落盘；`raw.js` 持原始 HTTP（仅 `mode=context`），只依赖 `page.js` 的 `currentTab` 与正文 / 脱敏纯函数，不 import 会话层、不落盘；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`fetch.js` 持浏览器内抓取（临时页 + 正文提取），只依赖 `page.js` 的 `currentTab` / `createTransientPage` 与 `read.js` 的正文预算常量，不 import 会话层、不落盘；`raw.js` 持原始 HTTP（仅 `mode=context`），只依赖 `page.js` 的 `currentTab` 与正文 / 脱敏纯函数，不 import 会话层、不落盘；`history.js` 持动作历史的 JSONL 追加、有界裁剪、写前脱敏与读回，只从 `page.js` 借 `timeOf` / `oneLine` 两个展示纯函数；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
 - `protocol.js` 是面板协议 v1 的单一契约来源，host 与 client 的校验从表派生；客户端常量由 `scripts/build-client.mjs` 经 `scripts/protocol-inject.mjs` 注入 `lib/client.js`，源码↔产物一致由 `tests/invariants.mjs` 守护。细节见 `specs/项目规格/0002-panel-protocol-v1.md`。
 - 投屏链路：工具执行 → `PanelHub.broadcastAction` 与 `scheduleSync` → WebSocket 广播 `state` / `action`；`Screencast` 适配器对当前页开 CDP 投屏，帧经 socket 推给面板，面板回 ack 后取下一帧。
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/fetch.js`（浏览器内抓取）、`lib/raw.js`（原始 HTTP）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/fetch.js`（浏览器内抓取）、`lib/raw.js`（原始 HTTP）、`lib/history.js`（动作历史落盘与脱敏）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
 
 </details>
 
@@ -537,7 +555,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。31 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。32 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -570,7 +588,8 @@ npm run test:integration
 - **evaluate 超时只中断当前脚本** —— `browser_e2e_evaluate` 的 `timeoutMs` 到点用 CDP 的 `Runtime.terminateExecution` 中断目标页主线程正在执行的脚本：只中断「正在执行」的那段，表达式返回永不 resolve 的 Promise 时页内等待仍会继续；Worker、跨源 iframe 与同源子 frame 内的死循环是否被中断未验证。中断可能打断页面自己的事件处理或框架渲染，DOM 会停在半完成状态，需要时重新 `browser_e2e_snapshot`。CDP 接管模式下这会打断用户浏览器里该页正在执行的脚本。若把 `DSH_BROWSER_IDLE_MS` 设得小于 `timeoutMs`，浏览器可能先被空闲回收，该次调用报「浏览器尚未启动」。
 - **人机验证检测是启发式且可能漏报** —— `browser_e2e_captcha_check` / `browser_e2e_wait_for_human` 只匹配已知结构选择器与一组文本短语，且只读主 frame：纯图片验证码、无已知 class 的自绘组件、跨源 iframe 子文档内部与 shadow DOM 内部文本会漏报，等待可能立即返回 `resolved:true`（`needed:false`）。`resolved:true` 只表示「未检测到」，不是「页面一定没有验证」，调用方需自行用 `browser_e2e_snapshot` / `browser_e2e_read` 或 `selector` 兜底。隔离模式默认 headless，用户看不到窗口，除页面自解外只能等出超时；`headless` 与 `hint` 用于改走 `headless=false` 或 cdp。探针是一次页面求值，不可被 `timeoutMs` 中断，页面主线程死锁时整次调用会挂住。
 - **剪贴板的边界** —— 只作用主 frame，iframe 内可编辑元素不支持；不提供真实快捷键粘贴（`method=system`）与剪贴板读回，验证复制按钮的推荐路径是「点击复制 → `action=paste` 回填 → 断言页面内容」；`sanitize: false` 只在 isolated 模式允许，且 `isolated` headed 下 `write` 改写的是用户真实系统剪贴板；`grantPermissions` 是整表授予，isolated 写入授予会替换此前的 `clipboard-read`，测试每次读回前需重新授予；非 https / localhost / file 的页面没有 `navigator.clipboard`，`write` 报固定错误而 `paste` 不受影响；后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略兜底插入。
-- **面板历史不持久** —— 历史抽屉只保留本面板连接内存里的最近 50 条动作，不落盘、不脱敏，重连保留但刷新面板或关闭 tab 后清空；打开面板之前的动作、其它面板连接收到的动作都不在抽屉里。宿主侧动作环、跨连接回放属待决策项，持久化与脱敏归 P2-28；面板直控判影响大 → 待决策，未实现。
+- **面板历史不持久** —— 历史抽屉只保留本面板连接内存里的最近 50 条动作，不落盘、不脱敏，重连保留但刷新面板或关闭 tab 后清空；打开面板之前的动作、其它面板连接收到的动作都不在抽屉里。宿主侧的持久副本（已脱敏）由 `browser_e2e_history` 读回，抽屉不读它；宿主侧动作环、跨连接回放属待决策项，面板直控判影响大 → 待决策，未实现。
+- **动作历史的边界** —— 落盘在 `~/.dsh/browser-e2e/history/actions.jsonl`（`DSH_BROWSER_HISTORY_FILE` 可覆盖），只记录工具名 / 时间 / 成功失败 / 已脱敏摘要 / 会话，不记录入参原文、返回值、页面访问轨迹、tab 归属与耗时。脱敏只覆盖 `browser_e2e_fill` 的 `value` 与 `browser_e2e_dialog` 的 `prompt_text`：新增工具若在摘要里回显输入，必须同步扩 `SENSITIVE_ARGS`；`navigate` / `wait` 摘要里的 URL 查询参数不脱敏，默认 `scope=self` 只限制可见范围。上限只按条数（默认 2000，`DSH_BROWSER_HISTORY_MAX` 可改），不做按天过期；同一台机器两个实例写同一文件时追加按行不互相撕裂，但裁剪重写可能互相覆盖、丢记录（单实例假设，按实例区分请设 `DSH_BROWSER_HISTORY_FILE`）。`scope=all` 会读到同一台机器上其它会话（含其它 profile）的记录；手工改坏的历史文件按行跳过坏行，不逐行修复。
 - **doctor 只体检不修复** —— `browser_e2e_doctor` 不启动浏览器、不安装 Edge、不清理残留进程，也不探测 profile 占用：`edge` 项按 Playwright 的同一条候选路径规则判断可执行文件是否存在，因此不能证明「Edge 一定起得来」；CDP 探测只做一次 TCP 连接与 `GET /json/version`，不建立 CDP 会话、不占用浏览器。代理只校验格式不探活；产物根目录不存在时用最近祖先的 `fs.access(W_OK)` 判可写，Windows 上该 API 对目录 ACL 判定不精确。环境变量在模块加载时求值，进程运行中改值不会反映到报告的生效值上。
 
 <a id="dev-note"></a>

@@ -16,6 +16,8 @@ import { inflateSync } from 'node:zlib'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
+// 本测试会经 index.js 接线执行工具：历史写入关闭，避免污染真实 ~/.dsh 历史目录。
+process.env.DSH_BROWSER_HISTORY = '0'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
@@ -1641,7 +1643,7 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 31 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / follow_tab）', table.length === 31 && names.length === 31, String(table.length))
+    check('工具表共 32 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / follow_tab / history）', table.length === 32 && names.length === 32, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
@@ -1664,6 +1666,23 @@ try {
       && 'delayMs' in fillTool.parameters.properties && fillTool.parameters.properties.delayMs?.type === 'integer'
       && fillTool.parameters.required.includes('value'),
     JSON.stringify({ mode: fillTool.parameters.properties.mode, delayMs: fillTool.parameters.properties.delayMs, required: fillTool.parameters.required }))
+    const historyTool = definitions.find((definition) => definition.name === 'browser_e2e_history')
+    check('browser_e2e_history 参数含 limit / tool / ok / scope 且无必填',
+      JSON.stringify(Object.keys(historyTool?.parameters.properties ?? {}).sort()) === JSON.stringify(['limit', 'ok', 'scope', 'tool'])
+        && historyTool.parameters.properties.limit?.type === 'integer'
+        && historyTool.parameters.properties.tool?.type === 'string'
+        && historyTool.parameters.properties.ok?.type === 'boolean'
+        && historyTool.parameters.properties.scope?.type === 'string'
+        && JSON.stringify(historyTool.parameters.properties.scope?.enum) === JSON.stringify(['self', 'all'])
+        && historyTool.parameters.additionalProperties === false
+        && historyTool.parameters.required.length === 0,
+      JSON.stringify(historyTool?.parameters))
+    check('browser_e2e_history 描述说明默认条数 / 上限、会话范围与自身不记录',
+      historyTool.description.includes('20') && historyTool.description.includes('200')
+        && historyTool.description.includes('scope=self') && historyTool.description.includes('scope=all')
+        && historyTool.description.includes('不需要浏览器已启动')
+        && historyTool.description.includes('不会写入历史'),
+      String(historyTool.description))
     const scrollTool = definitions.find((definition) => definition.name === 'browser_e2e_scroll')
     check('scroll 参数含 delta_x / delta_y / x / y / tab_id', ['delta_x', 'delta_y', 'x', 'y', 'tab_id'].every((field) => field in scrollTool.parameters.properties),
       JSON.stringify(Object.keys(scrollTool.parameters.properties)))

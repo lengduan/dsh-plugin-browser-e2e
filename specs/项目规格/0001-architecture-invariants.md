@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/auth.js / lib/history.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -43,9 +43,10 @@
 | `lib/raw.js` | 原始 HTTP 逃生口（仅 `mode=context`）：用当前标签页所属浏览器上下文的请求客户端发任意方法 / 头 / 正文，文本与二进制正文分支、敏感响应头脱敏、重定向与字符截断（rawHttp）；原始 CDP 与服务端直连模式未实现（见 `0003-未处理项.md` #9） | 会话生命周期、标签页登记、事件环、ref 表、快照、投屏、面板、落盘 |
 | `lib/doctor.js` | 环境诊断（只读）：运行时与依赖版本、系统 Edge 候选路径、CDP 端点可达性与 `/json/version` 识别、当前会话只读视图、产物 / 下载目录可写性、环境变量合法性；报告为固定六项文本，不启动浏览器、不改会话与进程 | 生命周期、页面能力、截图落盘、面板协议 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
+| `lib/history.js` | 动作历史的落盘与脱敏：路径解析、脱敏纯函数、JSONL 追加与有界裁剪、读回（`actionHistoryPath` / `historyEnabled` / `redactActionSummary` / `appendAction` / `listActions`） | 面板广播、协议、会话状态、页面能力、工具定义 |
 | `lib/human.js` | 人机协同等待：页内人机验证探测、轮询判定与完成信号（`humanCheck` / `waitForHuman`） | 会话生命周期、面板、工具定义 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 31 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 32 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -54,8 +55,8 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / human.js / defaults.js / doctor.js
-index.js → tools.js / panel.js / session.js / auth.js / defaults.js
+tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / human.js / history.js / defaults.js / doctor.js
+index.js → tools.js / panel.js / session.js / auth.js / history.js / defaults.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js
@@ -68,6 +69,7 @@ human.js → page.js
 auth.js → fence.js
 screencast.js → protocol.js
 capture.js → protocol.js
+history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回调会话层，不 import 页面能力）
 doctor.js → session.js / capture.js / defaults.js
 protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
 ```
@@ -387,6 +389,10 @@ CDP 模式只断连，绝不结束用户浏览器进程。
   定义）、`panel.js` 的刷新帧（`import { captureJpeg }` 与 `request-frame` 分支）；删除后截图能力随之
   消失，面板刷新按钮也没有可截的帧源。
 - 上述两条都是能力删除，不是零改动模块删除。
+- `history.js` 的落盘是独立子目录 `~/.dsh/browser-e2e/history/`（与 `artifacts/` 同根、不混用），
+  脱敏只在写入前执行一次、只覆盖 `SENSITIVE_ARGS` 表里的字段；`action` 事件载荷、面板显示与
+  工具返回值一律不变。删除该模块是**能力删除**：需同时删 `tools.js` 的 `browser_e2e_history`
+  定义与 `index.js` 的两处写入接线。
 - `invariants.js` 删除后约束会散回各能力函数（删除测试的反向判据）。
 
 ## 已知结构性债务
@@ -416,6 +422,8 @@ CDP 模式只断连，绝不结束用户浏览器进程。
    - 改 `capture.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `page.js` / `tools.js`：`npm run test:unit && node tests/tools.mjs && node tests/multitab.mjs && node tests/follow.mjs`。
    - 改 `read.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
+   - 改 `history.js`：`node tests/invariants.mjs`（用例 L：纯函数 + 临时目录，不起浏览器）
+     与 `node tests/panel.mjs`（真起无头 Edge，串行）。
    - 改 `fetch.js`：`npm run test:unit && node tests/fetch.mjs && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `protocol.js` / `panel.js` / `index.js`：`npm run test:unit && node tests/panel.mjs`。
    - 改 `doctor.js`：`npm run test:unit && node tests/doctor.mjs && node tests/panel.mjs`。
