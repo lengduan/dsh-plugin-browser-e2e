@@ -4,7 +4,7 @@
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、依赖方向、P3「单次 / 运行时」分类、进程回收口径）；specs/项目规格/0002-panel-protocol-v1.md（一次调用只产生一条既有 `action` 事件，不改协议）；specs/功能规格/0004-snapshot-and-ref-table.md（ref 表按页隔离、导航清空 ref）；specs/功能规格/0007-click-fill-targets.md（ref / selector / x + y 三选一与报错口径）；specs/功能规格/0013-wait-url-and-response.md（wait 的四类条件与超时口径）；specs/功能规格/0017-structured-read.md（结构化读取与本项 `extract` 的分工）；specs/功能规格/0019-evaluate-timeout.md（页面脚本求值边界，本项不提供脚本步骤）；specs/功能规格/0023-tool-permission-gating.md（门控待决策，本项不新增脚本执行面）；specs/功能规格/0027-assert-tool.md（断言工具与本项「步骤失败不抛错」的并列口径）
 代码: lib/recipe.js / lib/tools.js / lib/page.js / tests/recipe.mjs / README.md
 
-本项范围只到**声明式步骤**：一步 = 一次既有页面动作，步骤种类固定为 `navigate / wait / click / fill / press / hover / scroll / extract`。**不含任意脚本执行**：没有 `evaluate` 步骤，`wait` 步不接受 `expression` 条件，也不接受 UserScript / 宿主 Node 脚本。任意脚本执行（anweat `script.run_userscript`、Fisfzy `ego_script` 语义）另判「影响大 → 待决策」，候选与影响面见 `.scratch/browser-plugin-survey/plans/20-recipe-script.md` §1 与 §6.5，不在本规格契约内。
+本项范围只到**声明式步骤**：一步 = 一次既有页面动作，步骤种类固定为 `navigate / wait / click / fill / press / hover / scroll / extract`。**不含任意脚本执行**：没有 `evaluate` 步骤，`wait` 步不接受 `expression` 条件，也不接受 UserScript / 宿主 Node 脚本。任意脚本执行（anweat `script.run_userscript`、Fisfzy `ego_script` 语义）已于 2026-11-08 整项否决、不立项：A 与已实现的 `browser_e2e_evaluate` 重叠且本仓工具层无请求拦截能力，B 在宿主侧开任意 Node 执行面，C 与 `browser_e2e_read` 职责重叠（候选与影响面见 `.scratch/browser-plugin-survey/plans/20-recipe-script.md` §6.5，不在本规格契约内）。
 
 ## 需求
 
