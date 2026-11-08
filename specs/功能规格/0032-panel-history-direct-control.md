@@ -1,11 +1,11 @@
 # 面板操作历史 / 面板直控
 
-状态: 已实现（A 切片：动作历史抽屉）；B 切片合并至 P2-28（`0037`）决策，C 切片（面板直控）已否决
+状态: 已实现（A 切片：动作历史抽屉）；B 切片（宿主动作环）由 P2-28（`0037`）决策否决，C 切片（面板直控）已否决
 关联: specs/项目规格/0002-panel-protocol-v1.md（面板协议 v1、面板只读定位、命令 / 事件 / 错误码表）；specs/项目规格/0001-architecture-invariants.md（模块表「`client/index.js` 客户端 bundle、`lib/client.js` 构建产物」、依赖方向）；specs/项目规格/0003-未处理项.md（面板直控由 Lead 录入）；specs/功能规格/0020-session-reset.md、0021-auth-state-import.md、0023-tool-permission-gating.md、0024-clipboard.md、0029-human-wait-captcha.md（都明文「不改面板只读定位」，本项直控部分与这些句子同源冲突）；README.md「右侧实时浏览器面板」「面板协议与路由」
 代码: client/index.js / tests/client-bundle.mjs
 
 > 本规格只确认「面板操作历史（动作抽屉）」这一可施工切片：不改协议、不改只读定位、不改工具面。
-> 2026-11-08 决策：「面板直控」（C 切片）**已否决**——socket 只做 loopback 围栏、无鉴权（`lib/panel.js` 的升级处理），直控等于把浏览器控制权交给本机任意进程；且其人工介入收益已被有头模式与 `browser_e2e_wait_for_human` 覆盖。宿主侧动作环（B 切片）与 `0037-action-history-persist.md` 的 B / C 是同一协议增量，合并至该项决策；本规格不实现。
+> 2026-11-08 决策：「面板直控」（C 切片）**已否决**——socket 只做 loopback 围栏、无鉴权（`lib/panel.js` 的升级处理），直控等于把浏览器控制权交给本机任意进程；且其人工介入收益已被有头模式与 `browser_e2e_wait_for_human` 覆盖。宿主侧动作环（B 切片）与 `0037-action-history-persist.md` 的 B / C 是同一协议增量，已由该项决策一并否决；本规格不实现。
 
 ## 需求
 
