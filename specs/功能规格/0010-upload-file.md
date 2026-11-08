@@ -69,7 +69,7 @@
 
 - 能力函数返回 `{ mode, ref, selector, x, y, files: [{ name, size }], totalBytes, multiple, accept, visible, replaced, cleared, summary }`（不适用字段省略）。
 - 摘要：`上传 N 个文件到 <label>：<name>（<size> 字节）、…`（单文件不带间隔号）；坐标路径的 `<label>` 为 `坐标 (x, y)`。
-- 工具返回三行文本：首行摘要；第二行 `控件：multiple|单文件` ＋ `，accept="<a>"`（没有 accept 时省略，超过 120 字符截断加 `…`）＋ `；共 <n> 字节` ＋ `；当前不可见（按 DOM 注入）`（仅不可见时）＋ `；已替换原有 N 个选择`（仅 N>0 时）；第三行 `再次调用会覆盖本次选择（clear 默认 true）；要清空已选文件请传 files: []。`
+- 工具返回三行文本：首行摘要；第二行 `控件：multiple|单文件` ＋ `，accept="<a>"`（没有 accept 时省略，超过 120 字符截断加 `…`）＋ `；共 <n> 字节` ＋ `；当前不可见（按 DOM 注入）`（仅不可见时）＋ `；已替换原有 N 个选择`（仅 N>0 时）＋ `；页面当前选择 N 个文件`（仅读回的选择数不等于本次下发文件数时）；第三行 `再次调用会覆盖本次选择（clear 默认 true）；要清空已选文件请传 files: []。`
 - 设置后做一次尽力而为的读回（读 `input.files` 的 `name` 与 `length`），元素已移除或页面脚本清空选择都不算失败，只用于在摘要里补一句 `页面当前选择 N 个文件`；成功判据只有「下发调用没有抛错」。
 - 面板：`lib/index.js` 的注册包装用 `summaryOf` 取首行广播 `action` 事件，与其它工具一致；不改 `lib/protocol.js`、`lib/panel.js`、`client/index.js`。
 - 会话 / 标签页 / 进程：只读宿主文件、只改页面控件的选择；不新建页、不改视口、不关闭浏览器；失败时不改变控件原有选择（x + y 路径在点击前拒绝，或在 `setFiles` 前拒绝）。

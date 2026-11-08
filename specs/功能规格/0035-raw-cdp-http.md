@@ -160,11 +160,13 @@ Playwright 的抽象覆盖不到一些验证点：`Performance.getMetrics` 的�
 3. `node tests/tools.mjs`：exit 0、无 FAIL。相关用例名：`注册的工具与工具表逐项一致`。
 4. `node tests/cdp.mjs`：exit 0、无 FAIL（本机无 Edge 时按现有 SKIP 口径 exit 0）。
 
-### 2. 缺口判定（当前代码可执行；实现后预期非 0，届时删除本条）
+### 2. 落地后核对（B1 已实现，原「缺口判定」组作废）
 
-1. `node -e "import('./lib/tools.js').then(m=>{const t=m.buildToolTable({launchDefaults:()=>({})});const hit=t.map(d=>d.name).filter(n=>/cdp|http|raw/.test(n));console.log(t.length, JSON.stringify(hit))})"`：输出 `<实际条数> []`（读取时点 2026-11-08 工作树实测 `23 []`，HEAD `94cddf3` 为 22；命中列表为空）。
-2. `git grep -n -e newBrowserCDPSession -e "browser_e2e_cdp" -e "browser_e2e_http" -- lib README.md`：无输出、exit 1。
-3. `node -e "const s=require('fs').readFileSync('README.md','utf8');console.log(/逃生口|原始 CDP|browser_e2e_cdp/.test(s)?'有':'无')"`：输出 `无`。
+A（原始 CDP）与 C（CDP 白名单子集）已否决，因此本组只核对 B1 已落地、原始 CDP 仍未实现：
+
+1. `node -e "import('./lib/tools.js').then(m=>{const t=m.buildToolTable({launchDefaults:()=>({})});const hit=t.map(d=>d.name).filter(n=>/cdp|http|raw/.test(n));console.log(t.length, JSON.stringify(hit))})"`：输出 `30 ["browser_e2e_http"]`（2026-11-08 在 HEAD `6057bd6` 实测；`/cdp|http|raw/` 只命中 `browser_e2e_http`）。
+2. `git grep -n -e newBrowserCDPSession -e "browser_e2e_cdp" -- lib README.md`：无输出、exit 1（原始 CDP 未实现，符合否决结论）。
+3. `node -e "const s=require('fs').readFileSync('README.md','utf8');console.log(/逃生口|原始 CDP|browser_e2e_cdp/.test(s)?'有':'无')"`：输出 `有`（README 有「原始 HTTP」与未实现说明；此命令只判关键词是否出现）。
 
 ### 3. 决策记录（Lead 录入后）
 

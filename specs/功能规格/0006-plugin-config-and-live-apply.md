@@ -34,5 +34,5 @@
 ## 验收
 
 1. `node tests/panel.mjs`（真起无头 Edge）：用例 B 设置合并的 `部分字段合并`、`空 patch 不动原值`、`quality 越界报错`、`非整数报错`、`config 非对象报错`；用例 E 启动缺省的 `配置 defaultMode=cdp 被首次启动消费`、`未提供配置时默认 isolated`、`配置默认值不让已启动会话报 mode 不一致`、`volatile 更新后 start 即时读到新 defaultMode / cdpEndpoint`、`mode=cdpp 的 start 显式报错且不启动 isolated`；用例 F 投屏接线的 `PanelHub 构造时合并 Config 投屏参数`、`非法投屏参数逐字段回退默认`、`applyConfig 回推含新 config 的 state`、`applyConfig 非法值回退默认`、`apply 读取 volatile 配置引用`；端到端段落里的 `非法设置回 error 事件`（`invalid-config`）。判定：exit 0、输出无 FAIL。
-2. `node tests/invariants.mjs`（不起浏览器）：`投屏区间与默认值自洽（默认值逐项落在区间内）`、`生成的 bundle 常量与 protocol.js 逐字段一致`、`默认 CDP 端点单源：bundle 注入值等于 lib/defaults.js，client 源文件不手写 9222`、`默认 CDP 端点宿主侧取自 lib/defaults.js（session / index 不各写一份）`、`client 源文件只留注入标记，不手写区间与默认值`、`captureJpeg：未传 quality 时取 DEFAULT_SCREENCAST_CONFIG.quality`。判定：exit 0、输出无 FAIL。
+2. `node tests/invariants.mjs`（不起浏览器）：`投屏区间与默认值自洽（默认值逐项落在区间内）`、`生成的 bundle 常量与 protocol.js 逐字段一致`、`默认 CDP 端点单源：bundle 注入值等于 lib/defaults.js，client 源文件不手写 9222`、`默认 CDP 端点宿主侧取自 lib/defaults.js（session / index / doctor 不各写一份）`、`client 源文件只留注入标记，不手写区间与默认值`、`captureJpeg：未传 quality 时取 DEFAULT_SCREENCAST_CONFIG.quality`。判定：exit 0、输出无 FAIL。
 3. `node tests/screencast.mjs`（假 CDP，不起浏览器）：`configure 顺序为 restart -> broadcast`、`configure 返回 accept 且未回错误`——与 `applyConfig` 是同一「先按新参数重开投屏、再广播状态」的顺序。判定：exit 0、输出无 FAIL。

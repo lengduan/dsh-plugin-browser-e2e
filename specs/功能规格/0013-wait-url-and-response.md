@@ -63,7 +63,7 @@ URL 匹配方式（`urlMatch`，`url` 与 `response` 共用同一套语义，匹
 - 请求失败：`failOnRequestFailed: true`（缺省）时，等待期间 URL 与 method 匹配的请求失败立即抛错，文案带 failure 原文与「如属预期（例如导航中止），传 failOnRequestFailed=false 继续等待其它响应」；为 `false` 时继续等待，失败请求只进超时诊断列表。已缓冲历史里已失败的请求不参与匹配，也不触发立即失败。
 - 超时抛错，文案包含：实际等待与上限、条件描述（`urlMatch` / method / status 区间）、已缓冲响应条数、URL 与 method 命中但状态不符的最多 3 条、匹配失败请求的最多 3 条，以及「缓存命中或 Service Worker 代理的响应可能不产生 response 事件，可加 cache-busting 查询参数后重试」提示。
 - 命中返回 `{ mode: 'response', tabId, pattern, urlMatch, responseMethod, statusMin, statusMax, includeBuffered, matchedResponse, timeoutMs, elapsedMs, summary }`；`responseMethod` 未给时为 `null`，`statusMin` / `statusMax` 为本次生效的区间值；`matchedResponse` 为 `{ url, method, status, mimeType, at, buffered }`（`at` 对缓冲命中取请求记录时间，对未来响应取命中时刻）。`summary` 形如 `等待响应命中：POST http://127.0.0.1:19387/api/order（HTTP 200，application/json，调用前已缓冲，耗时 3ms）`。
-- 不读响应体、不返回完整响应头列表；需要响应体时等 P0-6（`specs/功能规格/0007-network-response-body.md`）。
+- 不读响应体、不返回完整响应头列表；需要响应体时见 `specs/功能规格/0015-network-response-body.md`（已实现）。
 
 ### 输出与工具层渲染
 
@@ -87,7 +87,7 @@ URL 匹配方式（`urlMatch`，`url` 与 `response` 共用同一套语义，匹
 - 页面关闭或崩溃：`url` 轮询发现 `page.isClosed()`、`response` 收到 `close` / `crash` 事件时立即报「标签页已关闭」，不等满 `timeoutMs`。
 - `includeBuffered: true` 的误报风险：等待前已经完成的同 URL 响应会立即命中（这正是它解决的问题）。对同一 URL 周期性轮询的页面，等待「点击后新发起的那一次」时必须传 `includeBuffered: false`，或用更精确的 URL / method / status 条件。
 - 缓存与服务端推送：由内存缓存或 Service Worker 直接提供、不产生网络往返的响应可能不触发 `response` 事件，等待会超时；超时文案给出 cache-busting 提示。这是 Playwright/CDP 事件层限制，本功能不绕过。
-- 匹配范围：`response` 是页面级事件，子 frame 的请求也可能命中，不提供按 frame 过滤；`url` 只看主框架。跨源 iframe 的定位/操作仍待 P1-9（`specs/功能规格/0010-iframe-operations.md`）。
+- 匹配范围：`response` 是页面级事件，子 frame 的请求也可能命中，不提供按 frame 过滤；`url` 只看主框架。跨源 iframe 的定位/操作见 `specs/功能规格/0018-iframe-operations.md`（已实现，`frame` 只配 `selector`）。
 - 轮询精度：`url` 每约 100ms 检查一次，存在时间短于轮询间隔的中间地址可能被跳过；`timeoutMs` 精度同样约 ±100ms。需要精确观察每次导航请用后续的导航历史能力（本规格不做）。
 - 需要明确的非目标：不等待请求发出（`request`）、不等待下载、不等待控制台消息、不按 frame 过滤、不读响应体、不做跨 tab 匹配、不提供调用中取消（宿主工具调用没有取消入口，只能靠 `timeoutMs` 兜底）。
 - 非法输入：`url` / `response` 为空字符串按未给处理（计入四选一错误）；`responseMethod` 空串、`statusMin` / `statusMax` 非 100–599 整数或倒置、`urlMatch` 不在枚举、`regex` 编译失败、`timeoutMs` 非正整数，均在等待前报错，错误文案给出可选值或修复方式。

@@ -2,7 +2,7 @@
 
 状态: 已实现（方案 A1）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` 的职责；进程内对象契约「标签页条目」与各工具返回字段；不变量清单 `assertRefBelongsToTab` / `assertRefRevalidated`；已知结构性债务「page.js 粒度过大」）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0004-snapshot-and-ref-table.md（ref 生命周期）；specs/功能规格/0007-click-fill-targets.md（目标解析、坐标口径与失败文案）；specs/功能规格/0012-snapshot-delta-query-frame.md（frame 快照、子 frame 只读与跨源报错）；README.md「Known Limitations and Deferred Work」（快照只读同源 iframe；悬停与拖拽只作用于主 frame）
-代码: 已落地：新增 `lib/frame.js`（`frameListOf` / `describeFrames` / `frameInfoOf` / `resolveFrame` / `actionFrameOf`，快照与交互工具共用同一份定位实现）；`lib/snapshot.js` 的 frame 解析改为复用 `frame.js`（行为与文案不变）；`lib/page.js` 的 `click` / `fill` / `scroll` 新增 `frame` 分支与互斥校验、frame 卸载文案；`lib/tools.js` 三个工具的参数与描述；`tests/frames.mjs`（新建，18 条用例）；`package.json` 的 `test:integration`；`README.md`；`specs/项目规格/0001`（模块表与依赖图）。`press` 不加 `frame`；`hover` / `drag` / `upload` 仍只作用主 frame。
+代码: 已落地：新增 `lib/frame.js`（`frameListOf` / `describeFrames` / `frameInfoOf` / `resolveFrame` / `actionFrameOf`，快照与交互工具共用同一份定位实现）；`lib/snapshot.js` 的 frame 解析改为复用 `frame.js`（行为与文案不变）；`lib/page.js` 的 `click` / `fill` / `scroll` 新增 `frame` 分支与互斥校验、frame 卸载文案；`lib/tools.js` 三个工具的参数与描述；`tests/frames.mjs`（新建，23 条用例，本规格「3. 采纳方案 A1 后的实施验收」点名的 4 条用例已补：`frame 1 内点击后 press 生效` / `frame 内坐标点击按主视口命中` / `frame 导航后 selector 重新解析` / `t1 与 t2 的 frame 互不影响`）；`tests/cdp.mjs` 新增 `CDP 接管下 frame 内 selector 点击生效` / `CDP 接管下跨源 frame 内 selector 点击生效`；`tests/tools.mjs` 新增 `click / fill / scroll 的参数表含 frame` / `press 的参数表不含 frame`；`package.json` 的 `test:integration`；`README.md`；`specs/项目规格/0001`（模块表与依赖图）。`press` 不加 `frame`；`hover` / `drag` / `upload` 仍只作用主 frame。
 
 ## 需求
 
@@ -53,7 +53,7 @@
 #### 输出
 
 - 仅当 `frame.index > 0` 时，返回值追加 `frame: { index, name, url, parentIndex }`（与快照的 `frame` 字段同形）；`frame: 0` 与不传 `frame` 保持既有返回形状逐字不变（不追加字段）。
-- `summary` 在 `frame.index > 0` 时追加 `（frame <index>）`，且 `name` 非空时写成 `（frame <index> "<name>"）`；`frame: 0` 不加后缀，保持既有摘要逐字不变。
+- `summary` 在 `frame.index > 0` 时追加 `（frame <index>）`，且 `name` 非空时写成 `（frame <index> "<name>"）`；`frame: 0` 不加后缀，保持既有摘要逐字不变。**例外**：`scroll` 的 frame 分支有自己的措辞 `向 frame（索引 N）中心 (x, y) 发送滚动 (dx, dy)；实际滚动量由页面决定`，已含索引且保留了实际滚动量，不套用上面的通用后缀。
 - `click` 的 `mode` 仍为 `ref` / `selector` / `point`；frame 分支的 `mode` 为 `selector`。`fill` 同理。`scroll` 的 `mode` 仍为 `scroll`。
 
 #### 行为

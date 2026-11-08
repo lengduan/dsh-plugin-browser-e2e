@@ -1,7 +1,7 @@
 # 动作历史持久化与脱敏
 
 状态: 已实现（仅 A 切片）；B（宿主动作环 + `actions` 事件）与 C（面板显示脱敏摘要）已否决（2026-11-08）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表新增 `lib/history.js`、依赖方向、验收命令）；specs/项目规格/0002-panel-protocol-v1.md（`action` 事件载荷、面板只读定位——本项一律不改）；specs/项目规格/0003-未处理项.md #5（宿主侧动作环 + `actions` 事件属协议增量，待决策，本项不做）；specs/项目规格/0006-plugin-config-and-live-apply.md（`Config` 仍为六项，本项不新增配置项）；specs/功能规格/0032-panel-history-direct-control.md（面板抽屉只在前端内存、不脱敏，本项是另一条读回通道）；specs/功能规格/0007-click-fill-targets.md、0022-dialog-handling.md（`fill` / `dialog` 的摘要形状是脱敏规则的输入）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表新增 `lib/history.js`、依赖方向、验收命令）；specs/项目规格/0002-panel-protocol-v1.md（`action` 事件载荷、面板只读定位——本项一律不改）；specs/项目规格/0003-未处理项.md #5（宿主侧动作环 + `actions` 事件属协议增量，待决策，本项不做）；specs/功能规格/0006-plugin-config-and-live-apply.md（`Config` 九项，本项不新增配置项）；specs/功能规格/0032-panel-history-direct-control.md（面板抽屉只在前端内存、不脱敏，本项是另一条读回通道）；specs/功能规格/0007-click-fill-targets.md、0022-dialog-handling.md（`fill` / `dialog` 的摘要形状是脱敏规则的输入）
 代码: lib/history.js / lib/index.js / lib/tools.js / tests/invariants.mjs / tests/panel.mjs
 
 ## 需求

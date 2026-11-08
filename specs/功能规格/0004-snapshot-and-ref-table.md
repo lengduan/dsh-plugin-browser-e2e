@@ -61,7 +61,7 @@
 ## 验收
 
 1. `node tests/tools.mjs` 退出码 0 且无 FAIL：
-   - 用例 4 的 `snapshot 返回 summary 与 truncated 字段`、`节点结构含 id / classes / name / depth`、`文本含 box(100,100,100,40)`、`文本含按钮标签与缩进`、`返回项数不少于 2`、`能从文本解析出 ref`、`ref 点击生效`。
+   - 用例 4 的 `snapshot 返回 summary 与 truncated 字段`、`节点结构含 id / classes / name / depth`、`文本含 box(...)`、`文本含按钮标签与缩进`、`返回项数不少于 2`、`能从文本解析出 ref`、`ref 点击生效`。
    - 用例 4B 的 `id 含引号时 snapshot 不抛错`、`id 含引号时仍能读到 label[for] 文本`。
    - 用例 6 的 `失效 ref 报「已失效，请重新 snapshot」`、`失效 ref 的 fill 同样报「已失效」而不是点空`。
    - 用例 9 的 `truncated 为 true`、`只返回 4000 条`、`total 记录实际可见节点数`、`文本尾部有截断提示`、`截断后的 ref 点击仍生效`。

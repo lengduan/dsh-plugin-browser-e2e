@@ -141,7 +141,7 @@
 1. 纯函数归一：`accessMode 缺失按 full`、`accessMode 合法值原样`、`accessMode 非法值按 readonly 并标记 illegal`、`allowScript 缺失按 true`、`allowScript 合法值原样`、`allowScript 非法值按 false 并标记 illegal`、`缺 access 的工具按 interact`。
 2. 定性完整：`工具表的每个工具都有合法 access`、`定性分布非空且 observe / interact / script 都有`、`evaluate 是唯一的 script 类工具`、`wait 默认是 observe，带 expression 时升级为 script`。
 3. 缺省放行：`缺省配置下 interact / script 工具都不被门控拒绝`、`缺省配置下 accessMode 为 full / allowScript 为 true`。
-4. 只读模式：`readonly 拒绝全部 interact 工具（13 个）`、`readonly 放行全部 observe 工具（19 个）`、`readonly 拒绝 evaluate`、`readonly 拒绝 wait 的 expression 条件`、`readonly 下 wait 的 selector 条件放行`、`拒绝文案含工具名 accessMode=readonly 与可用工具清单`、`被拒调用不进入 run（不创建会话）`。
+4. 只读模式：`readonly 拒绝全部 interact 工具（13 个）`、`readonly 放行全部 observe 工具（16 个）`、`readonly 拒绝 evaluate`、`readonly 拒绝 wait 的 expression 条件`、`readonly 下 wait 的 selector 条件放行`、`拒绝文案含工具名 accessMode=readonly 与可用工具清单`、`被拒调用不进入 run（不创建会话）`。
 5. 脚本开关：`full + allowScript=false 拒绝 evaluate`、`full + allowScript=false 拒绝 wait 的 expression 条件`、`full + allowScript=false 时 click 仍放行`、`full + allowScript=true 放行 evaluate`。
 6. 脏值 fail-closed：`accessMode 非法值按 readonly 处理`、`allowScript 非法值按 false 处理`。
 7. 即时生效：`改配置后下一次调用即按新值判定（无需重启）`。

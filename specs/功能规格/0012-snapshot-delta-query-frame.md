@@ -65,7 +65,7 @@
   - `removed` 每项为 `{ ref, tag, name, xpath }`，`ref` 为被移除元素在基线中的 ref；子 frame 无 ref 时为 `null`。
   - 判据：按页面脚本分配的稳定 key 识别同一元素，摘要只比较 `tag` / `id` / `classes` / `role` / `name` / `text`；不比较 `box` 与 `depth`（滚动、布局移动不产生变化），不比较 `xpath`（兄弟增删造成的路径漂移不产生变化）。元素被替换表现为旧 key 消失（`removed`）加新 key 出现（`added`），或被同一 key 的摘要变化捕获（`changed`）。
   - 主文档：delta **不清空** `tab.refs`，按 key 增量并入——仍在的元素沿用基线 ref，新增元素分配 `@<nextRef>` 并递增，被移除元素的 ref 从表中删除。旧 ref 对仍存在的元素继续有效；全量快照仍会重置编号并让旧 ref 全部失效（既有行为）。
-- `truncated` 为真当且仅当以下任一成立：本次返回的变化节点数被 4000 条上限裁掉；对比范围被前 4000 条可见节点裁掉；`scanTruncated` 为真。文本末尾给出对应说明。
+- `truncated` 为真当且仅当以下任一成立：本次对比范围被前 4000 条可见节点限制（`total > 4000`）；实际变化节点数超过 4000（`changesCount > 4000`，只置标志并在文本提示，不裁剪返回的变化节点）；`scanTruncated` 为真。文本末尾给出对应说明。
 - `text` 首行 `增量 v<version>（标签页 <tabId>，frame <index>）`；随后按「新增 N 个」「变化 M 个」「移除 K 个」分段；三者都为空时输出一行「（无可见变化）」。文本字符上限 20000，超出时截断并追加提示。
 - `summary`：`增量：新增 <addedCount> / 变化 <changedCount> / 移除 <removedCount>（标签页 <tabId>）`。
 

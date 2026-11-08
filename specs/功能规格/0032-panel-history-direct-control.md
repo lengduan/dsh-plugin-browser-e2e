@@ -28,7 +28,7 @@
 
 - 工具条（`data-dsh-part="toolbar"`）在「刷新」按钮之后新增一个切换按钮：文本「历史」、`title` / `aria-label` 为「操作历史」、`data-dsh-part="history-toggle"`、`aria-expanded` 反映当前开合。按钮不禁用（无动作时可打开并看到空态）。
 - 开合状态是组件本地 `useState` 布尔 `historyOpen`（缺省 `false`）。点击按钮切换；抽屉内的关闭按钮文本「关闭」、`data-dsh-part="history-close"`，只负责置回 `false`。
-- `historyOpen === true` 时，用抽屉替换画布区：根节点子顺序仍为 `tabBar → toolbar → errorBanner →（抽屉 或 stage）→ settings → actionList`。抽屉根 `data-dsh-part="history"`，内含：
+- `historyOpen === true` 时，用抽屉替换画布区：根节点子顺序仍为 `tabBar → toolbar → errorBanner → copy-error 提示（可选）→（抽屉 或 stage）→ settings → actionList`。`copy-error` 是 `0038` B0「复制画面」的失败提示（`data-dsh-part="copy-error"`，仅在复制失败时出现，与 errorBanner 可同时存在）。抽屉根 `data-dsh-part="history"`，内含：
   - 标题行：文本「操作历史」+ 计数「共 N 条」（N = `view.actions.length`，最大 50）；
   - 列表（`overflow-y: auto`，`maxHeight` 内滚动），每行 `data-dsh-part="history-item"`：`formatClock(trace.at)` + `（tool ? tool + '：' : ''）+ (summary || tool)`，`title` 给完整文本、长文本 ellipsis 截断；新的在前（与 `view.actions` 顺序一致）。
   - 空态：`view.actions` 为空时渲染「还没有动作」的占位行（`data-dsh-part="history-empty"`），不渲染列表。

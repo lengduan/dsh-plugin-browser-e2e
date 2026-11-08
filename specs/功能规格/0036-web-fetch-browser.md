@@ -113,7 +113,7 @@
    - 用例 2（参数与错误）：`url 非字符串报错`、`非 http(s) 协议报错`、`timeoutMs 越界报错`、`settleMs 越界报错`、`maxChars 越界报错`、`未知 tab_id 报「不存在」`、`未启动时报「浏览器尚未启动或没有可用标签页」`。
    - 用例 3（登录态共享）：`CDP 模式下夹具页 set-cookie 后同一 tab 的抓取带上 Cookie`；isolated 模式每页各自一个 context，不测 Cookie 共享，只测抓取正常返回。
    - 用例 4（不污染既有状态）：`抓取后 tabs 数量不变`、`抓取后 activeTabId 不变`、`抓取后当前页 URL 不变`、`抓取后 tab.refs 内容不变`、`抓取不向 console / network 环形缓冲新增记录`、`抓取后面板 tab 列表不含临时页`、`临时页不进 session.pages`。
-   - 用例 5（截断与空正文）：`maxChars 截断并置 truncated`、`非 2xx 返回结果不抛错`、`二进制响应返回 empty 与状态码`、`正文为空时不抛错且提示改用 navigate + read`。
+   - 用例 5（截断与空正文）：`maxChars 截断并置 truncated`、`非 2xx 返回结果不抛错`、`二进制响应返回 empty 与状态码`、`正文为空时不抛错`、`正文为空时提示改用 navigate + read`。
    - 用例 6（超时与关页）：`导航超过 timeoutMs 报「获取超时」`、`失败路径不留下额外页面（浏览器 pages 数回到抓取前）`。
    - 收尾：`msedge 主进程回落到运行前基线`。
 2. `node tests/panel.mjs` → exit 0、无 FAIL；`工具表共 N 个` 的断言按新条数更新，`作用于页面的工具都接受 tab_id` 的名单加入 `fetch`。

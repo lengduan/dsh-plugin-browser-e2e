@@ -85,6 +85,6 @@
    - `normalizeConsoleLevel 归一大小写与 warn 别名`
    - `normalizeConsoleLevel 拒绝未识别值`
    - `consoleLevelRank 对五级递增、对不可判级类型返回 -1`
-   - 用例 K 增补 `tools.js 引用 CONSOLE_LEVELS`。
+   - 用例 K 的标识符清单增补 `CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES`（并入 `tools.js 的工具描述从常量插值，不写死默认值` 这条 check，未单立标签）。
 4. `node tests/tools.mjs` 原有用例 2 / 3 / 3B / 3C / 3D / 3E 的文案与条数不变：默认不传 `level` 时 `total` / `count` / `text` / 摘要与改动前逐字一致。
 5. 全量回归：`npm run test:integration` → exit 0、无 `FAIL`（按任务书串行规则由 tester 跑）。

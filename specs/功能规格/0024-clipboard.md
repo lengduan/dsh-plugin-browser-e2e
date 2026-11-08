@@ -49,7 +49,7 @@
 ### 剪贴板写入（action=write）
 
 - 页内脚本先探测 `window.isSecureContext === true` 且 `navigator.clipboard.write` 是函数；不满足返回 `insecure-context`，宿主报 `当前页面不是安全上下文（<origin>），浏览器不提供剪贴板写入 API；请改用 action=paste（合成粘贴事件不依赖安全上下文），或在 https / localhost 页面重试`。
-- isolated 模式：写入前对该页面所属浏览器上下文授予 `clipboard-write`（`context.grantPermissions(['clipboard-write'])`，每个上下文只授一次）；cdp 模式**不授权**，写入被拒绝时报 `页面拒绝写剪贴板（NotAllowedError）：<原始 message>；cdp 模式不会自动改你的浏览器权限，请在该站点手动允许写剪贴板，或改用 action=paste`。
+- isolated 模式：每次 `action=write` 写入前都对该页面所属浏览器上下文重新授予 `clipboard-write`（`context.grantPermissions(['clipboard-write'])`）。不缓存「已授予」，因为 `grantPermissions` 是整表授予：此前若授予过 `clipboard-read`，只授一次会被覆盖，之后的写入会失败。；cdp 模式**不授权**，写入被拒绝时报 `页面拒绝写剪贴板（NotAllowedError）：<原始 message>；cdp 模式不会自动改你的浏览器权限，请在该站点手动允许写剪贴板，或改用 action=paste`。
 - 写入内容：`ClipboardItem` 同时带 `text/plain`（`text`）与 `text/html`（`html` 给了才带）；`text` 为空而 `html` 非空时，纯文本口味由净化后的 HTML 的 `innerText` 推导，并在返回值里标 `plainDerived: true`。
 - 写入失败（`NotAllowedError` / `DataError` / `TypeError` 等）由宿主包一层中文前缀后原样抛出原始 message；不同步、不重试、不清空剪贴板。
 - 返回 `{ action: 'write', tabId, rich, plainChars, htmlChars, plainDerived, summary }`。摘要三种形态：

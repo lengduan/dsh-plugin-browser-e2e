@@ -55,7 +55,10 @@
    用系统 Edge 打开首页并在 8 秒后检查控制台：不得出现
    `web boot: ... did not activate`、`already registered`；页面标题为 `DeepSeek Harness`，
    正文可交互。
-4. 全量串行 9 个测试：invariants / client-bundle / screencast / panel / tools / auth /
-   multitab / cdp / reclaim，全部 exit 0（2026-11-07 复跑实测 385 PASS / 0 FAIL；数字只作当时
-   记录，复跑以 exit code 为准；`.scratch/` 不入库，复跑用 `npm run test:unit` 与
-   `npm run test:integration`）。
+4. 全量测试以仓库脚本为准：`npm run test:unit`（invariants / client-bundle / screencast /
+   gate）与 `npm run test:integration`（panel / tools / snapshot / auth / multitab / cdp /
+   reclaim / upload / download / read / dialog / session-reset / clipboard / click-press /
+   assert / recipe / human / doctor / follow / raw-http / fetch / frames / carrier /
+   auth-state，共 24 个入口），全部 exit 0，输出无 FAIL。
+   （2026-11-07 当时记「全量串行 9 个测试…385 PASS / 0 FAIL」，该清单与数字只作当时记录；
+   数字与入口以 `package.json` 的 `scripts` 为准，复跑以 exit code 为准。）

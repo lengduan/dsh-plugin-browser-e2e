@@ -1,11 +1,11 @@
 # 图片草稿 / 附件回写会话
 
-状态: 已确认（仅 B0 切片：复制画面到剪贴板）；A（新工具）与 B（面板命令 `stage-draft`）已否决
+状态: 已实现（仅 B0 切片：复制画面到剪贴板）；A（新工具）与 B（面板命令 `stage-draft`）已否决
 关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/capture.js` / `lib/panel.js`、依赖方向、进程内对象契约「能力函数返回值」、不变量边界）；specs/项目规格/0002-panel-protocol-v1.md（路由与版本、命令表、事件表、错误码表、「边界」第 1 条面板只读定位、投屏设置单一来源）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0003-screenshot-output.md（截图参数、`screenshot` 返回形状、附件写入与输出契约）；specs/功能规格/0031-tab-mention-injection.md（同属 composer 面，待决策）；specs/功能规格/0032-panel-history-direct-control.md（同属面板只读定位面，待决策）
 代码: 行为 1 的现状由 lib/tools.js（`screenshotOutput`、`browser_e2e_screenshot`）、lib/capture.js（`screenshot`）承担，无需改动。B0 落地时预计只涉及 `client/index.js`（工具条按钮 + canvas 转 PNG + Clipboard API + 提示）、`lib/client.js`（`node scripts/build-client.mjs` 重建）、`tests/client-bundle.mjs`（新增用例）与 `README.md`；不改 `lib/protocol.js` / `lib/panel.js` / `lib/index.js` / `lib/capture.js`。
 
 > 2026-11-08 决策：本项只采纳 **B0 切片**（客户端「复制画面到剪贴板」，零协议），A（新工具 `browser_e2e_draft_image`）与 B（面板命令 `stage-draft` + 事件 `draft-staged`）**已否决**——两者都依赖宿主 composer 的草稿写入通道（`composer.stageAttachment`），而取证结论是宿主没有该通道（`ctx.attachments` 只有存储与准入、`prompt` 是网关 `@Remote`、`dsh-client-ui-attachment` 明写草稿只活在浏览器内且未发送不保存）；B 另会把面板从只读视图扩成输入区写者，且 socket 无鉴权时本机任意进程可往输入区放图。
-> 下文「行为 1」是已实现的现状（附件回写会话，无需改动）；「行为 2」保留为 A / B 的历史草案，不得据此实施；「行为 2b」是 B0 的实现契约（已确认、实施待排期）。
+> 下文「行为 1」是已实现的现状（附件回写会话，无需改动）；「行为 2」保留为 A / B 的历史草案，不得据此实施；「行为 2b」是 B0 的实现契约（已实现）。
 > 未验证（B0 实现时须在 GUI 抽查）：宿主 Electron webview 是否允许 `navigator.clipboard.write` 写入 `image/png`，以及宿主输入框是否接受粘贴图片。若后者不成立，B0 的价值只剩「把画面放进系统剪贴板」。见「边界」。
 > 取证基线：HEAD `94cddf3`（22 个工具）读取实现与规格；取证期间外部会话提交 `72db7c9`（P1-15 剪贴板，工具 22→23），未触及 `lib/capture.js`、本文件引用的 `0002` 与 `0003` 语义。本文件按符号名定位，不写行号。
 
@@ -45,7 +45,7 @@
 - 失败文案与错误码：无 active tab → `no-active-tab`「没有可放进输入框的画面：当前没有打开的浏览器」；截图失败 → `capture-failed`；`saveImage` 或 `stageAttachment` 失败 → `draft-failed`，消息带宿主原因；超出宿主 `imageLimits` → `draft-failed`，消息「图片超出宿主输入区限制：…」。
 - 状态变化：会话内容不变（草稿未提交）；标签页、面板、浏览器进程不变；不刷新空闲计时（与 `request-frame` 相同，只截一帧）。
 
-### 行为 2b（已确认、实施待排期）：复制画面到剪贴板
+### 行为 2b（已实现）：复制画面到剪贴板
 
 > 纯客户端、零协议：不发命令、不改宿主状态、不改面板只读定位（它不写页面、不写会话）。
 
