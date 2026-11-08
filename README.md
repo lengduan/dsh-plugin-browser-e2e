@@ -75,12 +75,12 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_follow_tab` | 绑定后续页面工具的默认标签页：`tab_id` 指定目标页（`browser_e2e_tabs` 得到），不给时自动判定用户当前正在看的页（窗口焦点页优先，其次唯一可见页，无法唯一判定时保持当前）；`activate: true` 把该页带到前台；绑定后不传 `tab_id` 的工具都默认作用到该页 |
 | `browser_e2e_snapshot` | 全 DOM 结构化快照：每个可见节点带 `tag` / `id` / `classes` / `role` / `name` / `text` / `box` / `depth`，分配 ref（`@N`）；上限 4000 条，超限标记 `truncated` 并给出实际节点数。`delta: true` 只返回自上次快照以来的新增 / 变化 / 移除（与 `query` 互斥，默认 ref 继续有效）；`query`（`text` / `selector` / `role`，可加 `limit` 与 `includeHidden`）定位元素并返回可直接点击的 `selector`，不写快照基线；`frame` 读取指定同源 iframe（整数索引或 name / url 子串），子 frame 只读、不分配 ref |
 | `browser_e2e_read` | 结构化读取：按 `controls` / `links` / `tables` / `forms` 四节返回记录（控件带 `role` / `name` / `type` / `value` / `checked` / `options` / 所属表单，链接带绝对 `href`，表格带表头 / 行矩阵 / `totalRows`，表单带 `action` / `fieldCount`）；每条记录带页内校验过的 CSS `selector`，`unique: true` 时可直接传给 `click` / `fill`；`maxItems` 默认 50（1-100），`includeValues` 默认 false（`password` / `file` 永不返回值），`selector` 收窄范围；只读主文档，不写快照 ref |
-| `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一；`clickCount` 1-3（缺省 1，2 双击、3 三击），`button` 选 `left` / `right` / `middle`（缺省 `left`），`modifiers` 在点击期间额外按住 `Alt` / `Control` / `Meta` / `Shift` |
-| `browser_e2e_fill` | 向 input / textarea / contenteditable 填入文本：`ref` / `selector` / `x`+`y` 三选一，`value` 必填；`mode` 缺省 `insert`（一次写入并替换）或 `keystrokes`（先清空再逐键，`delayMs` 0-1000，仅 ref / selector） |
+| `browser_e2e_click` | 点击：`ref`（点击前复验可见性，失效报错）/ `selector`（先等可见）/ `x`+`y`（真实鼠标事件）三选一；`clickCount` 1-3（缺省 1，2 双击、3 三击），`button` 选 `left` / `right` / `middle`（缺省 `left`），`modifiers` 在点击期间额外按住 `Alt` / `Control` / `Meta` / `Shift`；`frame` 指定 iframe（0 主文档 / n≥1 索引 / name、url 字符串），只能与 `selector` 组合 |
+| `browser_e2e_fill` | 向 input / textarea / contenteditable 填入文本：`ref` / `selector` / `x`+`y` 三选一，`value` 必填；`mode` 缺省 `insert`（一次写入并替换）或 `keystrokes`（先清空再逐键，`delayMs` 0-1000，仅 ref / selector）；`frame` 指定 iframe，只能与 `selector` 组合 |
 | `browser_e2e_hover` | 悬停：`ref` / `selector` / `x`+`y` 三选一，用真实鼠标移动触发 CSS `:hover` 与 mouseover / mouseenter；`settleMs`（0-5000，默认 300）是悬停后等待页面反应的时长，`0` 表示不等待 |
 | `browser_e2e_drag` | 拖拽：`from` / `to` 各是一个三选一目标（`ref` / `selector` / `x`+`y`）；两侧都是元素时走 Playwright `dragTo`（覆盖 HTML5 draggable 与 pointer 事件），任一侧是坐标时手写鼠标序列；`steps`（1-60，默认 12）控制按下与松开之间的插值 mousemove 次数，`settleMs`（0-5000，默认 300）是释放后的等待 |
 | `browser_e2e_upload` | 把宿主本地文件附加到 `input[type=file]`（真实文件选择路径，不是页面内合成 `File`）：`ref` / `selector` / `x`+`y` 三选一；`files` 必填（绝对路径或数组，最多 20 个，总大小默认 <= 20 MiB，`maxBytes` 可调到 512 MiB）；`clear` 默认 true 覆盖（不追加），`clear: false` 只在没有选择时设置；只接受 `input[type=file]`，不做 label 下钻、不校验 `accept` |
-| `browser_e2e_scroll` | 滚动页面：`delta_x` / `delta_y` 至少一个非 0；给 `x`+`y` 时先移动鼠标到该视口坐标再滚 |
+| `browser_e2e_scroll` | 滚动页面：`delta_x` / `delta_y` 至少一个非 0；给 `x`+`y` 时先移动鼠标到该视口坐标再滚；`frame` 指定 iframe（把鼠标移到 frame 元素中心再滚，与 `x`/`y` 互斥，实际滚动量由页面决定） |
 | `browser_e2e_press` | 键盘按键，作用于当前焦点元素：`action=press`（缺省）按下并抬起一次，`repeat` 1-100 重复；`action=down` 只按下并保持按住，`action=up` 只释放；按住的键按标签页记账，会影响随后的 click / fill，`navigate` 前自动释放 |
 | `browser_e2e_clipboard` | 剪贴板读写：`action=write` 把 `text` 与可选富文本 `html` 写进浏览器剪贴板（isolated 自动授予 `clipboard-write`，cdp 不授权）；`action=paste` 把带 `text/plain` / `text/html` 的 paste 事件投递到 `ref` / `selector` / 当前焦点元素，页面未消费且目标是 input / textarea 时在选区处插入文本。`html` 缺省在页内按白名单净化，`sanitize: false` 只在 isolated 模式允许；不做真实快捷键粘贴，也不回读剪贴板内容 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
@@ -479,6 +479,9 @@ node tests/screencast.mjs
 # 工具权限门控：缺省放行 / 只读拒绝 / 脚本开关 / 配置脏值 / 定性完整 / 即时生效（纯函数 + 假 ctx）
 node tests/gate.mjs
 
+# iframe 内操作：frame 索引 / name / 嵌套 / 跨源 / 参数互斥 / 越界（真起无头 Edge + 本地 HTTP 夹具）
+node tests/frames.mjs
+
 # 面板宿主半区：围栏 / 设置 / 工具参数契约 / 真实 Edge + WebSocket 端到端协议（含 close-tab）
 node tests/panel.mjs
 
@@ -593,6 +596,7 @@ npm run test:integration
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **iframe 操作只覆盖 click / fill / scroll** —— `click` / `fill` / `scroll` 支持 `frame`（同源与跨源均可，跨源能力已在 isolated 与 cdp 两种模式下实测）；`hover` / `drag` / `upload` 仍只作用主 frame，子 frame 不分配 ref（需先用 `snapshot { frame }` + `query` 取 selector）。`scroll { frame }` 只保证把滚轮发到 frame 元素中心，实际滚动量由页面决定，摘要只报告已发送量。
 - **工具门控是软护栏，不是安全边界** —— `accessMode=readonly` 挡的是模型误点，不是恶意模型：`navigate` 仍会发出真实导航请求（GET 可能带副作用，如退出登录），页面自身脚本照常执行，`allowScript=true` 时脚本也能绕过交互限制。门控配置是插件级、进程级，所有会话共享一份。要模型改不掉的限制只能靠 profile 配置文件，而配置文件在宿主侧，本插件不校验其完整性。
 - **同一会话的并发启动** —— 同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例，不会并行拉起第二个浏览器；若等待期间会话被 close，后到者收到「浏览器已关闭（启动与关闭并发）」并提示重新启动。
 - **快照 4000 上限的体积** —— 全 DOM 逐节点返回并附一行缩进文本，上限 4000 条。实测 4100 个简单 div 的页面返回 4000 条，模型可见文本 193,317 字节（约 189 KB）；DOM 更复杂时体积更大，会明显占用上下文。`delta: true` 与 `query` 可压缩模型可见文本，但 delta 只对比前 4000 个可见节点，4000 条以外的节点不参与对比也不进基线；delta 与 query 的正文各 20000 字符上限，delta 的 removed 列表最多逐条列 200 个。
