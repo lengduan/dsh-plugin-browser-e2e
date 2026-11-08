@@ -1,6 +1,6 @@
 # iframe 内元素操作
 
-状态: 已确认
+状态: 已确认（采纳方案 A1；实施待排期）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` 的职责；进程内对象契约「标签页条目」与各工具返回字段；不变量清单 `assertRefBelongsToTab` / `assertRefRevalidated`；已知结构性债务「page.js 粒度过大」）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0004-snapshot-and-ref-table.md（ref 生命周期）；specs/功能规格/0007-click-fill-targets.md（目标解析、坐标口径与失败文案）；specs/功能规格/0012-snapshot-delta-query-frame.md（frame 快照、子 frame 只读与跨源报错）；README.md「Known Limitations and Deferred Work」（快照只读同源 iframe；悬停与拖拽只作用于主 frame）
 代码: 未实施（A1 已确认）。落地时预计涉及 lib/page.js / lib/tools.js / tests/frames.mjs（新建）与 README.md；方案 A2（子 frame ref）另涉及 lib/invariants.js。
 
