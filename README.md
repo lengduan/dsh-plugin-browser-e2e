@@ -123,7 +123,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 工具的定性写在 `lib/tools.js` 的每个定义上（`access` 字段），只有三类：
 
-- `observe`：不向页面派发输入、不跑调用方脚本——`start` / `navigate` / `tabs` / `close_tab` / `follow_tab` / `snapshot` / `read` / `screenshot` / `fetch` / `console` / `network` / `network_detail` / `wait` / `captcha_check` / `assert` / `doctor` / `history` / `close`。
+- `observe`：不向页面派发输入、不跑调用方脚本——`start` / `auth_export` / `navigate` / `tabs` / `close_tab` / `follow_tab` / `snapshot` / `read` / `screenshot` / `fetch` / `console` / `network` / `network_detail` / `wait` / `captcha_check` / `assert` / `doctor` / `history` / `close`。
 - `interact`：派发鼠标 / 键盘 / 文件事件或触发页面事件处理器——`click` / `fill` / `hover` / `drag` / `upload` / `scroll` / `press` / `clipboard` / `download` / `dialog` / `wait_for_human` / `recipe` / `http`。
 - `script`：在页面上下文执行任意 JS——`evaluate`；`wait` 带 `expression` 条件时也按脚本处理。
 
