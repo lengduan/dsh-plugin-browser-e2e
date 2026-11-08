@@ -183,7 +183,7 @@ try {
       Array.isArray(parsed.cookies) && Array.isArray(parsed.origins)
         && parsed.cookies.some((item) => item.name === COOKIE_NAME && item.value === COOKIE_VALUE),
       JSON.stringify({ cookies: parsed.cookies?.length, origins: parsed.origins?.length }))
-    check('导出返回值与摘要不含 cookie 值',
+    check('导出返回值不含 cookie 值',
       !JSON.stringify(exported).includes(COOKIE_VALUE) && !exported.summary.includes(COOKIE_VALUE),
       JSON.stringify(exported))
 
