@@ -595,6 +595,57 @@ check('旧 seq 帧不覆盖画面', () => {
   assert.equal(images[0].props.src, 'data:image/jpeg;base64,AAA')
 })
 
+// ── 复制画面到剪贴板（纯客户端，零协议）─────────────────────────────────
+/** 工具条里的「复制画面」按钮（data-dsh-part="copy-frame"）。 */
+function copyFrameButton(root) {
+  return findAll(findByPart(root, 'toolbar'), (node) => node.type === 'button'
+    && node.props && node.props['data-dsh-part'] === 'copy-frame')[0]
+}
+
+check('复制画面：工具条有复制按钮', () => {
+  const button = copyFrameButton(panelTree)
+  assert.ok(button, '工具条应有 data-dsh-part="copy-frame" 的按钮')
+  assert.equal(button.type, 'button')
+  assert.ok(textOf(button).includes('复制画面'))
+  assert.equal(button.props['aria-label'], '复制画面到剪贴板')
+  assert.ok(button.props.title.includes('复制画面到剪贴板'))
+  assert.ok(button.props.title.includes('系统剪贴板'), button.props.title)
+  // 位置在「历史」按钮之后。
+  const buttons = findAll(findByPart(panelTree, 'toolbar'), (node) => node.type === 'button')
+  const copyIndex = buttons.findIndex((node) => node.props['data-dsh-part'] === 'copy-frame')
+  const historyIndex = buttons.findIndex((node) => node.props['data-dsh-part'] === 'history-toggle')
+  assert.ok(historyIndex >= 0 && copyIndex === historyIndex + 1, '复制按钮应紧跟在历史按钮之后')
+})
+
+check('复制画面：无帧时按钮禁用', () => {
+  withFreshPanel(() => {
+    const emptyLiveTitle = { get() { return '' }, set() {}, subscribe() { return function () {} } }
+    const tree = renderPanel(panelComponent, { sessionId: 'session-copy-empty', liveTitle: emptyLiveTitle })
+    const button = copyFrameButton(tree)
+    assert.ok(button)
+    assert.equal(button.props.disabled, true, '没有帧时按钮应禁用')
+    assert.ok(button.props.title.includes('暂无可复制的画面'), button.props.title)
+  })
+})
+
+check('复制画面：有帧时按钮可用', () => {
+  const button = copyFrameButton(panelTree)
+  assert.ok(button)
+  assert.equal(button.props.disabled, false)
+})
+
+check('复制画面：Clipboard API 不可用时显示失败提示', () => {
+  // 桩环境没有 navigator.clipboard，点击后应在 errorBanner 位置给出一行失败提示。
+  const before = socket.sent.length
+  copyFrameButton(panelTree).props.onClick()
+  panelTree = render()
+  const banner = findByPart(panelTree, 'copy-error')
+  assert.ok(banner, '应渲染 data-dsh-part="copy-error" 的失败提示')
+  assert.ok(textOf(banner).includes('复制画面失败：'), textOf(banner))
+  assert.equal(socket.sent.length, before, '复制画面不应发协议命令')
+  assert.ok(!textOf(copyFrameButton(panelTree)).includes('已复制'))
+})
+
 check('点 tab 发 select-tab，点刷新发 request-frame', () => {
   const tabBar = findByPart(panelTree, 'tabs')
   const tabButtons = findAll(tabBar, (node) => node.type === 'button')

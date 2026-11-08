@@ -48,6 +48,8 @@ window.__ModuleLoader__.load({
     /** 重连退避起点与上限（毫秒）。 */
     const RECONNECT_MIN_MS = 500;
     const RECONNECT_MAX_MS = 15000;
+    /** 「复制画面」成功后按钮显示「已复制」的时长（毫秒）。 */
+    const COPY_FEEDBACK_MS = 1500;
     // DEFAULT_CONFIG / PANEL_CONFIG_LIMITS / PROTOCOL_VERSION / WS_PATH 由构建注入：
     // host 半区 lib/protocol.js 是唯一来源，client 不再手写一份。
 
@@ -96,6 +98,14 @@ window.__ModuleLoader__.load({
       "宿主未提供这项配置": "The host does not expose this setting",
       "还没有动作": "No action yet",
       "历史": "History",
+      "复制画面": "Copy frame",
+      "复制画面到剪贴板": "Copy frame to clipboard",
+      "已复制": "Copied",
+      "复制画面到剪贴板（图片进入系统剪贴板）": "Copy frame to clipboard (the image goes to the system clipboard)",
+      "复制画面到剪贴板（暂无可复制的画面；图片进入系统剪贴板）": "Copy frame to clipboard (no frame to copy; the image goes to the system clipboard)",
+      "复制画面失败：": "Copy frame failed: ",
+      "当前环境不支持剪贴板写入": "This environment does not support clipboard writes",
+      "当前环境没有 ClipboardItem": "This environment has no ClipboardItem",
       "操作历史": "Action history",
       "关闭": "Close",
       "共 ": "Total ",
@@ -458,6 +468,40 @@ window.__ModuleLoader__.load({
       return pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
     }
 
+    /**
+     * 把一帧的 JPEG data URL 用 canvas 按 1:1 像素重绘成 PNG Blob。
+     *
+     * 只在点击「复制画面」时执行：先解码成 Image，再画到等尺寸 canvas，
+     * 由 canvas.toBlob 导出 image/png；任一步失败都以 reject 交回调用方，
+     * 由面板显示失败提示。不缓存图片。
+     */
+    function frameToPngBlob(dataUrl) {
+      return new Promise(function (resolve, reject) {
+        const image = new Image();
+        image.onload = function () {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = image.naturalWidth || image.width;
+            canvas.height = image.naturalHeight || image.height;
+            const context = canvas.getContext("2d");
+            if (!context) {
+              reject(new Error("无法创建 canvas 上下文"));
+              return;
+            }
+            context.drawImage(image, 0, 0);
+            canvas.toBlob(function (blob) {
+              if (blob) resolve(blob);
+              else reject(new Error("画布导出 PNG 失败"));
+            }, "image/png");
+          } catch (error) {
+            reject(error);
+          }
+        };
+        image.onerror = function () { reject(new Error("画面解码失败")); };
+        image.src = dataUrl;
+      });
+    }
+
     // ── 图形 ──────────────────────────────────────────────────────────────
     /** 浏览器窗口字形（右侧栏 tab chip 用）。 */
     function BrowserE2EMark() {
@@ -549,7 +593,20 @@ window.__ModuleLoader__.load({
       const [settingsOpen, setSettingsOpen] = React.useState(false);
       const [draft, setDraft] = React.useState(null);
       const [historyOpen, setHistoryOpen] = React.useState(false);
+      const [copied, setCopied] = React.useState(false);
+      const [copyError, setCopyError] = React.useState("");
       const feedRef = React.useRef(null);
+      const copyTimerRef = React.useRef(null);
+
+      // 卸载时清掉「已复制」的复原定时器，避免它在组件消失后再 setState。
+      React.useEffect(function () {
+        return function () {
+          if (copyTimerRef.current !== null) {
+            clearTimeout(copyTimerRef.current);
+            copyTimerRef.current = null;
+          }
+        };
+      }, []);
 
       React.useEffect(function () {
         let url = null;
@@ -605,6 +662,39 @@ window.__ModuleLoader__.load({
       const statusText = connection === "open" ? t("实时") : connection === "connecting" ? t("连接中") : t("已断开");
       const statusColor = connection === "open" ? "#3fa66a" : connection === "connecting" ? "#d9a441" : "#c05050";
       const frame = view.frame && (activeTabId === null || view.frame.tabId === activeTabId) ? view.frame : null;
+
+      /**
+       * 复制画面：把当前帧转成 1:1 像素的 PNG 写进系统剪贴板（纯客户端，不发命令）。
+       * 能力缺失或写入被拒绝时都落到 copyError，由 errorBanner 位置的横幅显示。
+       */
+      const copyFrame = function () {
+        if (!frame) return;
+        setCopyError("");
+        setCopied(false);
+        let clipboard = null;
+        try { clipboard = navigator ? navigator.clipboard : null; } catch (e) { clipboard = null; }
+        if (!clipboard || typeof clipboard.write !== "function") {
+          setCopyError(t("复制画面失败：") + t("当前环境不支持剪贴板写入"));
+          return;
+        }
+        if (typeof ClipboardItem === "undefined") {
+          setCopyError(t("复制画面失败：") + t("当前环境没有 ClipboardItem"));
+          return;
+        }
+        frameToPngBlob("data:image/jpeg;base64," + frame.data).then(function (blob) {
+          return clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        }).then(function () {
+          setCopied(true);
+          if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
+          copyTimerRef.current = setTimeout(function () {
+            copyTimerRef.current = null;
+            setCopied(false);
+          }, COPY_FEEDBACK_MS);
+        }).catch(function (error) {
+          const reason = error && error.message ? error.message : "写入被拒绝";
+          setCopyError(t("复制画面失败：") + reason);
+        });
+      };
 
       const updateConfig = function (field, raw) {
         if (raw === "") return;
@@ -706,6 +796,17 @@ window.__ModuleLoader__.load({
           "aria-label": t("操作历史"),
           onClick: function () { setHistoryOpen(!historyOpen); },
         }, t("历史")),
+        el("button", {
+          type: "button",
+          style: st.btn,
+          "data-dsh-part": "copy-frame",
+          disabled: !frame,
+          title: t(frame
+            ? "复制画面到剪贴板（图片进入系统剪贴板）"
+            : "复制画面到剪贴板（暂无可复制的画面；图片进入系统剪贴板）"),
+          "aria-label": t("复制画面到剪贴板"),
+          onClick: copyFrame,
+        }, t(copied ? "已复制" : "复制画面")),
       );
 
       const errorBanner = view.error
@@ -713,6 +814,11 @@ window.__ModuleLoader__.load({
           el("strong", null, view.error.code),
           view.error.message ? " " + view.error.message : "",
         )
+        : null;
+
+      // 复制画面的失败提示占用与 errorBanner 相同的位置，两者可同时存在。
+      const copyBanner = copyError
+        ? el("div", { style: st.error, "data-dsh-part": "copy-error" }, copyError)
         : null;
 
       const stage = el("div", { style: st.stage, "data-dsh-part": "stage" },
@@ -814,6 +920,7 @@ window.__ModuleLoader__.load({
         tabBar,
         toolbar,
         errorBanner,
+        copyBanner,
         historyOpen ? historyDrawer : stage,
         settings,
         actionList,
