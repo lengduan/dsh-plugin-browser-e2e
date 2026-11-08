@@ -1,8 +1,8 @@
 # 登录态导入与持久化
 
-状态: 待决策
+状态: 已确认（采纳方案 A；实施待排期）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、`session` 对象契约、不变量清单、会话状态机、进程回收三道兜底、已知结构性债务「`session.js` 粒度过大」）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（`launch` 参数、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（接管复用用户登录态、close 只断连）；specs/功能规格/0009-auth-topup.md（loopback 补票，与本项不重叠）；specs/功能规格/0020-session-reset.md（close + start 的上下文重置口径）
-代码: 当前无代码改动（本项判为待决策）。推荐方案 A 落地时预计涉及 `lib/auth-state.js`（新建）/ `lib/session.js` / `lib/page.js` / `lib/tools.js` / `lib/invariants.js` / `tests/auth-state.mjs`（新建）/ `tests/invariants.mjs` / `README.md`；不改 `lib/protocol.js` / `client/index.js` / `lib/client.js`。
+代码: 当前无代码改动（本项已确认、实施待排期）。方案 A 落地时预计涉及 `lib/auth-state.js`（新建）/ `lib/session.js` / `lib/page.js` / `lib/tools.js` / `lib/invariants.js` / `tests/auth-state.mjs`（新建）/ `tests/invariants.mjs` / `README.md`；不改 `lib/protocol.js` / `client/index.js` / `lib/client.js`。
 
 ## 需求
 
@@ -10,7 +10,7 @@
 
 竞品把「登录后的浏览器状态」当一等能力：anweat 用命名 `storageState` profile，在创建 context 时按域名过滤导入、可选在 context 关闭时写回；Fisfzy 用 CDP `Storage.setCookies` 把系统浏览器 cookie 按域名导入持久 profile，另有 `ego_auth_flush` 把 cookie jar 刷到磁盘。本项目标：能把已保存的登录态带进本会话，并能把当前会话的登录态保存成文件，让「登录后的流程」可重复验证。
 
-本项判定为**影响大 → 待决策**，依据如下（不是「单工具新增参数」）：
+本项原判定为**影响大 → 待决策**，已决策采纳方案 A（见下「决策记录」），依据如下（不是「单工具新增参数」）：
 
 1. **载体定位**：isolated 模式当前没有会话级 cookie 罐。`lib/page.js` 的 `createPage` 在非 CDP 分支调 `session.browser.newPage({ viewport })`；Playwright 的 `browser.newPage` 是「新建一个 browser context 再建页，关页即关该 context」（`node_modules/playwright-core/types/types.d.ts:11232`，读取时点 2026-11-08）。因此现有每个标签页各是一个 context，标签页之间不共享 cookie / localStorage，也就没有「整个会话的登录态」可导入。要让导入对全会话生效，必须把 isolated 改为**每会话一个显式 context**，这是对既有标签页隔离语义、`0001` 的 `session` 对象契约（`context` 字段现由 `createPage` 仅在 CDP 分支读）与 `0020` 既有表述的修改。
 2. **回收口径 / 持久化**：`lib/session.js` 的 `close` 是唯一收尾路径（显式 `browser_e2e_close`、空闲回收 `touchSession`、`session/disposed` 的 `closeBySessionId`、卸载 `closeAll` 都落到它）。自动持久化必须在关闭前导出 `context.storageState()` 并写盘，等于给 close 增加 I/O 与新的失败语义；换成持久 user-data-dir（`launchPersistentContext`）则把一次性 profile 变成跨会话载体，同样改回收口径。
@@ -19,13 +19,16 @@
 
 候选方案（细节与影响面见 `.scratch/browser-plugin-survey/plans/13-auth-state-import.md` §1、§6）：
 
-- **A（推荐）**：isolated 改为每会话一个显式 context；`browser_e2e_start` 新增 `storageState`（绝对路径，仅新启动时生效）与 `storageDomains`（可选域过滤）；新增 `browser_e2e_auth_export`（显式导出到指定 `.json`）；**不自动持久化**，close 行为不变。导入/导出本身是新增参数与新工具，但前提的 context 统一属影响大，因此整项仍需先决策。
+- **A（已采纳）**：isolated 改为每会话一个显式 context；`browser_e2e_start` 新增 `storageState`（绝对路径，仅新启动时生效）与 `storageDomains`（可选域过滤）；新增 `browser_e2e_auth_export`（显式导出到 `~/.dsh/browser-e2e/auth/` 下的 `.json`）；**不自动持久化**，close 行为不变。导入/导出本身是新增参数与新工具，但前提的 context 统一属影响大，因此整项仍需先决策。
 - **B**：持久 profile（`launchPersistentContext`，目录归插件所有）。自动跨会话保留，改载体定位与回收口径，成本最高。
 - **C**：close 时自动导出、下次 start 自动导入。改 close 契约与回收口径，且崩溃 / 卸载路径无法保证落盘。
 - **D**：对已启会话热导入（重建 context）。会让全部 tab、ref 基线、事件环、面板 tab 一起换掉，属改会话状态机。
 - **A0（不推荐的最小切片）**：保持每页一个 context，逐页 `newPage({ storageState })`。新增参数即可实现（影响小），但语义是「每页一份登录态快照」：`new_tab` 的新页要重新导入，某一页登录后产生的新 cookie 不会传播到其它页，不能称为会话登录态；只作为决策被否决后的退路。
 
-**决策前本规格不构成实现契约**：下文「行为」的候选 A 目标是决策通过后的契约草案，当前代码未实现；验收第 1、2 组是决策期间现在就能跑的基线与缺口判定。**本项应记入 `specs/项目规格/0003-未处理项.md`，本项不改代码。**
+## 决策记录
+
+- 2026-11-08：采纳**方案 A**（isolated 改为每会话一个显式 context + 显式导入 / 导出，不自动持久化）；同时定决策点 D4：导出（写侧）只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json`，导入（读侧）仍接受任意绝对路径。B（持久 profile）/ C（close 自动导出）/ D（热导入）/ A0（每页一份）不采纳。
+- 当前状态为「已确认、实施待排期」：下文「行为」的方案 A 目标是实现契约，当前代码未实现；验收第 1、2 组仍是现在可跑的基线与缺口判定。
 
 ## 行为
 
@@ -46,7 +49,7 @@
 |---|---|---|---|---|
 | `browser_e2e_start` | `storageState` | string（宿主绝对路径，`.json`） | 不传 = 现状 | 仅新启动时读取；在 isolated 建 context 前把文件作为 `storageState` 传给 `browser.newContext` |
 | `browser_e2e_start` | `storageDomains` | string[]，元素是域名后缀（`example.com` / `*.example.com` 归一为同义） | 不传 = 文件内全部条目 | 只导入命中域名的 cookie 与 origin；命中规则同竞品：去掉前导 `.` 与 `*.` 后，`host === d` 或 `host.endsWith('.' + d)` |
-| `browser_e2e_auth_export` | `path` | string（宿主绝对路径，`.json`），必填 | — | 导出到的文件；已存在时默认报错 |
+| `browser_e2e_auth_export` | `path` | string（宿主绝对路径，`.json`，必须位于 `~/.dsh/browser-e2e/auth/` 下），必填 | — | 导出到的文件；上级目录不存在时由插件创建；已存在时默认报错 |
 | `browser_e2e_auth_export` | `domains` | string[] | 不传 = 当前上下文全部条目 | 只导出命中域名的 cookie / origin |
 | `browser_e2e_auth_export` | `overwrite` | boolean | `false` | 文件已存在时必须显式 `true` 才覆盖 |
 
@@ -75,6 +78,7 @@
 | CDP + 导出 | `CDP 模式不导出登录态：那会把用户浏览器的 cookie 写到磁盘；请在 isolated 模式导出` |
 | 导出前未启动 | 沿用 `浏览器尚未启动，请先调用 browser_e2e_start` |
 | `path` 非绝对 / 非 `.json` | `path 必须是 .json 文件的绝对路径，收到 <JSON.stringify>；例如 C:\tmp\state.json` |
+| `path` 不在允许目录 | `导出路径必须位于 ~/.dsh/browser-e2e/auth/ 下：<p>；该目录存放明文登录态，避免误写进仓库工作树` |
 | 文件已存在且未覆盖 | `文件已存在：<p>；导出的是明文凭据，确认覆盖请传 overwrite: true` |
 | 写盘失败 | `导出登录态失败：<原因>；未写入目标文件（临时文件已清理）` |
 
@@ -101,7 +105,7 @@
 - **CDP 模式明确不做**：不导入、不导出、不改用户浏览器 cookie；接管复用的就是用户现有登录态（0008），需要保存用户浏览器状态应在浏览器侧自行处理。
 - **载体是 Playwright `storageState` 文件**，不是浏览器 user-data-dir：只含 cookies 与每个 origin 的 localStorage，不含 sessionStorage、IndexedDB、CacheStorage、Service Worker 缓存、HTTP 认证凭据。仅依赖 sessionStorage / IndexedDB 的登录（部分 SPA、OAuth PKCE 存储）不会因此恢复，需在 README 写明。
 - **域过滤是安全边界而非完整沙箱**：不传 `storageDomains` 时按文件内全部条目导入（与 Playwright 默认一致），摘要会列出域名；传了则只导入命中域名。导入他人文件可能造成会话固定 / 串号，调用方负责文件来源；插件不校验 cookie 的 `secure` / `sameSite` 与目标站策略是否兼容。
-- **导出的是明文凭据**：默认不覆盖已有文件、返回值不含值、文件权限 0600；但路径由调用方给绝对路径（与 `browser_e2e_upload` 的绝对路径口径一致），插件不限制目录，故不能阻止写到仓库工作树。README 必须给出「导出物不要提交、不要放进 profile」的警告。若 Lead 要求更强约束，可改为只允许 `~/.dsh/browser-e2e/auth/` 下的文件（决策点 D4，见实施计划）。
+- **导出的是明文凭据**：默认不覆盖已有文件、返回值不含值、文件权限 0600。**写侧只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json` 文件**（决策点 D4 已定）：导出的是明文 cookie + localStorage，插件无法判断目标路径是否落在某个仓库工作树内，因此不设目录豁免；目录不存在时由插件创建。导入读侧仍接受任意绝对路径，因为读的是调用方自己提供的文件。README 必须给出「导出物不要提交、不要放进 profile」的警告。
 - **并发**：并发 `start` 都带同一份 `storageState` 时，后到者按既有 `launchTask` 落定后复用，不重建 context；带不同 `storageState` / `storageDomains` 时后到者报错，先到者会话不受影响。
 - **空状态**：文件里 cookies 与 origins 都为空时允许（视为「显式从空登录态开始」），摘要报 0；导出当前上下文为空时仍写文件并提示 `当前上下文没有 cookie / localStorage，导出的是空状态`。
 - **与既有规格的联动**：采纳 A 后，`0020` 的「close 再 start 后 cookie 与 localStorage 已清空」只在**不带** `storageState` 时成立；带 `storageState` 的 start 会按文件恢复，`0020` 需同步加条件（见实施计划 §6.3）。
@@ -129,7 +133,7 @@
 ### 4. 采纳方案 A 后的实施验收（决策通过后由 tester 新建 `tests/auth-state.mjs`）
 
 1. `node tests/auth-state.mjs`：exit 0、无 FAIL。正常用例名：`导入 storageState 后页面 cookie 生效`、`导入 storageState 后同源 localStorage 生效`、`导入后新开标签页共享同一登录态`、`导出文件是 Playwright storageState 形状`、`导出的文件可在下一次 start 重新导入`、`未传 storageState 时启动摘要与现状一致`、`启动摘要标注导入的 cookie / origin / 域名数`。
-2. `node tests/auth-state.mjs`：边界用例名 `storageState 文件不存在时报错`、`storageState 不是合法 JSON 时报错`、`storageState 形状非法时报错`、`storageState 相对路径报错`、`storageDomains 过滤只导入命中域名`、`storageDomains 无命中时报错`、`已启动时再传 storageState 报错且不重建 context`、`CDP 模式传 storageState 先报错且不建立连接`、`导出路径已存在且未传 overwrite 时报错`、`导出返回值不含 cookie 值`、`空上下文导出仍成功并标注空状态`、`两个会话各自导入不同 storageState 互不影响`、`close 后不带 storageState 再 start 登录态清空`。
+2. `node tests/auth-state.mjs`：边界用例名 `storageState 文件不存在时报错`、`storageState 不是合法 JSON 时报错`、`storageState 形状非法时报错`、`storageState 相对路径报错`、`storageDomains 过滤只导入命中域名`、`storageDomains 无命中时报错`、`已启动时再传 storageState 报错且不重建 context`、`CDP 模式传 storageState 先报错且不建立连接`、`导出路径已存在且未传 overwrite 时报错`、`导出路径不在 ~/.dsh/browser-e2e/auth/ 时报错`、`导出返回值不含 cookie 值`、`空上下文导出仍成功并标注空状态`、`两个会话各自导入不同 storageState 互不影响`、`close 后不带 storageState 再 start 登录态清空`。
 3. `node tests/invariants.mjs`：exit 0、无 FAIL。新增用例名 `assertSessionContext：isolated ready 会话无 context 时报错`、`assertSessionContext：有 context 时通过`。
 4. `node tests/tools.mjs`：exit 0、无 FAIL。新增用例名 `start 的参数表含 storageState 与 storageDomains`、`auth_export 的参数表含 path / domains / overwrite 且 path 必填`。
 5. `node tests/multitab.mjs`：exit 0、无 FAIL；`t2 成为 active` 仍 PASS（证明 context 统一没有破坏 tab 管理；跨标签页共享登录态的用例在 `tests/auth-state.mjs` 的第 1 组）。
