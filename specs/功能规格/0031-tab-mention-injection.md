@@ -1,11 +1,11 @@
 # 网页标签 / 选中文本注入对话
 
-状态: 待决策
+状态: 已否决（2026-11-08，整项不立项）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、依赖方向、面板只读定位、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（路由表、面板只读边界、命令 / 事件表本项不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0001-client-entry-activation-failure.md（客户端 `inject` 仅有 `slots` / `sidebarRightTabs`、注册面固定为面板座位）；specs/功能规格/0002-browser-launch-and-reuse.md（`headless` 默认 `true` 的载体语义）；specs/功能规格/0006-plugin-config-and-live-apply.md（本项不改 Config）；specs/功能规格/0009-auth-topup.md（本项不导航，不触发补票）；README.md「右侧实时浏览器面板」「面板协议与路由」「Model Experience」「Known Limitations and Deferred Work」
 代码: 决策通过后预计 `lib/mention.js`（新建）/ `lib/protocol.js` / `lib/index.js` / `client/index.js` / `lib/client.js`（构建产物）/ `scripts/protocol-inject.mjs` / `tests/mention.mjs`（新建）/ `tests/client-bundle.mjs` / `tests/invariants.mjs` / `tests/panel.mjs` / `README.md`
 
-> 本项按任务书硬约束 1 判「**影响大 → 待决策**」：它要新增 composer 通道（宿主 `inputTriggers`）、新增两条 HTTP 路由、改客户端 `inject` 契约与 0002 的路由表，且「选中文本」一半与现有载体冲突。判定依据与候选方案见 `.scratch/browser-plugin-survey/plans/23-tab-mention-injection.md` §1、§6.4。
-> 因此状态不写「已确认」：下文「行为 / 验收」是决策通过后**方案 A2** 的目标契约草案，当前代码未实现；决策否决则本项不入开发队列。
+> 2026-11-08 决策：**整项否决、不立项**。理由：①「选中文本」半在现有载体下不可实现——隔离模式默认无头（`lib/session.js` 的 `launch`），面板把页面转成 JPEG 帧、没有文字层，插件也不是浏览器扩展、没有内容脚本监听 `selectionchange`，要做只能先改载体；②「网页标签」半的宿主能力已实证可用（本机宿主 asar 的 `dsh/node_modules/@deepseek-ai/dsh-client-ui-input-trigger@0.2.2-rc.1` 提供 `ctx.inputTriggers` 服务与 `registerSource(src)`，`(trigger, name)` 唯一、返回 disposer），但它要反转已实现的 `0001-client-entry-activation-failure` 的「inject 只有 `slots` / `sidebarRightTabs` 两个服务」并改 `tests/client-bundle.mjs` 的两条断言，同时把页面作者可控的正文注入用户消息（prompt injection 面），收益（省一次复制 URL）不抵这两项代价。
+> 下文「行为 / 验收」保留为方案 A2 的原始草案，仅作历史记录，不得据此实施。
 
 取证基线：HEAD `b1a092d`，工具表 22 个（`lib/tools.js` 的 `buildToolTable`），客户端注入面见 `package.json` 的 `dsh.client.inject` 与 `tests/client-bundle.mjs` 的 `模块导出 apply 与 inject`。取证后 P1-11 提交 `94cddf3` 只动 `README.md` / `package.json` 的测试脚本行 / `tests/` / `0020-session-reset.md`，未触及 `lib/`、`client/` 与本项引用的规格，上述事实仍成立。
 
