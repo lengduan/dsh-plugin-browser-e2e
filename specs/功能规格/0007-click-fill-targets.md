@@ -14,6 +14,7 @@
 
 - 入口：`click(session, target, tabId)` 与 `fill(session, target, value, tabId)` 都先经 `currentTab(session, tabId)` 取标签页，再调模块内私有的 `targetOf(target, verb)`，`verb` 为 `click` / `fill`。
 - `ref` 与 `selector` 只在「是字符串且长度大于 0」时算作给了，空串视为未给（归一为 `null`）；`hasPoint` 只在 `x` 与 `y` 都是有限数字（`Number.isFinite`）时成立。
+- `frame`（可选，见 `0018-iframe-operations.md`）是修饰参数，不参与 `ref` / `selector` / `x + y` 的三选一计数：它只能与 `selector` 组合，在该 frame 内解析并操作该 selector；与 `ref` 或坐标同用时按 `0018` 的失败文案报错。
 - 0 种目标：click 报 `缺少点击目标：请给 ref（snapshot 得到的 @N）、selector（CSS 选择器）或 x + y（视口坐标）三选一`；fill 报 `缺少填写目标：需要 ref / selector / x + y 三者之一`。
 - 多于 1 种目标：click 报 `点击目标只能给一种：ref / selector / x + y 三选一，避免点错位置`；fill 报 `填写目标只能给一种：ref / selector / x + y 三选一，避免填错位置`。
 - 分支优先级为 ref、selector、坐标。因此 ref 与坐标同时给会被「只能给一种」拦下；只给 `x` 不给 `y` 时该组不算坐标目标，若同时给了 ref 就按 ref 处理、多余的单个坐标被忽略。

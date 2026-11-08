@@ -75,7 +75,7 @@
 - `matches` 每项 `{ ref, tag, id, classes, role, name, text, box, xpath, selector, hidden? }`：
   - `selector` 为可直接传给 `browser_e2e_click` / `browser_e2e_fill` 的 `selector` 参数的 CSS 选择器（id 优先，否则从 `body` 起的 `tag:nth-of-type(n)` 链）；
   - `ref` 为该元素在当前 `tab.refs` 中的 ref；不在表中（4000 条以外、未全量快照过、或子 frame）时为 `null`；
-  - `frame` 非 0 时，`selector` 是在该子 frame 内生成的路径，主文档的 `click` / `fill` 不能直接使用（P1-9 前只用于展示与后续扩展）；
+  - `frame` 非 0 时，`selector` 是在该子 frame 内生成的路径，不能直接用于主文档操作；P1-9 采纳方案 A1 后，把它与同一 `frame` 一起传给 `browser_e2e_click` / `browser_e2e_fill` 即可在该子 frame 内操作（见 `0018-iframe-operations.md`）。
   - `hidden` 只在 `includeHidden: true` 且元素不可见时为 `true`。
 - 匹配规则：`selector` 直接 `querySelectorAll`；`text` / `role` 遍历元素（`scanLimit` 上限）；可见元素优先、文档顺序其次；嵌套命中只保留最内层语义元素（可聚焦 / 可编辑 / 带 `role` / 带 `tabindex` / 带 `href`），容器祖先与文本后代丢弃；去重后最多取 `limit` 条，`totalMatched` 为去重后总命中数。
 - `query` 不修改 `tab.refs`，也不修改 delta 基线。
@@ -97,7 +97,7 @@
   - 索引越界：报错并列出可用 frame 的索引、name 与 url。
   - 字符串未命中：报错并列出可用索引。
   - 字符串多命中：报错并列出候选索引 / name / url，要求改用索引。
-  - 跨源 frame：报错，说明 P0-3 只读取同源 iframe，跨源 iframe 的定位与操作待 P1-9。
+  - 跨源 frame：报错，P0-3 只读取同源 iframe；P1-9 决策（A1）只放开 click / fill / scroll 对跨源 frame 的操作，快照读取跨源不在本功能范围。
   - `frame.url()` 为空、`about:blank`、`about:srcdoc` 视为同源。
   - frame 已 detach 或读取失败：报「已不可用（已导航或卸载）」或带原始原因的读取失败。
 - delta：
@@ -105,7 +105,7 @@
   - 页面每帧改文本 / class 会产生持续变化，属预期；仅位置移动不报变化，但节点返回的 `box` 始终是本次实测值。
   - 页面脚本注册表被页面重置（epoch 变化）→ `baseline: 'reset'` 并退化为全量，不报错。
   - 4000 条以外的节点不参与对比，也不进基线。
-  - 子 frame 的 delta 与 query 都不分配 ref；delta 的 `removed.xpath` 与 query 的 `selector` 都是子 frame 内路径，P1-9 前不能用于主文档操作；子 frame 内元素操作等 P1-9。
+  - 子 frame 的 delta 与 query 都不分配 ref；delta 的 `removed.xpath` 与 query 的 `selector` 都是子 frame 内路径，不能直接用于主文档操作；P1-9 采纳 A1 后，把 query 返回的 `selector` 与同一 `frame` 一起传给 click / fill 可在该子 frame 内操作（见 `0018-iframe-operations.md`）。
 - query：
   - 非法 CSS selector 报「不是合法 CSS 选择器」，不抛页面异常。
   - `includeHidden` 只影响可见性过滤，不影响 ref 解析。
@@ -115,8 +115,8 @@
   - 扫描上限 20000 个元素，超出时 `scanTruncated: true` 并在文本提示。
   - delta 与 query 的文本各 20000 字符上限；delta 的 `removed` 列表最多列出 200 个 ref，超出以「等 N 个」汇总。
 - 不做的场景：
-  - 不为 `click` / `fill` / `press` / `scroll` 增加 `frame` 参数（留给 P1-9）。
-  - 不读取跨源 iframe（留给 P1-9）。
+  - 不为 `press` 增加 `frame` 参数（作用于当前焦点；P1-9 决策点 D4）；click / fill / scroll 的 `frame` 参数由 P1-9 采纳 A1 后实现，归 `0018-iframe-operations.md`，本功能不重复定义。
+  - 不读取跨源 iframe：P0-3 的同源限制不变；P1-9 只放开 click / fill / scroll 对跨源 frame 的操作，跨源快照读取不在本次范围。
   - 不做 `region` 参数、不做可访问性语义树、不做变化自动推送（MutationObserver 订阅）、不做基线持久化或跨会话复用。
   - 不改 4000 条上限数值，不改面板渲染，不改协议表。
 
