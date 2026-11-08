@@ -306,6 +306,9 @@ let upgradeHandler = null
   })())
   check('browser_e2e_start 的 mode 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode.enum)
     === JSON.stringify(['isolated', 'cdp']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode))
+  check('browser_e2e_start 的 carrier 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier?.enum)
+    === JSON.stringify(['edge', 'chrome', 'auto']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier))
+  check('工具总数不因本项变化', tools.size === TOOL_TABLE.length && tools.size === 32, String(tools.size))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
 }

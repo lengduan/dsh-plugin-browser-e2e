@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：32 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：32 个 browser_e2e_* 工具用系统 Edge（或可选的系统 Chrome）驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 32 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 32 个 `browser_e2e_*` 工具，默认用本机系统 Edge（可显式选用本机 Google Chrome）完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -42,10 +42,20 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 `browser_e2e_start` 统一管理启动，两种模式：
 
-- **isolated（默认）**：自己拉起系统 Edge（Playwright `channel: 'msedge'`，不触发 360 进程防护弹窗），一次性 profile，用完关闭。可传 `headless`（默认 true）、`proxy`、`viewportWidth` / `viewportHeight`（默认 1600×900）。
+- **isolated（默认）**：自己拉起浏览器，一次性 profile，用完关闭。默认载体是系统 Edge（Playwright `channel: 'msedge'`，不触发 360 进程防护弹窗）；可传 `carrier` 选择 `edge` / `chrome` / `auto`（见下），`chrome` 用本机安装的 Google Chrome。可传 `headless`（默认 true）、`proxy`、`viewportWidth` / `viewportHeight`（默认 1600×900）。
 - **cdp**：经 `chromium.connectOverCDP` 接管已用远程调试端口启动的浏览器，只接受 loopback 端点（默认 `http://127.0.0.1:9222`），不启动新进程、不新建页面、不设置视口。需要先自己启动浏览器：`msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\edge-cdp-profile"`（Chrome 136+ 对默认数据目录忽略该开关，必须用非默认 `--user-data-dir`）。
 
-同一会话复用同一实例，`browser_e2e_start` 可重复调用。未显式传 `mode` / `cdpEndpoint` 时，首次启动使用插件配置里的默认值，工具参数优先。已启动后要切换 `mode`（isolated ↔ cdp）或改 `cdpEndpoint`，必须先 `browser_e2e_close` 再重新启动；已启动时传入与当前不一致的值会直接报错，不会静默复用。同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例。
+载体的三个取值（只对 isolated 生效，cdp 忽略、载体由接管端点决定）：
+
+| `carrier` | 含义 | 探测方式 |
+|---|---|---|
+| `edge`（默认） | 系统 Edge | 直接用 Playwright `channel: 'msedge'`，不探测可执行文件 |
+| `chrome` | 本机 Google Chrome | 依次查 `DSH_BROWSER_CHROME_PATH` → PATH 上的 `chrome` → 平台惯例安装位置；都找不到时报错并列出查过的位置 |
+| `auto` | 自动 | 先按 `chrome` 探测，找不到回退 `edge` |
+
+工具参数只接受上面三个枚举，不接受可执行路径（路径只由环境变量与平台惯例位置决定）。未显式传 `carrier` 时取插件配置的 `defaultCarrier`，再缺省 `edge`。隔离模式拉起的 Chrome 同样是 Playwright 管理的一次性 profile：不复用你正在运行的 Chrome、不读取你的登录态（要复用登录态请用 cdp，或见「重置会话」）。
+
+同一会话复用同一实例，`browser_e2e_start` 可重复调用。未显式传 `mode` / `cdpEndpoint` / `carrier` 时，首次启动使用插件配置里的默认值，工具参数优先。已启动后要切换 `mode`（isolated ↔ cdp）、改 `cdpEndpoint` 或换载体，必须先 `browser_e2e_close` 再重新启动；已启动时传入与当前不一致的值会直接报错，不会静默复用。同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例。
 
 ### 环境诊断
 
@@ -68,7 +78,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 | 工具 | 作用 |
 |---|---|
-| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`cdpEndpoint` 指定接管端点，支持 `headless`、`proxy`、视口尺寸 |
+| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，支持 `headless`、`proxy`、视口尺寸 |
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
 | `browser_e2e_tabs` | 列出本会话标签页：`tab_id` / url / title / active / `loading` / `origin`（`created` 本会话新建 / `adopted` CDP 接管） |
 | `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭，结束整个浏览器用 `browser_e2e_close` |
@@ -357,12 +367,13 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 配置
 
-插件级 Config 共 8 个字段，全部声明为即时字段（`.volatile()`）：设置页保存时宿主只替换配置引用并广播 `loader/volatile-update`，不重载插件，因此 `apply` 里读到的是 `{ get() }` 引用，每次取值都取当前快照。
+插件级 Config 共 9 个字段，全部声明为即时字段（`.volatile()`）：设置页保存时宿主只替换配置引用并广播 `loader/volatile-update`，不重载插件，因此 `apply` 里读到的是 `{ get() }` 引用，每次取值都取当前快照。
 
 | 字段 | 区间 / 默认值 | 生效路径 |
 |---|---|---|
 | `defaultMode` | `isolated` / `cdp`，默认 `isolated` | 仅作 `browser_e2e_start` 未显式传 `mode` 时的首次启动缺省值 |
 | `cdpEndpoint` | 非空字符串，默认 `http://127.0.0.1:9222`，只接受 loopback | 仅作未显式传 `cdpEndpoint` 时的首次启动缺省值 |
+| `defaultCarrier` | `edge` / `chrome` / `auto`，默认 `edge` | 仅作 `browser_e2e_start` 未显式传 `carrier` 时的隔离模式缺省载体 |
 | `quality` | 整数 10-100，默认 70 | 面板投屏初始参数 |
 | `maxWidth` | 整数 100-4096，默认 1280 | 面板投屏初始参数 |
 | `maxHeight` | 整数 100-4096，默认 800 | 面板投屏初始参数 |
@@ -377,6 +388,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
   config:
     defaultMode: cdp
     cdpEndpoint: http://127.0.0.1:9222
+    defaultCarrier: edge
     quality: 70
     maxWidth: 1280
     maxHeight: 800
@@ -385,7 +397,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
     allowScript: true
 ```
 
-- **首次启动默认值**：`apply` 把 `defaultMode` / `cdpEndpoint` 整理成 `launchDefaults` 交给 `launch`。工具显式传参优先；已启动会话的一致性校验只看工具显式参数，配置默认值不会让运行中的会话报「mode 不一致」。`mode` 只认 `isolated` / `cdp`，端点必须非空，非法值当作未配置。
+- **首次启动默认值**：`apply` 把 `defaultMode` / `cdpEndpoint` / `defaultCarrier` 整理成 `launchDefaults` 交给 `launch`。工具显式传参优先；已启动会话的一致性校验只看工具显式参数，配置默认值不会让运行中的会话报「mode / 载体不一致」。`mode` 只认 `isolated` / `cdp`，`carrier` 只认 `edge` / `chrome` / `auto`，端点必须非空，非法值当作未配置。
 - **门控两项的脏值口径与投屏四项相反**：`accessMode` / `allowScript` 缺失取缺省（`full` / `true`），存在但不合法时取更严的一端（`readonly` / `false`）并由 `apply` 输出一次 warn。原因是安全向配置「读不懂」不得解析为「允许」。
 - **面板投屏初始参数**：插件加载时 `new PanelHub({ config: screencastConfigOf(config) })`，`PanelHub` 构造里用 `initialConfigOf` 按 `PANEL_CONFIG_LIMITS` 逐字段校验，缺失或越界回退 `DEFAULT_SCREENCAST_CONFIG`（70 / 1280 / 800 / 1），一处脏值不会把面板整个卡死。投屏四项在 Config schema 里不设默认值，区间与默认值只在 `lib/protocol.js` 一处定义，客户端构建时从同一份注入。
 - **运行中保存**：设置页保存触发 `loader/volatile-update` 后，`lib/index.js` 重读配置并调用 `hub.applyConfig`；与当前设置比较后，有变化先按新参数重开投屏再广播 `state`，无变化直接返回。
@@ -405,6 +417,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | 变量 | 默认值 | 作用 |
 |---|---|---|
 | `DSH_BROWSER_PROXY` | 空 | `browser_e2e_start` 未传 `proxy` 时使用的 HTTP 代理地址 |
+| `DSH_BROWSER_CHROME_PATH` | 空 | `carrier=chrome` / `auto` 探测 Chrome 时的优先路径（非空且文件存在才生效）；不设则按 PATH 与平台惯例安装位置查找 |
 | `DSH_BROWSER_IDLE_MS` | `600000`（10 分钟） | 无调用多久后关闭该会话浏览器；`0` 关闭空闲回收 |
 | `DSH_BROWSER_CLOSE_TIMEOUT_MS` | `5000` | 关闭浏览器时等待 graceful close 的毫秒上限 |
 | `DSH_BROWSER_DOWNLOAD_DIR` | 空 | `browser_e2e_download` 的下载目录（绝对路径）；空表示用 `<产物目录>/downloads/`，相对路径报错 |
@@ -481,6 +494,9 @@ node tests/gate.mjs
 
 # iframe 内操作：frame 索引 / name / 嵌套 / 跨源 / 参数互斥 / 越界（真起无头 Edge + 本地 HTTP 夹具）
 node tests/frames.mjs
+
+# 多载体：载体探测纯函数 / channel 与 executablePath 装配 / 摘要 / 复用 / 热切换 / CDP 忽略（假 chromium；本机有 Chrome 时真起一次）
+node tests/carrier.mjs
 
 # 面板宿主半区：围栏 / 设置 / 工具参数契约 / 真实 Edge + WebSocket 端到端协议（含 close-tab）
 node tests/panel.mjs
@@ -604,6 +620,7 @@ npm run test:integration
 - **快照只读同源 iframe** —— `frame` 参数只接受同源 iframe（空 url / `about:blank` / `about:srcdoc` 视为同源），跨源 iframe 直接报错；子 frame 只读，节点不分配 ref、不写主文档 ref 表，子 frame 内的元素操作（`f<N>@M` 之类）留给 P1-9。快照增量基线保存在会话内存中，不持久化、不跨会话复用。
 - **结构化读取的边界** —— `browser_e2e_read` 只读主文档，不进入任何 iframe（同源也不进）与 shadow root；不可见元素不列出，读隐藏表单需先让页面显示；表格不识别分页与虚拟滚动，`totalRows` 只是 DOM 行数；`input[type=file]` 只给 `hasValue`、不返回文件名；`href` 超过 500 字符时截断并置 `hrefTruncated: true`，截断值不可用于导航；`unique: false` 的 selector 在页面上不唯一，直接交给 click / fill 会因 Playwright strict 模式报错。页面脚本无超时与取消（与快照一致），耗时由 20000 元素扫描上限与 `maxItems` 限住；文本按 16000 字符预算分节截断，大页面请只请求一节或用 `selector` 收窄。
 - **跟随不做静默自动跟随** —— `browser_e2e_follow_tab` 只在显式调用时改绑默认标签页；用户随后切页，不传 `tab_id` 的工具仍作用在旧绑定页，需要再调一次。无参判定靠每页主文档的 `document.visibilityState` / `document.hasFocus()`（单页 2000ms 并行超时），无头模式与后台窗口区分度不稳，可能落到「保持当前」（`source=current`、`ambiguous=true`）；isolated 模式下用户自己新开的标签页不登记，只在会话已有页里选；受保护页面（`edge://` 等）与主线程卡死的页会被剔除出候选。确定性绑定请显式传 `tab_id`。
+- **载体只支持 Edge 与系统 Chrome** —— isolated 模式可选 `carrier: edge / chrome / auto`，但只认本机已安装的 Google Chrome：不内置 Chromium（依赖 `playwright-core`，没有浏览器下载步骤），不做桌面侧栏 / Electron 宿主 / 桌面桥载体，也不接受工具传入的可执行路径（路径只来自 `DSH_BROWSER_CHROME_PATH` 与平台惯例位置）。Chrome 用 Playwright 的一次性 profile，不复用你正在运行的 Chrome、不读取你的登录态；要复用登录态用 cdp。已启动后不能热切换载体，必须 `browser_e2e_close` 后重开。`browser_e2e_doctor` 的 `edge` 项仍只体检系统 Edge，不检查 Chrome。
 - **多标签页测试的进程计数是观察项** —— `tests/multitab.mjs` 收尾只打印剩余 msedge 主进程数与启动前基线，不据此断言；`tests/reclaim.mjs` 末尾打印的「应为 0」同样只是观察，真正的断言是「回落到 before 基线」——本机若已开着 Edge，基线不是 0，绝对值不可比。
 - **profile 里的版本是 git 快照** —— `dsh plugin add` 装的是指定 commit 的快照，改完源码必须 commit + push，再在 profile 里重新解析，否则跑的还是旧提交。
 - **插件卡片座位不注册** —— 客户端暂不注册 `web-ui.plugin.item` / `plugins.bundle.config`；在当前桌面宿主上注册会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），插件行改由宿主按 `Config` 自动渲染。

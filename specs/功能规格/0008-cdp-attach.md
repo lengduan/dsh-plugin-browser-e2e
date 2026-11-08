@@ -1,8 +1,8 @@
 # CDP 接管
 
 状态: 已实现
-关联: specs/项目规格/0001-architecture-invariants.md（模块表、进程内对象契约、不变量清单、会话状态机、进程回收、边界）；specs/项目规格/0002-panel-protocol-v1.md（事件表、`state` 形状与 `tabs` 项字段）
-代码: lib/session.js / lib/invariants.js / lib/tools.js / lib/defaults.js / lib/capture.js / tests/cdp.mjs / tests/invariants.mjs / tests/panel.mjs
+关联: specs/项目规格/0001-architecture-invariants.md（模块表、进程内对象契约、不变量清单、会话状态机、进程回收、边界）；specs/项目规格/0002-panel-protocol-v1.md（事件表、`state` 形状与 `tabs` 项字段）；specs/功能规格/0034-multi-carrier.md（CDP 不参与载体选择）
+代码: lib/session.js / lib/invariants.js / lib/tools.js / lib/defaults.js / lib/carrier.js / lib/capture.js / tests/cdp.mjs / tests/invariants.mjs / tests/panel.mjs
 
 ## 需求
 
@@ -27,7 +27,7 @@
 - 无 context、无已打开页面：报上面对应错误并断开连接、清空会话，浏览器进程不受影响（CDP 清理同样只调 `browser.close()`）。
 - 接管后用户关闭页面：`page.on('close')` 只调 `removePage`，`activeTabId` 落到剩余第一个；页面工具随 `assertBrowserRunning` / `assertCurrentTabAvailable` 报「浏览器尚未启动…」。关到 0 页时面板 tab 列表为空、会话仍在 `ready`；此时 `browser_e2e_navigate` 传 `new_tab: true` 经 `createPage` 可以补建一页。
 - `close` 后再用：会话已摘除，再次 `browser_e2e_close` 返回 `浏览器未启动，无需关闭`；页面工具报 `浏览器尚未启动，请先调用 browser_e2e_start`；再次 `browser_e2e_start` 会重新 `connectOverCDP` 接管同一个浏览器。启动途中被 `close` 时，连接由 `launch` 的 `finally` 断开，该次 `close` 返回通用摘要 `浏览器已关闭`。
-- CDP 下的启动参数：`headless`、`proxy`、`viewportWidth`、`viewportHeight` 都不参与接管（代码只把它们用在隔离分支；工具描述里只有 `headless` 与视口标了「仅隔离模式有效」）。
+- CDP 下的启动参数：`headless`、`proxy`、`viewportWidth`、`viewportHeight` 都不参与接管（代码只把它们用在隔离分支；工具描述里只有 `headless` 与视口标了「仅隔离模式有效」）。`carrier` 同样不参与：接管的是用户自己启动的浏览器，产品名不可知，传了也不报错、直接忽略（工具文本追加一行「CDP 模式载体由接管端点决定，carrier 参数不参与。」），`session.carrier` 固定记 `edge`，摘要继续写「系统 Edge」（见 `0034-multi-carrier.md`）。
 - 连接失效：`createPage` 先 `assertCdpConnected`，浏览器 `isConnected() === false` 或 `session.context` 为空时报 `CDP 浏览器连接已失效，请重新 browser_e2e_start`，不落到 Playwright 的 `Target closed`。
 - 面板是只读视图，不会触发启动或接管（协议边界见 `specs/项目规格/0002-panel-protocol-v1.md`）；CDP 会话 0 页时面板只显示空 tab 列表。
 

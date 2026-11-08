@@ -23,7 +23,7 @@
 ```
 接口层   tools.js（工具表）              protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  auth.js  human.js  screencast.js
+实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  auth.js  human.js  screencast.js  carrier.js
 公共     invariants.js（不变量断言）       fence.js（安全围栏）
 ```
 
@@ -33,6 +33,7 @@
 | `lib/invariants.js` | 跨调用不变量断言函数；每个函数配「违反后果」注释；全部纯函数 | 入参校验、I/O、读全局 Map |
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`doctor.js` 的端点缺省与修法文案、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
+| `lib/carrier.js` | 载体枚举与探测：`CARRIERS` / `DEFAULT_CARRIER` / `CARRIER_LABELS`、`carrierLabel`、`detectCarrier`（edge 不探测、chrome 按环境变量→PATH→平台惯例位置、auto 回退 edge）、`searchSummary`；只查文件，不启动浏览器 | 会话状态、进程回收、面板、协议 |
 | `lib/errors.js` | Playwright 异常判定：`isTimeoutError`（错误名 `TimeoutError`，或文案匹配 `timeout ... exceeded`）；`fetch.js` / `raw.js` / `download.js` 的请求与导航超时共用这一份 | 运行时状态、I/O、各能力模块的报错文案与重试策略 |
 | `lib/hash.js` | 摘要：`sha256Of(buffer)` 返回十六进制 SHA-256；`observation.js` 的网络正文、`raw.js` 的 HTTP 正文、`download.js` 的整包读入共用。流式摘要（`streamToFd` 逐块 `update`）是不同环节，不在本模块 | 运行时状态、I/O、流式 hash |
 | `lib/viewport.js` | 视口基准尺寸：`viewportBounds(page, viewport)`——有固定视口用视口，否则取页面实际内尺寸（`innerWidth` / `innerHeight` 兜底），页内取值异常返回 `null`；`page.js` 的坐标校验与 `capture.js` 的 clip 边界、截图基准尺寸共用 | 标签页生命周期、坐标与截图尺寸的校验规则、截图参数 |
@@ -62,10 +63,10 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js
-index.js → tools.js / panel.js / session.js / auth.js / history.js / gate.js / defaults.js / protocol.js
+tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js / carrier.js
+index.js → tools.js / panel.js / session.js / auth.js / history.js / gate.js / defaults.js / protocol.js / carrier.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
-session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
+session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js
 page.js → auth.js / invariants.js / viewport.js / frame.js
 snapshot.js → page.js（只借 currentTab / withTimeout；当前未使用 invariants.js）/ frame.js
 observation.js → page.js（只借 currentTab、级别归一、展示格式化与环常量）/ hash.js
@@ -80,10 +81,11 @@ screencast.js → protocol.js
 capture.js → protocol.js / viewport.js
 history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回调会话层，不 import 页面能力）
 doctor.js → session.js / capture.js / defaults.js
-protocol.js / invariants.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js / frame.js → （无内部依赖）
+invariants.js → carrier.js（只借 `carrierLabel` 拼错误文案；断言本身仍不读全局 Map、不做 I/O）
+protocol.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js / frame.js / carrier.js → （无内部依赖）
 ```
 
-`tools.js` 直接 import 12 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor），另加拆分出来的 snapshot / observation 两个能力模块（共 14 个），新增能力时同步本图。
+`tools.js` 直接 import 13 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor / carrier），另加拆分出来的 snapshot / observation 两个能力模块（共 15 个），新增能力时同步本图。
 
 `snapshot.js` 与 `observation.js` 都不 import 对方，也不被 `page.js` import：页面层不感知这两个能力模块，
 避免造 `page → snapshot` / `page → observation` 回指。
@@ -116,6 +118,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `nextTabSeq` | `page.js` 的 `addPage` 读并自增；`session.js` 的 `sessionOf` 初始化 | 分配 `t<N>` |
 | `hookedPages` | `page.js` 的 `attachPageHooks` 读 / 写 | 防止同一个 page 重复挂监听 |
 | `mode` | `page.js` 的 `createPage` / `clipboard` 读；`fetch.js` 的 `fetchText` 读 | 选择 `newPage` 路径、CDP 模式下限制未过滤的剪贴板写入、临时页判定来源 |
+| `carrier` | `session.js` 的 `sessionOf`（初始 `edge`）/ `launch`（隔离写实际载体、CDP 写 `edge`）/ `reuseInfo` / `assertReuseCompatible` 读写；`invariants.js` 的 `assertCarrierNotHotSwitched` 由调用方传值 | 复用摘要的载体名与「已启动后换载体」的热切换判据 |
 | `context` | `page.js` 的 `createPage` 读 | CDP 模式新建页面 |
 | `browser` | `page.js` 的 `createPage` 读 | 隔离模式新建页面与前置检查 |
 | `viewport` | `page.js` 的 `createPage` 读 | 隔离模式新页视口 |
@@ -297,6 +300,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `assertLaunchSettled(session)` | 并发启动落定后会话有浏览器 | 浏览器启动失败（同一会话的并发启动未成功），请重试 browser_e2e_start |
 | `assertModeNotHotSwitched(currentMode, requestedMode)` | 请求 mode 与已运行会话一致 | 浏览器已启动（{当前} 模式）；如需切换为 {请求} 模式请先 browser_e2e_close |
 | `assertEndpointNotHotSwitched(currentEndpoint, requestedEndpoint)` | 请求端点与已运行会话一致 | 浏览器已启动（CDP 端点 {当前}）；如需切换为 {请求} 请先 browser_e2e_close |
+| `assertCarrierNotHotSwitched(currentCarrier, requestedCarrier)` | 请求载体（`auto` 已解析成具体值）与已运行隔离会话一致；载体名经 `carrierLabel` 展示 | 浏览器已启动（载体 {当前}）；如需切换为 {请求} 请先 browser_e2e_close |
 | `assertCdpConnected(session, isConnected)` | 会话仍持有 CDP context，且 `isConnected`（调用方传入的 `browser.isConnected()` 结果）不为 `false`；未探测（undefined）时只按 context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
 | `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
 | `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |

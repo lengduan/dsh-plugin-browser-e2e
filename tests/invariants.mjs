@@ -17,9 +17,10 @@ import { join } from 'node:path'
 process.env.DSH_BROWSER_CLOSE_TIMEOUT_MS = '20'
 
 import {
-  assertBrowserRunning, assertCanCloseLastTab, assertCdpConnected, assertCdpContext, assertCdpHasPages,
-  assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled, assertModeNotHotSwitched,
-  assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated, assertSingleScreencast, assertTabExists,
+  assertBrowserRunning, assertCanCloseLastTab, assertCarrierNotHotSwitched, assertCdpConnected, assertCdpContext,
+  assertCdpHasPages, assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled,
+  assertModeNotHotSwitched, assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated,
+  assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
 import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
@@ -151,6 +152,14 @@ await check('assertEndpointNotHotSwitched：端点不一致报错并带两端点
     /CDP 端点 http:\/\/127\.0\.0\.1:9222.*http:\/\/127\.0\.0\.1:9333/,
   )
 })
+await check('assertCarrierNotHotSwitched：两个方向都报错并带载体名', () => {
+  assert.doesNotThrow(() => assertCarrierNotHotSwitched('edge', 'edge'))
+  assert.doesNotThrow(() => assertCarrierNotHotSwitched('chrome', 'chrome'))
+  assert.throws(() => assertCarrierNotHotSwitched('edge', 'chrome'),
+    /浏览器已启动（载体 系统 Edge）；如需切换为 系统 Chrome 请先 browser_e2e_close/)
+  assert.throws(() => assertCarrierNotHotSwitched('chrome', 'edge'),
+    /浏览器已启动（载体 系统 Chrome）；如需切换为 系统 Edge 请先 browser_e2e_close/)
+})
 await check('CDP 三条不变量各自报原文案', () => {
   assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} })))
   assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} }), true))
@@ -226,6 +235,25 @@ await check('非法转移抛错（含终态 closed）', () => {
 })
 await check('未知状态报错', () => {
   assert.throws(() => nextSessionState('booting', 'launch'), /未知会话状态 booting/)
+})
+await check('carrier 不进入会话状态机（转移表与 carrier 无关）', async () => {
+  // 载体只写在会话对象上，不是状态、也不是事件：换载体不改变任何合法 / 非法转移的结果。
+  const legal = [
+    ['idle', 'launch', 'launching'],
+    ['launching', 'launchSettled', 'ready'],
+    ['ready', 'close', 'closing'],
+    ['closing', 'closeSettled', 'closed'],
+  ]
+  const session = sessionOf('carrier-state-machine')
+  for (const carrier of ['edge', 'chrome']) {
+    session.carrier = carrier
+    assert.equal(session.state, 'idle')
+    for (const [from, event, to] of legal) {
+      assert.equal(nextSessionState(from, event), to, `${carrier}: ${from} --${event}--> ${to}`)
+    }
+    assert.throws(() => nextSessionState('idle', 'carrier'), /非法会话状态转移/)
+  }
+  await close('carrier-state-machine')
 })
 
 console.log('== 用例 E：面板协议契约（protocol.js 单一来源）==')

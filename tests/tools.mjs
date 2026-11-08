@@ -319,6 +319,9 @@ try {
     const info = await launch(KEY, { headless: true, viewportWidth: 800, viewportHeight: 600 }, SID)
     session = requireSession(KEY)
     check('启动成功且有 summary', info.reused === false && typeof info.summary === 'string', JSON.stringify(info))
+    check('默认启动仍拉起 msedge（carrier 缺省为 edge）',
+      info.carrier === 'edge' && info.channel === 'msedge' && info.summary.startsWith('启动浏览器 系统 Edge'),
+      JSON.stringify({ carrier: info.carrier, channel: info.channel, summary: info.summary }))
     check('Edge 主进程比基线多', edgeRootCount() > baseline, `baseline=${baseline} now=${edgeRootCount()}`)
   }
 
@@ -1650,6 +1653,13 @@ try {
     check('工具表共 32 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / follow_tab / history）', table.length === 32 && names.length === 32, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
+    const startTool = definitions.find((definition) => definition.name === 'browser_e2e_start')
+    check('browser_e2e_start 的参数表含 carrier 枚举',
+      JSON.stringify(startTool?.parameters.properties.carrier?.enum) === JSON.stringify(['edge', 'chrome', 'auto'])
+        && startTool.parameters.properties.carrier?.type === 'string'
+        && startTool.parameters.additionalProperties === false
+        && !startTool.parameters.required.includes('carrier'),
+      JSON.stringify(startTool?.parameters))
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
     check('read 参数含 sections / maxItems / includeValues / selector / tab_id',
       ['sections', 'maxItems', 'includeValues', 'selector', 'tab_id']

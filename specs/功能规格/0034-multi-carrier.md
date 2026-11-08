@@ -1,8 +1,8 @@
 # 多载体选择
 
-状态: 已确认（采纳方案 B1；实施待排期）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖图、进程内对象契约「session 对象」、不变量清单、能力函数返回值字段）；specs/项目规格/0002-panel-protocol-v1.md（`state` 形状、`tabs` 项字段、面板只读边界）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（启动 / 复用 / 摘要 / 热切换拒绝 / 边界「只驱动系统 Edge」）；specs/功能规格/0008-cdp-attach.md（CDP 接管不参与载体选择）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 六字段口径与即时生效）；README.md「浏览器启动与模式」「配置」「Known Limitations and Deferred Work」
-代码: 当前无代码改动（本项已确认、实施待排期）。方案 B1 落地时预计涉及 lib/carrier.js（新建）/ lib/session.js / lib/invariants.js / lib/index.js / lib/tools.js / README.md / tests/carrier.mjs（新建），并同步 specs/功能规格/0002-browser-launch-and-reuse.md、0006-plugin-config-and-live-apply.md、0008-cdp-attach.md。
+状态: 已实现（采纳方案 B1）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖图、进程内对象契约「session 对象」、不变量清单、能力函数返回值字段）；specs/项目规格/0002-panel-protocol-v1.md（`state` 形状、`tabs` 项字段、面板只读边界）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（启动 / 复用 / 摘要 / 热切换拒绝 / 边界「只驱动系统 Edge」）；specs/功能规格/0008-cdp-attach.md（CDP 接管不参与载体选择）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 字段口径与即时生效）；README.md「浏览器启动与模式」「配置」「Known Limitations and Deferred Work」
+代码: 已实现：新增 lib/carrier.js；lib/session.js / lib/invariants.js / lib/index.js / lib/tools.js；新增 tests/carrier.mjs，tests/invariants.mjs / tests/tools.mjs / tests/panel.mjs / tests/cdp.mjs 补断言；README.md 与 specs/功能规格/0002、0006、0008、0001 已同步。
 
 ## 需求
 
@@ -19,7 +19,7 @@
 ## 决策记录
 
 - 2026-11-08：采纳**方案 B1**（`browser_e2e_start` 新增 `carrier` 三值 + `Config.defaultCarrier` + 新建 `lib/carrier.js` 探测）；默认 `edge` 时参数、返回、摘要逐字不变；**不采纳** B2（面板显示载体）与 B3；`carrier` 只对隔离模式生效，CDP 忽略；工具参数不接受可执行路径，Chrome 路径只由 `DSH_BROWSER_CHROME_PATH` 与平台惯例位置决定（本机已确认 Chrome 与 Edge 均存在，可在真机验证）。本机 Chrome 位于 `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`。
-- 状态为「已确认、实施待排期」：下文「方案 B1 的目标契约」是实现契约，当前代码未实现；验收第 1 组是实施前的回归基线。
+- 2026-11-08 已实现：下文「方案 B1 的目标契约」已成为实现契约；验收第 1 组是实施前的回归基线，已随本项回归通过。
 
 ## 行为
 
@@ -35,7 +35,7 @@
 - `lib/page.js` 的 `createPage` 只按 `session.mode` 选择 `session.context.newPage()` 或 `session.browser.newPage({ viewport })`，不感知载体；`lib/panel.js` 的 `state` 只输出 `mode` / `endpoint`；`lib/session.js` 的 `listPanelTabs` 每个 tab 只带 `mode` / `endpoint`。
 - 既有功能规格 `0002-browser-launch-and-reuse.md` 的「边界」把「不提供其他 channel 或可执行路径参数」写成明确不处理项；`0006` 把 `Config` 固定为六字段。
 
-### 方案 B1（已确认、实施待排期）
+### 方案 B1（已实现）
 
 #### 工具与参数
 

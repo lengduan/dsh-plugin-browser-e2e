@@ -232,6 +232,10 @@ try {
     const panelTabs = await listPanelTabs()
     check('面板 tab 带 mode=cdp 与实际接管端点', panelTabs.length >= 1
       && panelTabs.every((tab) => tab.mode === 'cdp' && tab.endpoint === endpoint), JSON.stringify(panelTabs))
+    // 载体只对隔离模式生效：CDP 下传 carrier 不报错、不改会话载体，复用摘要仍写「系统 Edge」。
+    const ignored = await launch(KEY, { mode: 'cdp', cdpEndpoint: endpoint, carrier: 'chrome' }, SID)
+    check('CDP 模式忽略 carrier 参数', ignored.reused === true && ignored.carrier === 'edge'
+      && session.carrier === 'edge' && ignored.summary.includes('系统 Edge'), JSON.stringify(ignored))
   }
 
   console.log('== 用例 3：接管后导航 / 求值 / 截图 ==')
