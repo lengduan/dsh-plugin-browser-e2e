@@ -104,7 +104,7 @@
 - 只读主文档：不进入任何 iframe（同源也不进）。页面主体在 iframe 里时本工具只返回主文档结果。iframe 内的结构化读取与操作待路线图 P1-9（iframe 内元素操作）；`0012` 的 `frame` 参数只作用于 `browser_e2e_snapshot`，不适用于本工具。
 - 不进入 shadow root：`document.body.querySelectorAll('*')` 不穿透，open shadow root 内的控件 / 链接 / 表格读不到；closed shadow root 本来就读不到。
 - 与 `0012`（P0-3）的划界：`snapshot` 的 `query` 模式返回的是扁平节点记录（`tag` / `role` / `name` / `text` / `box` / `xpath` / `selector`），没有 `href`、没有表格行列矩阵、没有控件 `value` / `checked` / `options` / 表单归属；`delta` 是快照差异；`frame` 是定位范围。三者都不产出本规格的四节记录。本工具不写 ref、不建基线，可与快照在同一页面交替调用，互不影响。
-- 与 `browser_e2e_evaluate` 的分工：evaluate 能用自写脚本拿到同样的数据，本工具的价值是固定记录形状、页内校验过的唯一 selector、输出预算与稳定的省略语义，不是「只有本工具能读」。因此 `content` / `markdown` / `plain text` 正文提取不在本项范围（`document.body.innerText` 一行 evaluate 可得）。
+- 与 `browser_e2e_evaluate` 的分工：evaluate 能用自写脚本拿到同样的数据，本工具的价值是固定记录形状、页内校验过的唯一 selector、输出预算与稳定的省略语义，不是「只有本工具能读」。整页正文提取由 `browser_e2e_fetch` 承担（临时页 + 语义容器 `innerText`，不导航当前页），本工具仍只管四节结构化记录；`content` / `markdown` / `plain text` 正文提取不在本项范围（`document.body.innerText` 一行 evaluate 可得）。
 - 同名 radio 逐条列出，不合并成 radiogroup 记录；不返回 `constraints`（`min` / `max` / `pattern` / `validity` 等约束与表单校验状态）。
 - 表格不识别分页与虚拟滚动：不在 DOM 里的行拿不到，`totalRows` 只是 DOM 行数；不做 `coverage` / `reason` 标注（竞品的分页 / 虚拟化提示不在本项）。
 - `input[type=file]` 只给 `hasValue`，不返回已选文件名（上传能力见 `0010`）。

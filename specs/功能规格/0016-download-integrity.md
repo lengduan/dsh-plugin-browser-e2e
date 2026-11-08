@@ -118,6 +118,7 @@ sha256：eeebbc4b...4ba6
 - 宿主没有 `webServer`、没有面板连接、没有 `attachments` 服务都不影响本工具。
 - 不新增跨调用不变量：下载没有跨调用积累的注册表或状态机；参数错误留在 `download` 入口，浏览器未启动 / tab 不存在沿用 `currentTab` 的 `assertCurrentTabAvailable` / `assertTabExists`，因此 `lib/invariants.js` 不新增断言。
 - 与 `browser_e2e_http` 的分工：只要响应正文、不要落盘与 SHA-256 时用 `browser_e2e_http`（仅 `mode=context`）；需要落盘或完整性校验时仍用 `browser_e2e_download`。
+- 与 `browser_e2e_fetch` 的分工：下载走「url 直取 / 点击触发」并落盘；只要渲染后的正文走 `browser_e2e_fetch`（开临时页抓取，不落盘）。两者都经会话浏览器、共享登录态。
 
 ## 验收
 

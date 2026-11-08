@@ -40,7 +40,7 @@
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
     "test:unit": "node tests/invariants.mjs && node tests/client-bundle.mjs && node tests/screencast.mjs",
-    "test:integration": "node tests/panel.mjs && node tests/tools.mjs && node tests/snapshot.mjs && node tests/auth.mjs && node tests/multitab.mjs && node tests/cdp.mjs && node tests/reclaim.mjs && node tests/upload.mjs && node tests/download.mjs && node tests/read.mjs && node tests/dialog.mjs && node tests/session-reset.mjs && node tests/clipboard.mjs && node tests/click-press.mjs && node tests/assert.mjs && node tests/recipe.mjs && node tests/human.mjs && node tests/doctor.mjs && node tests/follow.mjs && node tests/raw-http.mjs"
+    "test:integration": "node tests/panel.mjs && node tests/tools.mjs && node tests/snapshot.mjs && node tests/auth.mjs && node tests/multitab.mjs && node tests/cdp.mjs && node tests/reclaim.mjs && node tests/upload.mjs && node tests/download.mjs && node tests/read.mjs && node tests/dialog.mjs && node tests/session-reset.mjs && node tests/clipboard.mjs && node tests/click-press.mjs && node tests/assert.mjs && node tests/recipe.mjs && node tests/human.mjs && node tests/doctor.mjs && node tests/follow.mjs && node tests/raw-http.mjs && node tests/fetch.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.19.0",

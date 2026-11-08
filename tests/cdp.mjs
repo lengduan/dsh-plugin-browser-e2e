@@ -28,6 +28,7 @@ const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await i
 const { currentTab, clipboard, click, dialogEntries, evaluate, followTab, MIN_EVALUATE_TIMEOUT_MS, navigate, press, setDialogPolicy, upload } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
+const { fetchText } = await import('../lib/fetch.js')
 
 const KEY = 'test-cdp-key'
 let session = null
@@ -163,6 +164,23 @@ const downloadServer = createHttpServer((req, res) => {
   if (path === '/files/cdp-click.txt') {
     res.writeHead(200, { 'content-type': 'text/plain' })
     res.end(CLICK_BODY)
+    return
+  }
+  // 抓取夹具：先由临时页写 cookie，再由后续抓取检查同一 context 是否带上它。
+  if (path === '/fetch-cookie') {
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'set-cookie': 'fetchCookie=ok; Path=/',
+    })
+    res.end('<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-fetch-cookie</title>'
+      + '</head><body><p>fetch-cookie-set</p></body></html>')
+    return
+  }
+  if (path === '/fetch-cookie-check') {
+    const hasCookie = String(req.headers.cookie ?? '').includes('fetchCookie=ok')
+    res.writeHead(hasCookie ? 200 : 403, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-fetch-cookie-check</title>'
+      + `</head><body><p>${hasCookie ? 'fetch-cookie-ok' : 'fetch-cookie-missing'}</p></body></html>`)
     return
   }
   res.writeHead(404, { 'content-type': 'text/plain' })
@@ -325,6 +343,29 @@ try {
     check('CDP 下载不新建标签页', contentTabsAfter.length === contentTabsBefore.length
       && extraPages.every((tab) => String(tab.url).startsWith('edge://')),
     JSON.stringify({ before: tabsBefore.map((tab) => `${tab.tab_id}:${tab.url}`), after: tabsAfter.map((tab) => `${tab.tab_id}:${tab.url}`) }))
+  }
+
+  console.log('== 用例 3D-2：CDP 接管下抓取（不新增标签页 / 不改变 active / 页面数回落 / 共享 Cookie）==')
+  {
+    await navigate(session, `${downloadBase}/page`, 'load')
+    const before = await tabs(KEY)
+    const activeBefore = session.activeTabId
+    const pagesBefore = session.context.pages().length
+    const fetched = await fetchText(session, { url: `${downloadBase}/fetch-cookie` })
+    const after = await tabs(KEY)
+    const pagesAfter = session.context.pages().length
+    check('CDP 模式下抓取不新增标签页', after.tabs.length === before.tabs.length
+      && after.tabs.every((tab) => before.tabs.some((item) => item.tab_id === tab.tab_id)),
+    JSON.stringify({ before: before.tabs.map((tab) => tab.tab_id), after: after.tabs.map((tab) => tab.tab_id) }))
+    check('CDP 模式下抓取不改变 activeTabId', session.activeTabId === activeBefore
+      && after.activeTabId === activeBefore && fetched.tabId === activeBefore,
+    JSON.stringify({ before: activeBefore, after: session.activeTabId, fetched: fetched.tabId }))
+    check('CDP 模式下抓取后页面数回到抓取前', pagesAfter === pagesBefore,
+      JSON.stringify({ before: pagesBefore, after: pagesAfter }))
+    const cookieFetched = await fetchText(session, { url: `${downloadBase}/fetch-cookie-check` })
+    check('CDP 模式下夹具页 set-cookie 后同一 tab 的抓取带上 Cookie',
+      cookieFetched.statusCode === 200 && cookieFetched.text.includes('fetch-cookie-ok'),
+      JSON.stringify({ status: cookieFetched.statusCode, text: cookieFetched.text }))
   }
 
   console.log('== 用例 3E：CDP 接管下 evaluate 死循环超时后页面仍可求值 ==')
