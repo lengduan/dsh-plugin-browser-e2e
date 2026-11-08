@@ -37,7 +37,7 @@
 
 - 规则表 `SENSITIVE_ARGS`：`browser_e2e_fill` → `['value']`；`browser_e2e_dialog` → `['prompt_text']`。取值来自本次调用的工具入参，不经摘要反解析。
 - 对每个非空字符串字段值，把摘要里**所有**出现替换成 `[已脱敏 N 个字符]`（N 按 Unicode 码点计）。替换用 `split` / `join`，不走正则，避免值里的正则元字符与引号导致漏配。
-- 规则的理由：`lib/page.js` 的 `fill` 摘要形如 `填写 <目标> <- "<value>"` 与 `逐键填写 <目标> <- "<value>"（…）`，`setDialogPolicy` 的摘要形如 `对话框策略已设为 accept（自动确认，prompt 文本 "<prompt_text>"）`——现有工具里只有这两处把用户输入原样放进摘要。例：`填写 @3 (input "密码") <- [已脱敏 6 个字符]`。
+- 规则的理由：`lib/page.js` 的 `fill` 摘要形如 `填写 <目标> <- "<value>"` 与 `逐键填写 <目标> <- "<value>"（…）`，`setDialogPolicy` 的摘要形如 `对话框策略已设为 accept（自动确认，prompt 文本 "<prompt_text>"）`——现有工具里只有这两处把用户输入原样放进摘要。例：`填写 @3 (input "密码") <- "[已脱敏 6 个字符]"`（只替换值本身，摘要原有的包裹引号保留）。
 - 脱敏只作用于落盘副本与 `browser_e2e_history` 的读回文本；`action` 事件载荷、面板显示、工具返回值一律不变。
 
 ### 读回（新工具 `browser_e2e_history`，`lib/tools.js` 的常量 `HISTORY_TOOL_NAME`）
@@ -75,7 +75,7 @@
 
 ## 验收
 
-1. `node tests/invariants.mjs`：exit 0、输出无 FAIL。新增「用例 L：动作历史落盘与脱敏」，用例名如下（由 tester 落盘，命名照抄；夹具用 `mkdtempSync` 建临时目录，每个用例通过 `DSH_BROWSER_HISTORY_FILE` 指向自己的文件，不碰真实 `~/.dsh`）：
+1. `node tests/invariants.mjs`：exit 0、输出无 FAIL。新增「用例 M：动作历史落盘与脱敏」（用例 L 已被 console 级别用例占用，本项顺延为 M），用例名如下（由 tester 落盘，命名照抄；夹具用 `mkdtempSync` 建临时目录，每个用例通过 `DSH_BROWSER_HISTORY_FILE` 指向自己的文件，不碰真实 `~/.dsh`）：
    - `脱敏：fill 的写入值不落盘`
    - `脱敏：keystrokes 形态同样掩码`
    - `脱敏：dialog 的 prompt_text 不落盘`

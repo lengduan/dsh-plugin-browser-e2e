@@ -104,7 +104,7 @@
 
 1. `node -e "import('./lib/tools.js').then(m => { const t = m.buildToolTable({ launchDefaults: () => ({}) }); console.log(t.length); console.log(t.map(d => d.name).filter(n => /fetch/.test(n)).join(',') || '(无)') })"` → 第一行是 `buildToolTable()` 的实际条数（不写死：HEAD `94cddf3` 为 22，P1-15 合入后为 23），第二行为 `(无)`。
 2. `git grep -n -e registerFetchProvider -e fetchProvider -- lib client` → 无输出、退出码 1。
-3. `node tests/panel.mjs` → exit 0、无 FAIL，且含有对工具表条数的断言（立项时 HEAD `94cddf3` 为 `工具表共 22 个`；P1-15 合入后为「工具表共 23 个」；本项落地后为「工具表共 31 个」）；本项落地时必须同步这条断言。
+3. `node tests/panel.mjs` → exit 0、无 FAIL，且含有对工具表条数的断言（立项时 HEAD `94cddf3` 为 `工具表共 22 个`；P1-15 合入后为「工具表共 23 个」；本项落地后为「工具表共 31 个」，P2-28 合入后现为「工具表共 32 个」）；本项落地时必须同步这条断言。
 
 ### 2. 候选 B 落地后（`.scratch/browser-plugin-survey/plans/28-web-fetch-browser.md` §9 的用例）
 

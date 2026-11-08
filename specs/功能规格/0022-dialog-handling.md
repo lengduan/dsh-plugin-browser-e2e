@@ -58,6 +58,7 @@
 
 - 会话 / 浏览器进程：不变。
 - 标签页：只读写 `dialogPolicy` / `dialogPromptText` / `dialogRing`；`refs`、快照基线、`consoleRing` / `networkRing` 都不动。
+- 导航：`browser_e2e_navigate` 在导航前清空该标签页的 `dialogRing`，与 `refs` / 快照基线 / 事件环的清空口径一致；`dialogPolicy` / `dialogPromptText` 保留。
 - 页面：对话框被应答后页面 JS 继续执行；不导航、不重载、不重建 ref。
 - 面板：每次工具调用产生一条既有 `action` 摘要（`lib/index.js` 的 `execute` 包装），无新命令 / 事件 / 错误码；面板仍是只读视图。
 

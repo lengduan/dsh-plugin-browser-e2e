@@ -72,8 +72,8 @@
    - 用例 4（边界与并发）：`未知 tab_id 报「不存在」`、`tab_id 非字符串报错`、`未启动时报「浏览器尚未启动」`、`零页时报「浏览器尚未启动」`、`主线程卡死的页不阻塞判定（整次调用 5000ms 内返回）`、`并发 closeTab 与 follow 后 activeTabId 仍指向存在的页`。
    - 收尾：`msedge 主进程回落到运行前基线`。
 2. `node tests/cdp.mjs`：exit 0、无 FAIL。新增 `CDP 接管下显式 tab_id 绑定生效`、`CDP 接管下无参判定返回 adopted 页`、`CDP 绑定不改变浏览器进程与页面数`；找不到 Edge 时按现有 SKIP 口径以 0 退出。
-3. `node tests/panel.mjs`：exit 0、无 FAIL。`工具表共 29 个`（由 28 更新）、`注册的工具与工具表逐项一致（顺序与名字）`、`作用于页面的工具都接受 tab_id`（名单加入 `follow`）、`browser_e2e_follow_tab 的 tab_id 可选、activate 为布尔`。
-4. `node tests/tools.mjs`：exit 0、无 FAIL。`工具表共 29 个（含 read / dialog / follow_tab）`。
+3. `node tests/panel.mjs`：exit 0、无 FAIL。`工具表共 32 个`（本项落地时由 28 更新为 29，P2-26/27/28 合入后现为 32）、`注册的工具与工具表逐项一致（顺序与名字）`、`作用于页面的工具都接受 tab_id`（名单加入 `follow_tab`）、`browser_e2e_follow_tab 的 tab_id 可选、activate 为布尔`。
+4. `node tests/tools.mjs`：exit 0、无 FAIL。`工具表共 32 个（含 read / dialog / follow_tab / fetch / http / history）`。
 5. `node tests/read.mjs`：exit 0、无 FAIL。`browser_e2e_read 注册且带 tab_id`（其中的工具总数断言同步为 29）。
 6. `npm run test:unit` 与 `npm run test:integration`：exit 0、输出无 FAIL；`package.json` 的 `test:integration` 包含 `node tests/follow.mjs`。
 7. 客户端未变：`git status --porcelain lib/client.js lib/protocol.js lib/panel.js client/index.js` 输出为空。

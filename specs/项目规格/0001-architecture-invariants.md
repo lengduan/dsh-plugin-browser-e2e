@@ -422,7 +422,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
    - 改 `capture.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `page.js` / `tools.js`：`npm run test:unit && node tests/tools.mjs && node tests/multitab.mjs && node tests/follow.mjs`。
    - 改 `read.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
-   - 改 `history.js`：`node tests/invariants.mjs`（用例 L：纯函数 + 临时目录，不起浏览器）
+   - 改 `history.js`：`node tests/invariants.mjs`（用例 M：纯函数 + 临时目录，不起浏览器）
      与 `node tests/panel.mjs`（真起无头 Edge，串行）。
    - 改 `fetch.js`：`npm run test:unit && node tests/fetch.mjs && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `protocol.js` / `panel.js` / `index.js`：`npm run test:unit && node tests/panel.mjs`。
