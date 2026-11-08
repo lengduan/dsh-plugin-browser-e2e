@@ -18,7 +18,8 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession, tabs } = await import('../lib/session.js')
-const { evaluate, followTab, FOLLOW_PROBE_TIMEOUT_MS, navigate, snapshot } = await import('../lib/page.js')
+const { evaluate, followTab, FOLLOW_PROBE_TIMEOUT_MS, navigate } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-follow-key'
 const SID = KEY

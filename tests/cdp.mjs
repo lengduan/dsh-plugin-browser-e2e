@@ -25,7 +25,8 @@ import { pathToFileURL } from 'node:url'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, clipboard, click, dialogEntries, evaluate, followTab, MIN_EVALUATE_TIMEOUT_MS, navigate, press, setDialogPolicy, upload } = await import('../lib/page.js')
+const { currentTab, clipboard, click, evaluate, followTab, MIN_EVALUATE_TIMEOUT_MS, navigate, press, upload } = await import('../lib/page.js')
+const { dialogEntries, setDialogPolicy } = await import('../lib/observation.js')
 const { screenshot } = await import('../lib/capture.js')
 const { download } = await import('../lib/download.js')
 const { fetchText } = await import('../lib/fetch.js')

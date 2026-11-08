@@ -18,8 +18,9 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
-  assertPage, currentTab, evaluate, navigate, snapshot,
+  assertPage, currentTab, evaluate, navigate,
 } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 const { buildToolTable, summaryOf } = await import('../lib/tools.js')
 
 const KEY = 'test-assert-key'

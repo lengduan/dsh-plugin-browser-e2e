@@ -32,7 +32,9 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 process.env.DSH_BROWSER_HISTORY = '0'
 
 const { closeAll, launch, listPanelTabs, requireSession, tabs } = await import('../lib/session.js')
-const { consoleEntries, currentTab, networkEntries, navigate, snapshot } = await import('../lib/page.js')
+const { currentTab, navigate } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
+const { consoleEntries, networkEntries } = await import('../lib/observation.js')
 const {
   FETCH_DEFAULT_SETTLE_MS, FETCH_DEFAULT_TIMEOUT_MS, FETCH_MAX_SETTLE_MS, FETCH_MAX_TEXT_CHARS,
   FETCH_TIMEOUT_MAX_MS, FETCH_TIMEOUT_MIN_MS, fetchText,

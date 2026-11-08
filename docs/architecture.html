@@ -540,11 +540,14 @@
       <tr><th>源模块</th><th>直接依赖</th><th>说明</th></tr>
     </thead>
     <tbody>
-      <tr><td class="mono">tools.js</td><td class="mono">session.js · page.js · recipe.js · read.js · capture.js · defaults.js</td><td>工具表在 <code>run</code> 入口解析会话，然后调能力函数</td></tr>
+      <tr><td class="mono">tools.js</td><td class="mono">session.js · page.js · snapshot.js · observation.js · recipe.js · read.js · capture.js · defaults.js</td><td>工具表在 <code>run</code> 入口解析会话，然后调能力函数</td></tr>
       <tr><td class="mono">index.js</td><td class="mono">tools.js · panel.js · session.js · auth.js · defaults.js</td><td>注册与生命周期；不碰工具实现</td></tr>
       <tr><td class="mono">panel.js</td><td class="mono">protocol.js · session.js · capture.js · screencast.js · fence.js</td><td>面板状态、命令分发、投屏目标同步</td></tr>
       <tr><td class="mono">session.js</td><td class="mono">page.js · capture.js · invariants.js · protocol.js · fence.js · defaults.js</td><td>会话层可调用页面层与截图层</td></tr>
-      <tr><td class="mono">page.js</td><td class="mono">auth.js · invariants.js</td><td>不 import 会话层；广播走注入的 <code>session.emit</code></td></tr>
+      <tr><td class="mono">page.js</td><td class="mono">auth.js · invariants.js</td><td>不 import 会话层，也不 import snapshot.js / observation.js（两个新模块单向依赖 page.js）；广播走注入的 <code>session.emit</code></td></tr>
+      <tr><td class="mono">snapshot.js</td><td class="mono">page.js</td><td>只借 <code>currentTab</code> / <code>withTimeout</code>；读写标签页条目上既有的 <code>refs</code> / <code>snapshotBaselines</code></td></tr>
+      <tr><td class="mono">observation.js</td><td class="mono">page.js</td><td>只借 <code>currentTab</code>、级别归一、展示格式化与环常量；读写既有的环字段</td></tr>
+      <tr><td class="mono">raw.js</td><td class="mono">page.js · observation.js</td><td>标签页与动作等待取 page.js；正文解码与敏感头脱敏取 observation.js</td></tr>
       <tr><td class="mono">read.js</td><td class="mono">page.js</td><td>只取 <code>currentTab</code>；不写 ref 表与快照基线</td></tr>
       <tr><td class="mono">recipe.js</td><td class="mono">page.js</td><td>多步步骤复用既有页面能力；只取 <code>currentTab</code> 与各能力函数，不写 ref 表与快照基线</td></tr>
       <tr><td class="mono">auth.js</td><td class="mono">fence.js</td><td>补票只对 loopback 生效</td></tr>
@@ -691,7 +694,7 @@
       <tr><td>console / network 环形缓冲</td><td>每个 tab 各 500 条</td><td class="mono">page.js RING_LIMIT</td></tr>
       <tr><td>单条 console 文本</td><td>2000 字符截断</td><td class="mono">page.js CONSOLE_TEXT_LIMIT</td></tr>
       <tr><td>console 级别过滤</td><td>debug &lt; log &lt; info &lt; warning &lt; error（warn 等同 warning）；不可判级类型恒保留</td><td class="mono">page.js CONSOLE_LEVELS / CONSOLE_LEVEL_ALIASES</td></tr>
-      <tr><td>snapshot 条数</td><td>4000 个可见元素（超出截断并标注）</td><td class="mono">page.js SNAPSHOT_LIMIT</td></tr>
+      <tr><td>snapshot 条数</td><td>4000 个可见元素（超出截断并标注）</td><td class="mono">snapshot.js SNAPSHOT_LIMIT</td></tr>
       <tr><td>截图输出单边 / 总像素</td><td>8192 px / 4194304 px</td><td class="mono">capture.js MAX_SHOT_EDGE / MAX_SHOT_PIXELS</td></tr>
       <tr><td>投屏参数区间</td><td>quality 10-100，maxWidth/Height 100-4096，everyNthFrame 1-10</td><td class="mono">protocol.js PANEL_CONFIG_LIMITS</td></tr>
       <tr><td>面板动作提示</td><td>最近 5 条，新的在前</td><td class="mono">client/index.js ACTION_LIMIT</td></tr>

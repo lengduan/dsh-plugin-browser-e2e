@@ -25,7 +25,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 process.env.DSH_BROWSER_HISTORY = '0'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
-const { clipboard, currentTab, evaluate, navigate, snapshot } = await import('../lib/page.js')
+const { clipboard, currentTab, evaluate, navigate } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-clipboard-key'
 const SID = 'test-clipboard-session'

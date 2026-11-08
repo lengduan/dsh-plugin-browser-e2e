@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` / `lib/tools.js`；进程内对象契约「标签页条目」与「能力函数返回值」）；specs/项目规格/0002-panel-protocol-v1.md（本项不改协议）；specs/功能规格/0005-console-network-ring.md（事件环、重置与列表读取）
-代码: lib/page.js / lib/tools.js / tests/tools.mjs
+代码: lib/page.js / lib/observation.js / lib/tools.js / tests/tools.mjs
 
 ## 需求
 
@@ -15,7 +15,7 @@
 - `browser_e2e_network` 的参数仍只有 `limit` 与 `tab_id`，默认值、尾部截取、`summary` / `count` / `total`、空记录文案与失败记录文案都不变。
 - 每条网络记录新增 `request_id`：`attachPageHooks` 在 `request` 事件里按标签页自增分配 `n1`、`n2`…；同一个 id 在标签页存续期内不复用，`clearRings` 清空记录也不重置计数。
 - 列表文本每行在时间后加 `[n<N>]`，例如 `12:00:00.000 [n3] GET 200 application/json http://…`；`networkRing` 条目仍是最新在最后。
-- `networkRing`、`networkByRequest` 之外新增内部容器 `networkContext`（`request_id` → `{ request, response }`），只由 `lib/page.js` 读写。`RING_LIMIT` 淘汰、`clearRings`、关页 / 崩溃都同步删掉对应上下文；`request` 事件保存 Request，`response` 事件补上 Response。
+- `networkRing`、`networkByRequest` 之外新增内部容器 `networkContext`（`request_id` → `{ request, response }`），由 `lib/page.js` 写入、`lib/observation.js` 读取。`RING_LIMIT` 淘汰、`clearRings`、关页 / 崩溃都同步删掉对应上下文；`request` 事件保存 Request，`response` 事件补上 Response。
 
 ### 新工具 `browser_e2e_network_detail`
 
@@ -26,7 +26,7 @@
   - `max_chars`：integer，可选，1..`NETWORK_BODY_TEXT_LIMIT`（65536），默认 `NETWORK_BODY_TEXT_LIMIT`；控制文本正文与请求体最多返回多少字符，二进制不受此参数影响。
   - `timeout_ms`：integer，可选，`NETWORK_BODY_TIMEOUT_MIN_MS`（100）..`NETWORK_BODY_TIMEOUT_MAX_MS`（30000），默认 `NETWORK_BODY_TIMEOUT_MS`（5000）。
   - `include_sensitive`：boolean，可选，默认 false；为 false 时 `authorization` / `cookie` / `set-cookie` / `proxy-authorization` / `x-api-key` / `x-auth-token` / `x-csrf-token` / `x-xsrf-token` 等头的值显示 `[已隐藏]`。
-- 入口：能力函数 `networkDetail(session, requestId, options, tabId)`（`lib/page.js`），先 `session.touch()`，再经 `currentTab(session, tabId)` 取标签页；工具层用 `requireSession(sessionKey(exec))`，未启动时不创建 idle 会话，报错口径与 `browser_e2e_network` 一致。
+- 入口：能力函数 `networkDetail(session, requestId, options, tabId)`（`lib/observation.js`），先 `session.touch()`，再经 `currentTab(session, tabId)` 取标签页；工具层用 `requireSession(sessionKey(exec))`，未启动时不创建 idle 会话，报错口径与 `browser_e2e_network` 一致。
 - 返回：工具只渲染 `summary` 一行与多行 `text`；能力函数同时返回结构化对象：`{ tabId, request_id, url, method, status, mimeType, failure, at, redirect, request: { headers, postData }, response: { headers, body }, summary, text }`。
 
 ### 读取时机
@@ -93,5 +93,5 @@
    - `max_chars / timeout_ms 越界报错`
    - `网络上下文随环形缓冲淘汰`
    - `detail 按 tab_id 隔离`
-2. `npm run test:unit`：exit 0、无 FAIL；`tests/invariants.mjs` 用例 K 的 `tools.js 的工具描述从常量插值，不写死默认值` 仍通过（新描述里的字符上限与超时默认值必须从 `lib/page.js` 导出的常量插值）。
+2. `npm run test:unit`：exit 0、无 FAIL；`tests/invariants.mjs` 用例 K 的 `tools.js 的工具描述从常量插值，不写死默认值` 仍通过（新描述里的字符上限与超时默认值必须从 `lib/observation.js` 导出的常量插值）。
 3. `npm run test:integration`：exit 0、无 FAIL（串行真起无头 Edge；`tests/panel.mjs` 按工具表派生断言，新工具注册后自动纳入表驱动契约）。

@@ -523,18 +523,18 @@ npm run test:integration
 ```
 接口层   tools.js（32 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  history.js  screencast.js
+实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  history.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
-- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`fetch.js` 持浏览器内抓取（临时页 + 正文提取），只依赖 `page.js` 的 `currentTab` / `createTransientPage` 与 `read.js` 的正文预算常量，不 import 会话层、不落盘；`raw.js` 持原始 HTTP（仅 `mode=context`），只依赖 `page.js` 的 `currentTab` 与正文 / 脱敏纯函数，不 import 会话层、不落盘；`history.js` 持动作历史的 JSONL 追加、有界裁剪、写前脱敏与读回，只从 `page.js` 借 `timeOf` / `oneLine` 两个展示纯函数；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环写入与 ref 表；`snapshot.js` 持快照引擎（页内扫描脚本、ref 分配、delta / query / frame 分支与基线比较），只依赖 `page.js` 的 `currentTab` / `withTimeout`；`observation.js` 持事件环的只读视图与网络正文（console / network / dialog 读取、网络详情与正文解码、敏感头脱敏），只依赖 `page.js` 的环字段与展示纯函数；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`fetch.js` 持浏览器内抓取（临时页 + 正文提取），只依赖 `page.js` 的 `currentTab` / `createTransientPage` 与 `read.js` 的正文预算常量，不 import 会话层、不落盘；`raw.js` 持原始 HTTP（仅 `mode=context`），只依赖 `page.js` 的 `currentTab` / `settleWithin` 与 `observation.js` 的正文 / 脱敏纯函数，不 import 会话层、不落盘；`history.js` 持动作历史的 JSONL 追加、有界裁剪、写前脱敏与读回，只从 `page.js` 借 `timeOf` / `oneLine` 两个展示纯函数；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
 - `protocol.js` 是面板协议 v1 的单一契约来源，host 与 client 的校验从表派生；客户端常量由 `scripts/build-client.mjs` 经 `scripts/protocol-inject.mjs` 注入 `lib/client.js`，源码↔产物一致由 `tests/invariants.mjs` 守护。细节见 `specs/项目规格/0002-panel-protocol-v1.md`。
 - 投屏链路：工具执行 → `PanelHub.broadcastAction` 与 `scheduleSync` → WebSocket 广播 `state` / `action`；`Screencast` 适配器对当前页开 CDP 投屏，帧经 socket 推给面板，面板回 ack 后取下一帧。
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/fetch.js`（浏览器内抓取）、`lib/raw.js`（原始 HTTP）、`lib/history.js`（动作历史落盘与脱敏）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/snapshot.js`（快照引擎）、`lib/observation.js`（事件环只读视图与网络正文）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/fetch.js`（浏览器内抓取）、`lib/raw.js`（原始 HTTP）、`lib/history.js`（动作历史落盘与脱敏）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
 
 </details>
 

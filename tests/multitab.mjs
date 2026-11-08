@@ -16,7 +16,8 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { close, closeAll, closeTab, launch, requireSession, tabs } = await import('../lib/session.js')
-const { click, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, press, snapshot } = await import('../lib/page.js')
+const { click, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, press } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-multitab-key'
 let session = null

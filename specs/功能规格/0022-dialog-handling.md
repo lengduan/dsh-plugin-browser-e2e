@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: specs/项目规格/0001-architecture-invariants.md（「三层与被切分的文件」模块表里 `lib/page.js` 的职责、「进程内对象契约 · 标签页条目」字段表、P3 的「运行时」类错误归属）；specs/项目规格/0002-panel-protocol-v1.md（本项不改协议）；specs/功能规格/0005-console-network-ring.md（同属页面观测数据，但对话框记录独立成环）
-代码: lib/page.js / lib/tools.js / tests/dialog.mjs / tests/cdp.mjs / tests/panel.mjs
+代码: lib/page.js / lib/observation.js / lib/tools.js / tests/dialog.mjs / tests/cdp.mjs / tests/panel.mjs
 
 ## 需求
 

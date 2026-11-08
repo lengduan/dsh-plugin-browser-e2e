@@ -22,7 +22,8 @@ import { readFileSync } from 'node:fs'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
-const { currentTab, evaluate, navigate, snapshot } = await import('../lib/page.js')
+const { currentTab, evaluate, navigate } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 const {
   normalizeRecipe, RECIPE_DEFAULT_TIMEOUT_MS, RECIPE_EXTRACT_LIMIT_DEFAULT, RECIPE_EXTRACT_LIMIT_MAX,
   RECIPE_MAX_STEPS, RECIPE_MAX_TIMEOUT_MS, RECIPE_MIN_TIMEOUT_MS, RECIPE_OUTPUT_TEXT_LIMIT,

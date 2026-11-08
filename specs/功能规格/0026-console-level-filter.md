@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: specs/项目规格/0001-architecture-invariants.md（「进程内对象契约 · 其他跨模块字段 · 能力函数返回值被 `tools.js` 各工具 `run` 读的字段」）；specs/项目规格/0002-panel-protocol-v1.md（本项不改协议，面板仍只读）；specs/功能规格/0005-console-network-ring.md（事件环的采集、重置、读取与工具文本，本项在其读取视图上做增补）
-代码: lib/page.js / lib/tools.js / tests/tools.mjs / tests/invariants.mjs / tests/panel.mjs
+代码: lib/page.js / lib/observation.js / lib/tools.js / tests/tools.mjs / tests/invariants.mjs / tests/panel.mjs
 
 ## 需求
 

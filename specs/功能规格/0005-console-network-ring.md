@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: specs/项目规格/0001-architecture-invariants.md（「三层与被切分的文件」模块表里 `lib/page.js` 的职责条目、「进程内对象契约 · 标签页条目」、P3「`lib/browser.js`」表里未启动就读取 console / network 记录的条目、「已知结构性债务 · 展示格式化四处」）
-代码: lib/page.js / lib/tools.js / tests/tools.mjs / tests/invariants.mjs
+代码: lib/page.js / lib/observation.js / lib/tools.js / tests/tools.mjs / tests/invariants.mjs
 
 ## 需求
 

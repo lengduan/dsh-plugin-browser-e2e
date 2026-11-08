@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` 的职责；进程内对象契约「标签页条目」与「browser_e2e_snapshot 返回字段」；已知结构性债务「page.js 粒度过大」）；specs/功能规格/0004-snapshot-and-ref-table.md（全量快照形状与 ref 生命周期，本规格的 delta 分支修订该文件的「ref 生命周期」节）；README.md「事件环重置」
-代码: lib/page.js / lib/tools.js / tests/snapshot.mjs
+代码: lib/page.js / lib/snapshot.js / lib/tools.js / tests/snapshot.mjs
 
 ## 需求
 

@@ -17,7 +17,8 @@ import { createServer } from 'node:http'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
-const { click, currentTab, evaluate, navigate, scroll, snapshot } = await import('../lib/page.js')
+const { click, currentTab, evaluate, navigate, scroll } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-snapshot-key'
 const SID = 'test-snapshot-session'

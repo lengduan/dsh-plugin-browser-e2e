@@ -17,7 +17,8 @@ import { createServer } from 'node:http'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
-const { currentTab, navigate, snapshot } = await import('../lib/page.js')
+const { currentTab, navigate } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 const { humanCheck, waitForHuman } = await import('../lib/human.js')
 const { buildToolTable } = await import('../lib/tools.js')
 

@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` 的职责、进程内对象契约「标签页条目」的 `refs` 字段、不变量清单 `assertRefBelongsToTab` / `assertRefRevalidated`）；specs/项目规格/0002-panel-protocol-v1.md（事件表 `action`：工具动作以 `{tool, summary, at}` 广播到面板）
-代码: lib/page.js / lib/invariants.js / lib/tools.js / tests/tools.mjs / tests/multitab.mjs / tests/invariants.mjs
+代码: lib/page.js / lib/snapshot.js / lib/invariants.js / lib/tools.js / tests/tools.mjs / tests/multitab.mjs / tests/invariants.mjs
 
 ## 需求
 
@@ -12,7 +12,7 @@
 
 ### 入口与返回
 
-- 工具 `browser_e2e_snapshot` 接受 `tab_id`（缺省 active tab）与可选的 `delta` / `query` / `frame`（后三者见 `0012-snapshot-delta-query-frame.md`）；能力函数是 `lib/page.js` 的 `snapshot(session, tabId, options)`；目标页由 `currentTab` 解析，未知 tab 报 `tab <id> 不存在，请先 browser_e2e_tabs 获取最新 tab_id`。
+- 工具 `browser_e2e_snapshot` 接受 `tab_id`（缺省 active tab）与可选的 `delta` / `query` / `frame`（后三者见 `0012-snapshot-delta-query-frame.md`）；能力函数是 `lib/snapshot.js` 的 `snapshot(session, tabId, options)`；目标页由 `currentTab` 解析，未知 tab 报 `tab <id> 不存在，请先 browser_e2e_tabs 获取最新 tab_id`。
 - `snapshot` 在页面上下文执行 `snapshotScript({ limit: SNAPSHOT_LIMIT, ... })`，`SNAPSHOT_LIMIT` 为 4000；页面脚本另受扫描上限 20000 约束。
 - 返回 `{ tabId, url, mode, frame, count, total, truncated, nodes, text, summary, scanTruncated }`；delta / query 的返回形状见 `0012-snapshot-delta-query-frame.md`：
   - `nodes` 每项为 `{ ref, tag, id, classes, role, name, text, box, depth, xpath }`；`ref` 为 `@N`，按本次返回顺序从 0 起编号；`classes` 是字符串数组；`box` 为 `{ x, y, width, height }`，视口相对 CSS 像素、四值取整；`depth` 为到 `body` 的层级（`body` 的直接子元素为 1）。

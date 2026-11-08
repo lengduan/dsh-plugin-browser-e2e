@@ -23,7 +23,8 @@ import { createServer } from 'node:http'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
-const { currentTab, evaluate, navigate, networkEntries, waitFor } = await import('../lib/page.js')
+const { currentTab, evaluate, navigate, waitFor } = await import('../lib/page.js')
+const { networkEntries } = await import('../lib/observation.js')
 
 const KEY = 'test-wait-key'
 const SID = 'test-wait-session'

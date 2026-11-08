@@ -21,12 +21,16 @@ process.env.DSH_BROWSER_HISTORY = '0'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
 const {
-  attachPageHooks, clearRings, CLIPBOARD_HTML_LIMIT, CLIPBOARD_TEXT_LIMIT, click, CONSOLE_LEVELS, consoleEntries,
+  attachPageHooks, clearRings, CLIPBOARD_HTML_LIMIT, CLIPBOARD_TEXT_LIMIT, click, CONSOLE_LEVELS,
   DEFAULT_EVALUATE_TIMEOUT_MS, drag, evaluate, fill, hover,
   MAX_EVALUATE_TIMEOUT_MS, MIN_EVALUATE_TIMEOUT_MS, navigate,
-  NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MAX_MS, NETWORK_BODY_TIMEOUT_MIN_MS, NETWORK_BODY_TIMEOUT_MS,
-  networkDetail, networkEntries, RING_LIMIT, scroll, snapshot, waitFor,
+  RING_LIMIT, scroll, waitFor,
 } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
+const {
+  consoleEntries, NETWORK_BODY_TEXT_LIMIT, NETWORK_BODY_TIMEOUT_MAX_MS, NETWORK_BODY_TIMEOUT_MIN_MS,
+  NETWORK_BODY_TIMEOUT_MS, networkDetail, networkEntries,
+} = await import('../lib/observation.js')
 const { currentTab } = await import('../lib/page.js')
 const { screenshot } = await import('../lib/capture.js')
 

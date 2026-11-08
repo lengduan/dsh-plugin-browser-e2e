@@ -34,7 +34,8 @@ process.env.DSH_BROWSER_HISTORY = '0'
 delete process.env.DSH_BROWSER_DOWNLOAD_DIR
 
 const { closeAll, launch, requireSession, tabs } = await import('../lib/session.js')
-const { currentTab, evaluate, navigate, snapshot } = await import('../lib/page.js')
+const { currentTab, evaluate, navigate } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 const { DEFAULT_MAX_DOWNLOAD_BYTES, MAX_DOWNLOAD_BYTES, download } = await import('../lib/download.js')
 
 const KEY = 'test-download-key'

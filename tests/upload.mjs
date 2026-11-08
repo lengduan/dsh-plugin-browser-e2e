@@ -26,7 +26,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 process.env.DSH_BROWSER_HISTORY = '0'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
-const { evaluate, navigate, snapshot, upload } = await import('../lib/page.js')
+const { evaluate, navigate, upload } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-upload-key'
 const SID = 'test-upload-session'

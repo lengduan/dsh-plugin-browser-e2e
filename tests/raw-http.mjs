@@ -30,7 +30,8 @@ process.env.DSH_BROWSER_HISTORY = '0'
 delete process.env.DSH_BROWSER_DOWNLOAD_DIR
 
 const { closeAll, launch, requireSession, tabs } = await import('../lib/session.js')
-const { consoleEntries, currentTab, networkEntries, navigate } = await import('../lib/page.js')
+const { currentTab, navigate } = await import('../lib/page.js')
+const { consoleEntries, networkEntries } = await import('../lib/observation.js')
 const { rawHttp } = await import('../lib/raw.js')
 
 const KEY = 'test-raw-http-key'

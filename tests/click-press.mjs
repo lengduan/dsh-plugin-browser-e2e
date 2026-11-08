@@ -18,7 +18,8 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, closeTab, launch, requireSession } = await import('../lib/session.js')
-const { click, evaluate, navigate, press, snapshot } = await import('../lib/page.js')
+const { click, evaluate, navigate, press } = await import('../lib/page.js')
+const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-click-press-key'
 let session = null

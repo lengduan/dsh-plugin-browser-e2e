@@ -26,8 +26,9 @@ process.env.DSH_BROWSER_HISTORY = '0'
 const { activeSessionKeys, closeAll, launch, requireSession } = await import('../lib/session.js')
 const {
   DIALOG_LIMIT_DEFAULT, DIALOG_PROMPT_TEXT_LIMIT, DIALOG_RING_LIMIT,
-  click, currentTab, dialogEntries, evaluate, navigate, setDialogPolicy,
+  click, currentTab, evaluate, navigate,
 } = await import('../lib/page.js')
+const { dialogEntries, setDialogPolicy } = await import('../lib/observation.js')
 const { apply } = await import('../lib/index.js')
 
 const KEY = 'test-dialog-key'
