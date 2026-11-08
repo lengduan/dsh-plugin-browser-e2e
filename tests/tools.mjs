@@ -1697,6 +1697,15 @@ try {
       && 'delayMs' in fillTool.parameters.properties && fillTool.parameters.properties.delayMs?.type === 'integer'
       && fillTool.parameters.required.includes('value'),
     JSON.stringify({ mode: fillTool.parameters.properties.mode, delayMs: fillTool.parameters.properties.delayMs, required: fillTool.parameters.required }))
+    const frameTools = ['browser_e2e_click', 'browser_e2e_fill', 'browser_e2e_scroll']
+    check('click / fill / scroll 的参数表含 frame', frameTools.every((name) => {
+      const params = definitions.find((definition) => definition.name === name)?.parameters.properties ?? {}
+      const frame = params.frame
+      return frame !== undefined && JSON.stringify(frame.type) === JSON.stringify(['integer', 'string'])
+    }), JSON.stringify(frameTools.map((name) => definitions.find((definition) => definition.name === name)?.parameters.properties.frame)))
+    check('press 的参数表不含 frame',
+      !('frame' in (definitions.find((definition) => definition.name === 'browser_e2e_press')?.parameters.properties ?? {})),
+      JSON.stringify(definitions.find((definition) => definition.name === 'browser_e2e_press')?.parameters))
     const historyTool = definitions.find((definition) => definition.name === 'browser_e2e_history')
     check('browser_e2e_history 参数含 limit / tool / ok / scope 且无必填',
       JSON.stringify(Object.keys(historyTool?.parameters.properties ?? {}).sort()) === JSON.stringify(['limit', 'ok', 'scope', 'tool'])

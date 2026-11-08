@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { closeAll, launch, requireSession } = await import('../lib/session.js')
-const { click, fill, navigate, scroll } = await import('../lib/page.js')
+const { click, fill, navigate, press, scroll } = await import('../lib/page.js')
 const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-frames-key'
@@ -48,6 +48,17 @@ function edgeRootCount() {
   return Number.parseInt(ps.stdout.trim(), 10)
 }
 
+/** 等 Edge 主进程回落到基线：进程退出比 closeAll 返回晚，最多等 5 秒。 */
+async function waitProcessExit(baselineCount, timeoutMs = 5000) {
+  let count = edgeRootCount()
+  const deadline = Date.now() + timeoutMs
+  while (count > baselineCount && Date.now() < deadline) {
+    await sleep(200)
+    count = edgeRootCount()
+  }
+  return count
+}
+
 /** 子 frame 页面：scroller 铺满整个 frame，中心滚轮能命中它。 */
 const FRAME_HTML = '<!doctype html><html><head><meta charset="utf-8"><title>frame</title></head>'
   + '<body style="margin:0"><div id="scroller" style="position:fixed;inset:0;overflow:auto">'
@@ -64,6 +75,13 @@ const NESTED_HTML = '<!doctype html><html><body style="margin:0">'
 
 const FRAME_WITH_NESTED = '<!doctype html><html><body style="margin:0">'
   + '<iframe name="nested-frame" src="/nested" style="position:absolute;left:0;top:0;width:300px;height:200px"></iframe>'
+  + '</body></html>'
+
+/** 第二个子 frame 页面：同 selector 指向新文档，用于「frame 导航后 selector 重新解析」。 */
+const FRAME2_HTML = '<!doctype html><html><head><meta charset="utf-8"><title>frame2</title></head>'
+  + '<body style="margin:0">'
+  + '<button id="inner-btn" style="position:absolute;left:20px;top:20px;width:160px;height:40px"'
+  + ' onclick="window.__second=(window.__second||0)+1">second</button>'
   + '</body></html>'
 
 /** 主页面：一个同源 iframe。 */
@@ -133,6 +151,7 @@ try {
   serverA = await serve(portA, {
     '/': MAIN_HTML,
     '/frame': FRAME_HTML,
+    '/frame2': FRAME2_HTML,
     '/nested': NESTED_HTML,
     '/frame-nested': FRAME_WITH_NESTED,
     '/nested-main': NESTED_MAIN,
@@ -159,6 +178,35 @@ try {
   const filled = await frame1.evaluate(() => document.querySelector('#inner-input').value)
   check('frame 1 内 selector 填写生效', filled === 'hello-frame', String(filled))
 
+  // 焦点进 frame：先把焦点交给子 frame 内的输入框，再发按键，键事件应落在该 frame 的文档上。
+  await frame1.evaluate(() => {
+    window.__keys = []
+    document.addEventListener('keydown', (event) => window.__keys.push(event.key))
+  })
+  await click(session, { selector: '#inner-input', frame: 1 })
+  await press(session, 'a')
+  const keysInFrame = await frame1.evaluate(() => window.__keys)
+  check('frame 1 内点击后 press 生效', Array.isArray(keysInFrame) && keysInFrame.includes('a'),
+    JSON.stringify(keysInFrame))
+
+  // 坐标始终是主视口 CSS 像素：iframe 元素的 boundingBox 加上元素在子 frame 内的位置。
+  const innerBox = await frame1.evaluate(() => {
+    const rect = document.querySelector('#inner-btn').getBoundingClientRect()
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+  })
+  // iframe 在主文档里的位置：主视口坐标 = iframe 的 getBoundingClientRect + 元素在子 frame 内的位置。
+  const frameRect = await page.evaluate(() => {
+    const rect = document.querySelector('iframe[name="frame-one"]').getBoundingClientRect()
+    return { x: rect.x, y: rect.y }
+  })
+  const beforeCoord = await frame1.evaluate(() => window.__clicked ?? 0)
+  const coordX = Math.round(frameRect.x + innerBox.x)
+  const coordY = Math.round(frameRect.y + innerBox.y)
+  await click(session, { x: coordX, y: coordY })
+  const afterCoord = await frame1.evaluate(() => window.__clicked ?? 0)
+  check('frame 内坐标点击按主视口命中', afterCoord === beforeCoord + 1,
+    `${beforeCoord} -> ${afterCoord} at (${coordX}, ${coordY})`)
+
   const beforeName = await frame1.evaluate(() => window.__clicked)
   await click(session, { selector: '#inner-btn', frame: 'frame-one' })
   const afterName = await frame1.evaluate(() => window.__clicked)
@@ -177,6 +225,20 @@ try {
 
   const scrollMix = await expectThrow(() => scroll(session, { delta_y: 100, x: 50, y: 50, frame: 1 }))
   check('scroll 的 frame 与坐标互斥报错', typeof scrollMix === 'string' && scrollMix.includes('只能给一种'), String(scrollMix))
+
+  // 子 frame 导航：frame 对象保持不变，selector 在新文档里重新解析，不会命中旧元素。
+  await frame1.evaluate(() => { window.location.href = '/frame2' })
+  const frameDeadline = Date.now() + 10000
+  let frameReloaded = false
+  while (Date.now() < frameDeadline) {
+    frameReloaded = await frame1.evaluate(() => document.readyState === 'complete'
+      && Boolean(document.querySelector('#inner-btn'))).catch(() => false)
+    if (frameReloaded) break
+    await sleep(100)
+  }
+  const navFrameClick = await click(session, { selector: '#inner-btn', frame: 1 })
+  const secondCount = await frame1.evaluate(() => window.__second ?? 0)
+  check('frame 导航后 selector 重新解析', secondCount === 1, JSON.stringify({ frameReloaded, navFrameClick }))
 
   console.log('== 用例 3：参数互斥与越界 ==')
   const refMix = await expectThrow(() => click(session, { ref: '@0', frame: 1 }))
@@ -212,13 +274,29 @@ try {
   check('快照 frame 1 返回子 frame 信息且节点 ref 为 null',
     snap.frame?.index === 1 && snap.nodes.every((node) => node.ref === null),
     JSON.stringify({ frame: snap.frame, sample: snap.nodes.slice(0, 1) }))
+
+  console.log('== 用例 7：两个标签页的 frame 互不影响 ==')
+  const t1Page = pageOf(session)
+  const t1Frame = childFrame(t1Page, 1)
+  const beforeT1 = await t1Frame.evaluate(() => window.__clicked ?? 0)
+  await navigate(session, `${base}/`, 'load', { new_tab: true })
+  const tabIds = [...session.pages.keys()]
+  const t2Id = tabIds[tabIds.length - 1]
+  const t2Page = session.pages.get(t2Id).page
+  check('第二标签页 frame 已加载', await waitFrames(t2Page, 2), String(t2Page.frames().length))
+  await click(session, { selector: '#inner-btn', frame: 1 }, t2Id)
+  const t2Frame = childFrame(t2Page, 1)
+  const afterT2 = await t2Frame.evaluate(() => window.__clicked ?? 0)
+  const afterT1 = await t1Frame.evaluate(() => window.__clicked ?? 0)
+  check('t1 与 t2 的 frame 互不影响', afterT2 === 1 && afterT1 === beforeT1,
+    `t1 ${beforeT1} -> ${afterT1}; t2 ${afterT2}`)
 } finally {
   await closeAll()
   serverA?.close()
   serverB?.close()
 }
 
-const after = edgeRootCount()
+const after = await waitProcessExit(baseline)
 check('msedge 主进程回落到运行前基线', after <= baseline, `before=${baseline} after=${after}`)
 console.log(`\n结果：PASS ${pass} / FAIL ${fail}`)
 process.exit(fail === 0 ? 0 : 1)

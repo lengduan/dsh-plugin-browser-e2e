@@ -137,6 +137,13 @@ const uploadPageUrl = pathToFileURL(uploadPagePath).href
 // 下载夹具：本地 HTTP 服务（URL 模式只能走 HTTP(S)），页面上的 download 链接覆盖点击触发路径。
 const HTTP_BODY = Buffer.from('cdp-http-body')
 const CLICK_BODY = Buffer.from('cdp-click-body')
+
+/** 子 frame 页面：一个按钮记录点击次数，供 frame 内 selector 点击断言。 */
+const FRAME_INNER_HTML = '<!doctype html><html><head><meta charset="utf-8"><title>frame-inner</title></head>'
+  + '<body style="margin:0">'
+  + '<button id="inner-btn" style="position:absolute;left:20px;top:20px;width:160px;height:40px"'
+  + ' onclick="window.__clicked=(window.__clicked||0)+1">inner</button>'
+  + '</body></html>'
 const downloadServer = createHttpServer((req, res) => {
   const path = new URL(req.url, 'http://127.0.0.1').pathname
   if (path === '/page') {
@@ -168,8 +175,7 @@ const downloadServer = createHttpServer((req, res) => {
     return
   }
   // 抓取夹具：先由临时页写 cookie，再由后续抓取检查同一 context 是否带上它。
-  if (path === '/fetch-cookie') {
-    res.writeHead(200, {
+  if (path === '/fetch-cookie') {    res.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
       'set-cookie': 'fetchCookie=ok; Path=/',
     })
@@ -184,11 +190,48 @@ const downloadServer = createHttpServer((req, res) => {
       + `</head><body><p>${hasCookie ? 'fetch-cookie-ok' : 'fetch-cookie-missing'}</p></body></html>`)
     return
   }
+  // iframe 夹具：同源主页面 + 跨源主页面（子 frame 指向另一个 host 的端口）。
+  if (path === '/frame-main') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-frame-main</title></head>'
+      + '<body style="margin:0">'
+      + '<iframe name="frame-one" src="/frame-inner" style="position:absolute;left:100px;top:10px;width:600px;height:400px"></iframe>'
+      + '</body></html>')
+    return
+  }
+  if (path === '/cross-main') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>cdp-cross-main</title></head>'
+      + '<body style="margin:0">'
+      + `<iframe name="cross-frame" src="${crossFrameBase}/frame-inner" style="position:absolute;left:100px;top:10px;width:600px;height:400px"></iframe>`
+      + '</body></html>')
+    return
+  }
+  if (path === '/frame-inner') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(FRAME_INNER_HTML)
+    return
+  }
   res.writeHead(404, { 'content-type': 'text/plain' })
   res.end('unknown')
 })
 await new Promise((resolve) => downloadServer.listen(0, '127.0.0.1', resolve))
 const downloadBase = `http://127.0.0.1:${downloadServer.address().port}`
+
+// 跨源 frame 夹具：同一台机器另一个端口，但用 localhost 访问，与 127.0.0.1 不同源。
+let crossFrameBase = ''
+const crossFrameServer = createHttpServer((req, res) => {
+  const path = new URL(req.url, 'http://127.0.0.1').pathname
+  if (path === '/frame-inner') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(FRAME_INNER_HTML)
+    return
+  }
+  res.writeHead(404, { 'content-type': 'text/plain' })
+  res.end('unknown')
+})
+await new Promise((resolve) => crossFrameServer.listen(0, '127.0.0.1', resolve))
+crossFrameBase = `http://localhost:${crossFrameServer.address().port}`
 
 const child = spawn(edgePath, [
   '--headless=new',
@@ -350,6 +393,37 @@ try {
     JSON.stringify({ before: tabsBefore.map((tab) => `${tab.tab_id}:${tab.url}`), after: tabsAfter.map((tab) => `${tab.tab_id}:${tab.url}`) }))
   }
 
+  console.log('== 用例 3D-1：CDP 接管下 frame 内 selector 点击（同源 / 跨源）==')
+  {
+    const childFrameOf = (page) => {
+      const main = page.mainFrame()
+      return [main, ...page.frames().filter((frame) => frame !== main)][1]
+    }
+    const waitChildFrame = async (page) => {
+      const deadline = Date.now() + 10000
+      while (Date.now() < deadline && page.frames().length < 2) await sleep(100)
+      return childFrameOf(page)
+    }
+
+    await navigate(session, `${downloadBase}/frame-main`, 'load')
+    const samePage = currentTab(session).page
+    const sameChild = await waitChildFrame(samePage)
+    const sameOriginInfo = await click(session, { selector: '#inner-btn', frame: 1 })
+    const sameClicked = await sameChild.evaluate(() => window.__clicked === 1)
+    check('CDP 接管下 frame 内 selector 点击生效',
+      samePage.frames().length >= 2 && sameClicked === true && sameOriginInfo.frame?.index === 1,
+      JSON.stringify({ frames: samePage.frames().length, sameOriginInfo, sameClicked }))
+
+    await navigate(session, `${downloadBase}/cross-main`, 'load')
+    const crossPage = currentTab(session).page
+    const crossChild = await waitChildFrame(crossPage)
+    const crossInfo = await click(session, { selector: '#inner-btn', frame: 1 })
+    const crossClicked = await crossChild.evaluate(() => window.__clicked === 1)
+    check('CDP 接管下跨源 frame 内 selector 点击生效',
+      crossPage.frames().length >= 2 && crossClicked === true,
+      JSON.stringify({ frames: crossPage.frames().length, crossInfo, crossClicked }))
+  }
+
   console.log('== 用例 3D-2：CDP 接管下抓取（不新增标签页 / 不改变 active / 页面数回落 / 共享 Cookie）==')
   {
     await navigate(session, `${downloadBase}/page`, 'load')
@@ -509,6 +583,8 @@ try {
   child.kill()
   downloadServer.closeAllConnections?.()
   await new Promise((resolve) => downloadServer.close(resolve))
+  crossFrameServer.closeAllConnections?.()
+  await new Promise((resolve) => crossFrameServer.close(resolve))
   await sleep(500)
   try {
     rmSync(userDataDir, { recursive: true, force: true })
