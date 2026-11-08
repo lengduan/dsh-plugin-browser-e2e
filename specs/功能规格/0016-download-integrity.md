@@ -117,6 +117,7 @@ sha256：eeebbc4b...4ba6
 - 浏览器在下载途中被关闭、页面崩溃、磁盘写满、目标目录不可写：下载流或写盘报错，工具尽力删除已写入的部分并抛出原始错误（带 `下载中断` 前缀），不返回成功。
 - 宿主没有 `webServer`、没有面板连接、没有 `attachments` 服务都不影响本工具。
 - 不新增跨调用不变量：下载没有跨调用积累的注册表或状态机；参数错误留在 `download` 入口，浏览器未启动 / tab 不存在沿用 `currentTab` 的 `assertCurrentTabAvailable` / `assertTabExists`，因此 `lib/invariants.js` 不新增断言。
+- 与 `browser_e2e_http` 的分工：只要响应正文、不要落盘与 SHA-256 时用 `browser_e2e_http`（仅 `mode=context`）；需要落盘或完整性校验时仍用 `browser_e2e_download`。
 
 ## 验收
 

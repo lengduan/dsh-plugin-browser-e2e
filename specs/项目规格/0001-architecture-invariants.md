@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/download.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/capture.js / lib/download.js / lib/raw.js / lib/auth.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -39,11 +39,12 @@
 | `lib/recipe.js` | 多步声明式步骤编排：一级参数校验、按序执行与总预算、逐步汇总与输出截断（`normalizeRecipe` / `runRecipe` / `renderRecipeReport`）；页面交互一律复用 `page.js` 的既有能力函数，只 `extract` 一种只读页内取值为自带固定脚本 | 生命周期、页面能力实现、事件环、协议、面板 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录（`artifactsRoot` 单一定义，`ensureArtifactsDir` 由它派生）、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
+| `lib/raw.js` | 原始 HTTP 逃生口（仅 `mode=context`）：用当前标签页所属浏览器上下文的请求客户端发任意方法 / 头 / 正文，文本与二进制正文分支、敏感响应头脱敏、重定向与字符截断（rawHttp）；原始 CDP 与服务端直连模式未实现（见 `0003-未处理项.md` #9） | 会话生命周期、标签页登记、事件环、ref 表、快照、投屏、面板、落盘 |
 | `lib/doctor.js` | 环境诊断（只读）：运行时与依赖版本、系统 Edge 候选路径、CDP 端点可达性与 `/json/version` 识别、当前会话只读视图、产物 / 下载目录可写性、环境变量合法性；报告为固定六项文本，不启动浏览器、不改会话与进程 | 生命周期、页面能力、截图落盘、面板协议 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/human.js` | 人机协同等待：页内人机验证探测、轮询判定与完成信号（`humanCheck` / `waitForHuman`） | 会话生命周期、面板、工具定义 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 29 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 30 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -60,6 +61,7 @@ page.js → auth.js / invariants.js
 read.js → page.js
 recipe.js → page.js
 download.js → page.js / capture.js
+raw.js → page.js
 human.js → page.js
 auth.js → fence.js
 screencast.js → protocol.js
@@ -136,6 +138,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_click` / `fill` / `hover` / `drag` / `scroll` / `press` / `close`：只读 `summary`；
   - `browser_e2e_upload`：`summary` / `multiple` / `accept` / `totalBytes` / `visible` / `replaced` / `selected`；
   - `browser_e2e_download`：`summary` / `file` / `filename` / `bytes` / `sha256` / `source` / `url` / `suggestedFilename` / `finalUrl`；
+  - `browser_e2e_http`：`mode` / `url` / `finalUrl` / `status` / `ok` / `headers` / `body` / `redirect` / `elapsedMs` / `summary`（`run` 读 `summary` 与 `body` 的 `kind` / `bytes` / `chars` / `text` / `sha256`，其余随返回值原样返回）；
   - `browser_e2e_assert`：`pass` / `total` / `passed` / `failed` / `checks` / `tabId` / `url` / `elapsedMs` / `summary`；
     `checks` 每项为 `{ index, kind, expected, pass, actual }`，`selector` 条目另带 `state`，`url` 条目另带 `urlMatch`。
   - `browser_e2e_clipboard`：`summary` / `action` / `target` / `rich` / `sanitized` / `accepted` / `inserted` / `plainChars` / `htmlChars` / `plainDerived`。
@@ -412,6 +415,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
    - 改 `read.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `protocol.js` / `panel.js` / `index.js`：`npm run test:unit && node tests/panel.mjs`。
    - 改 `doctor.js`：`npm run test:unit && node tests/doctor.mjs && node tests/panel.mjs`。
+   - 改 `raw.js`：`npm run test:unit && node tests/raw-http.mjs && node tests/tools.mjs && node tests/panel.mjs`。
    - 无法判断改动面时：`npm run test:unit && npm run test:integration`。
 3. `lib/` 内不再有 `browser.js`（无 re-export 转发层），所有 import 直接指向新文件。
 4. 三级测试全绿（说明见 README「开发」节）：单元 `npm run test:unit`（不启动浏览器）→ 集成

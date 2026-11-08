@@ -537,7 +537,7 @@ try {
     apply(makeCtx(undefined))
     const registeredNames = definitions.map((definition) => definition.name)
     const readTool = definitions.find((definition) => definition.name === 'browser_e2e_read')
-    check('browser_e2e_read 注册且带 tab_id', registeredNames.length === 29
+    check('browser_e2e_read 注册且带 tab_id', registeredNames.length === 30
       && registeredNames.includes('browser_e2e_read')
       && readTool?.parameters?.properties?.sections?.type === 'array'
       && readTool.parameters.properties.sections.items?.type === 'string'

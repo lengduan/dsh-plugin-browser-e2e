@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：29 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：30 个 browser_e2e_* 工具用系统 Edge 驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 29 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 30 个 `browser_e2e_*` 工具，用本机系统 Edge 完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待和页面脚本求值。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -64,7 +64,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-29 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+30 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
@@ -85,6 +85,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_clipboard` | 剪贴板读写：`action=write` 把 `text` 与可选富文本 `html` 写进浏览器剪贴板（isolated 自动授予 `clipboard-write`，cdp 不授权）；`action=paste` 把带 `text/plain` / `text/html` 的 paste 事件投递到 `ref` / `selector` / 当前焦点元素，页面未消费且目标是 input / textarea 时在选区处插入文本。`html` 缺省在页内按白名单净化，`sanitize: false` 只在 isolated 模式允许；不做真实快捷键粘贴，也不回读剪贴板内容 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
 | `browser_e2e_download` | 下载并校验完整性：`url`（HTTP(S) 直接经当前浏览器上下文取回，共享 Cookie / 登录态）或 `ref` / `selector` / `x`+`y`（点击触发 download 事件）二选一；`filename` 覆盖服务器建议名，`maxBytes` 默认 100 MiB（上限 1 GiB），`expectedSha256` 可选强校验，`timeoutMs` 默认 60000；落盘到产物目录的 `downloads/` 子目录（`DSH_BROWSER_DOWNLOAD_DIR` 覆盖），返回路径、字节数与 SHA-256，同名不覆盖 |
+| `browser_e2e_http` | 原始 HTTP（仅 `mode=context`）：用当前标签页所属浏览器上下文发任意 `method` / `headers` / `body`，不导航当前页、共享 Cookie、不受页面 CORS 限制（不是页面内 `fetch`）；返回状态码、响应头（敏感头脱敏）与正文（文本按 `max_chars` 截断，二进制只给字节数与 SHA-256），非 2xx 是结果不是错误（`ok=false`）；不落盘；方法限 GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS，`timeout_ms` 默认 30000（1000-120000） |
 | `browser_e2e_dialog` | 读取页面弹出的 alert / confirm / prompt 记录（类型、文案、prompt 默认值、实际应答），并按 `tab_id` 设置后续对话框的应答策略：`policy`（`dismiss` 默认 / `accept`，不传表示只读）、`prompt_text`（仅 accept 时可用，缺省用页面默认值）、`limit`（默认 20，最多 50）；对话框在打开时立即按策略应答并记录，策略必须在触发动作前设好 |
 | `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100）；`level` 只看不低于该严重级别的记录（`debug` < `log` < `info` < `warning` < `error`，`warn` 等同 `warning`），不可判级的记录类型（`table` / `assert` 等）始终保留 |
 | `browser_e2e_network` | 读取网络记录（url/method/status/mimeType/failure），每条带 `request_id`（`n1`、`n2`…），环形 500 条，`limit` 取尾部；`status` 为 0 表示没有响应，此时看 `failure` |
@@ -263,6 +264,17 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 - 超时：`timeoutMs` 是总预算（默认 60000，1000..300000），URL 模式传给 `context.request.get`，点击模式用于等事件与写盘；不支持取消、断点续传或重试。
 - 模式：isolated 与 cdp 走同一套链路；点击模式统一用 `download.createReadStream()`，不依赖 `download.path()`（远程连接下会抛错）。CDP 模式下用户浏览器策略拒绝下载时按失败处理。
 
+### 原始 HTTP
+
+`browser_e2e_http` 是「Playwright 抽象之外的 HTTP 断言」入口，只提供 `mode=context`：
+
+- **出口**：用当前标签页所属浏览器上下文的请求客户端（`context.request.fetch`），不导航当前页；共享该页 Cookie / 登录态，走 `browser_e2e_start` 的 `proxy`。它不是页面内 `fetch`，因此**不受页面 CORS 限制**——e2e 断言接口时 CORS 不是被测对象，登录态才是。
+- **参数**：`method` 限 GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS（默认 GET，拒绝 CONNECT / TRACE 与扩展方法）；`headers` 最多 50 项、单项值最长 8192 字符；`body` 最长 262144 字符，GET / HEAD 带 body 报错；`timeout_ms` 默认 30000（1000-120000）；`max_chars` 默认 65536（1-65536）；`tab_id` 缺省当前 active tab。
+- **返回**：状态码、`ok`（200-299）、响应头对象、正文视图与重定向信息（`finalUrl` / 是否发生过重定向，最多跟随 20 次；Playwright 1.63 不暴露逐跳请求链，所以 `count` 只有 0 / 1）。文本类正文按 `max_chars` 截断并置 `truncated`；二进制只给字节数与 SHA-256，不返回 base64。非 2xx 是结果不是错误，`ok=false`，不抛错。
+- **敏感头**：`authorization` / `cookie` / `set-cookie` 等响应头替换为 `[已隐藏]`（与 `browser_e2e_network_detail` 同口径，没有「显示原值」开关）。
+- **不落盘**：只把正文回给模型。需要落盘文件或校验完整性用 `browser_e2e_download`；需要请求上下文（请求头、post data、重定向链）用 `browser_e2e_network_detail`。
+- **不做**：原始 CDP（`mode=cdp` 之类）与服务端直连（`mode=server`，不带 Cookie、不走代理）均未实现，记入 `specs/项目规格/0003-未处理项.md` #9；也不支持上传流式 body / multipart / 文件上传、`CONNECT` / `TRACE`、WebSocket 帧操作、Cookie 读写。
+
 ### 鉴权补票（本机 DSH GUI）
 
 导航后如果页面落在登录挑战（标题或正文含 `authentication required`）且目标为 loopback http(s)，插件会向宿主的 `connection` 服务要一条 `authenticatedUrl(url)`（带 launch-token 的地址）并重试一次；每个 tab 每次导航只重试一次。
@@ -438,6 +450,9 @@ node tests/tools.mjs
 # 下载：URL 直接取回 / 点击触发 / 文件名与目录 / 大小上限 / SHA-256（真起无头 Edge + 本地 HTTP 夹具）
 node tests/download.mjs
 
+# 原始 HTTP（仅 context 模式）：方法 / 请求头 / body / 响应头 / 重定向 / Cookie / 截断与错误（真起无头 Edge + 本地 HTTP 夹具）
+node tests/raw-http.mjs
+
 # wait 的 url / response 条件：真起无头 Edge + 本地 HTTP 夹具（不在 test:integration 聚合里，单独跑）
 node tests/wait.mjs
 
@@ -474,20 +489,20 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（29 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（30 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  read.js  capture.js  download.js  auth.js  human.js  screencast.js
+实现层   session.js  page.js  read.js  capture.js  download.js  raw.js  auth.js  human.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
-- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
+- `session.js` 用显式状态机（`idle / launching / ready / closing / closed`）管理会话与进程回收；`page.js` 持标签页、事件环与 ref 表；`read.js` 持结构化读取的页内扫描与唯一 selector 生成，只依赖 `page.js` 的 `currentTab`；`capture.js` 持截图与产物目录；`download.js` 持下载落盘与完整性校验，复用 `page.js` 的 `currentTab` / `click` 与 `capture.js` 的 `ensureArtifactsDir`，不 import 会话层；`raw.js` 持原始 HTTP（仅 `mode=context`），只依赖 `page.js` 的 `currentTab` 与正文 / 脱敏纯函数，不 import 会话层、不落盘；`human.js` 持人机验证探测与人工等待轮询，只依赖 `page.js` 的 `currentTab`；`auth.js` 可整体删除。
 - `protocol.js` 是面板协议 v1 的单一契约来源，host 与 client 的校验从表派生；客户端常量由 `scripts/build-client.mjs` 经 `scripts/protocol-inject.mjs` 注入 `lib/client.js`，源码↔产物一致由 `tests/invariants.mjs` 守护。细节见 `specs/项目规格/0002-panel-protocol-v1.md`。
 - 投屏链路：工具执行 → `PanelHub.broadcastAction` 与 `scheduleSync` → WebSocket 广播 `state` / `action`；`Screencast` 适配器对当前页开 CDP 投屏，帧经 socket 推给面板，面板回 ack 后取下一帧。
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/raw.js`（原始 HTTP）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
 
 </details>
 
@@ -508,7 +523,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。29 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。30 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -531,6 +546,7 @@ npm run test:integration
 - **网络正文读取的边界** —— `browser_e2e_network_detail` 在调用时才回取正文，导航、浏览器内存回收或 Service Worker 响应可能让正文不再可读，此时报「响应体不可读」并提示在同一文档内重读；流式响应（SSE / 长轮询）在 `timeout_ms` 到点报超时，底层读取无法取消；正文在浏览器侧整块缓冲后才按 `max_chars` 截断，超大文件的内存开销不受该参数限制，也不提供 base64 正文与按 URL 猜测式脱敏（默认只隐藏敏感头）。
 - **文件上传的边界** —— `browser_e2e_upload` 只处理主 frame（iframe 内的文件控件匹配不到），不支持 `webkitdirectory` 目录上传（目录按「路径不是文件」拒绝），不校验 `accept`、不按扩展名改写文件名或 MIME；`clear: false` 不支持追加（Playwright 无法把已选 `File` 还原成宿主路径），也不能与 `x`+`y` 组合（要先点击才读得到当前选择）。上传完成后不自动点提交、不等待上传请求。
 - **下载的边界** —— URL 模式把响应体整体读入内存（`APIResponse` 只有 `body()`），默认 100 MiB、硬上限 1 GiB 是内存风险边界，超大文件改用点击触发模式；URL 请求失败直接报错，不做导航捕获附件的回退；不支持取消、断点续传与重试；点击触发只接本次调用期间的第一个下载事件，`navigate` / `evaluate` 在工具调用之外触发的下载无法追溯；一次只处理一个文件；`Content-Disposition` 缺失且 URL 末段为空时文件名回退 `download`；不按扩展名过滤，也不解析 PDF / 压缩包。
+- **原始 HTTP 只有页面上下文模式** —— `browser_e2e_http` 的 `mode` 只接受 `context`；原始 CDP 与服务端直连（`mode=server`，不带 Cookie、不走 `browser_e2e_start` 的代理）均未实现，已记入 `specs/项目规格/0003-未处理项.md` #9。`context` 模式共享当前页 Cookie 与登录态、不受页面 CORS 限制，但不执行页面脚本、不共享页面 localStorage / sessionStorage，也不是「页面内 fetch」语义；CDP 接管模式下请求走同一个用户浏览器的网络栈，但不在用户页面上发起、不占标签页。正文整体读入内存后再按 `max_chars` 截断，大响应请调小该值或改用 `browser_e2e_network_detail`；二进制只回字节数与 SHA-256、不返回 base64；不落盘（要文件与完整性校验用 `browser_e2e_download`）；不支持取消、重试、上传流式 body / multipart、`CONNECT` / `TRACE` 与 WebSocket。敏感响应头恒隐藏且没有「显示原值」开关；重定向最多跟随 20 次，超出按请求失败报错，`redirect.count` 只能给 0（未重定向）/ 1（重定向过），不是逐跳计数（Playwright 1.63 的 `APIResponse` 不提供请求链）。单次调用超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能被空闲回收，随后报「浏览器尚未启动」。
 - **悬停与拖拽只作用于主 frame** —— `browser_e2e_hover` / `browser_e2e_drag` 与 `browser_e2e_click` 一致，只查主框架、不进入 iframe；坐标目标按视口 CSS 像素校验，元素目标不暴露 `force` / `sourcePosition` / `targetPosition`，被遮挡时报 Playwright 超时。拖拽中途页面导航会由 Playwright 报执行上下文销毁；HTML5 目标若不在 `dragover` 里 `preventDefault()`，浏览器会拒绝 drop，这是页面行为，不是工具失败。
 - **逐键输入（`mode=keystrokes`）的边界** —— 不支持坐标目标（无法可靠清空与校验可编辑性）；不支持真实 IME 与组合键，中文 / emoji 走 `Input.insertText`、不产生 keydown / keyup，`\t` 不会移动焦点；`\n` / `\r` 映射为 Enter，单行 input 里可能触发表单提交。工具在最后一个按键后立即返回，不等防抖落定；掩码与受控组件可能改写最终值，工具不回读。后台标签页里 `document.hasFocus()` 为 false 的编辑器可能忽略按键（不做 focus emulation）。
 - **按住键会残留** —— `browser_e2e_press action=down` 按住的键没有自动释放计时，忘记 `action=up` 时它会一直影响后续 click / fill；`navigate` 前会自动释放，但页面自行导航（页面脚本跳转、链接点击）工具感知不到，需要显式 `action=up`。跨 tab 不自动释放，按住状态只属于按下时的标签页。
