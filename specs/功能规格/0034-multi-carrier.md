@@ -1,8 +1,8 @@
 # 多载体选择
 
-状态: 待决策
+状态: 已确认（采纳方案 B1；实施待排期）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖图、进程内对象契约「session 对象」、不变量清单、能力函数返回值字段）；specs/项目规格/0002-panel-protocol-v1.md（`state` 形状、`tabs` 项字段、面板只读边界）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（启动 / 复用 / 摘要 / 热切换拒绝 / 边界「只驱动系统 Edge」）；specs/功能规格/0008-cdp-attach.md（CDP 接管不参与载体选择）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 六字段口径与即时生效）；README.md「浏览器启动与模式」「配置」「Known Limitations and Deferred Work」
-代码: 当前无代码改动（本项判为影响大 → 待决策）。推荐方案 B1 落地时预计涉及 lib/carrier.js（新建）/ lib/session.js / lib/invariants.js / lib/index.js / lib/tools.js / README.md / tests/carrier.mjs（新建），并同步 specs/功能规格/0002-browser-launch-and-reuse.md、0006-plugin-config-and-live-apply.md、0008-cdp-attach.md。
+代码: 当前无代码改动（本项已确认、实施待排期）。方案 B1 落地时预计涉及 lib/carrier.js（新建）/ lib/session.js / lib/invariants.js / lib/index.js / lib/tools.js / README.md / tests/carrier.mjs（新建），并同步 specs/功能规格/0002-browser-launch-and-reuse.md、0006-plugin-config-and-live-apply.md、0008-cdp-attach.md。
 
 ## 需求
 
@@ -10,11 +10,16 @@
 
 本项要让使用者在「系统 Edge」之外**显式选择**本机已安装的 Chrome，并在本机同时装有多个 Chromium 内核浏览器时按 `auto` 取第一个可用的；选择只在隔离模式生效，CDP 接管仍由端点决定载体。收益：没有 Edge 的环境也能跑隔离模式，在 Chrome 上验证的页面不必再手工起 CDP。
 
-本项判定为**影响大 → 待决策**，不是「单工具新增可选参数」。依据：
+本项原判定为**影响大 → 待决策**，已于 2026-11-08 决策采纳方案 B1；不是「单工具新增可选参数」。依据：
 
 - 任务书硬约束 1 把「改既有工具语义」「回收口径」「载体定位」「多工具联动」列为影响大。本项同时命中「改既有工具语义」（`browser_e2e_start` 的参数表、返回字段与摘要文案）与「载体定位」（`0002-browser-launch-and-reuse.md`「边界」明文「只驱动系统 Edge（`BROWSER_CHANNEL` 固定为 `msedge`），不提供其他 channel 或可执行路径参数」；README 摘要与 `package.json` 的 description 同口径写「用系统 Edge」）。改的是「只驱动 Edge」这条已确认的定位，不是给一个已有维度加取值。
 - 联动面：要新增跨调用不变量（载体重启语义）、把插件 `Config` 从六字段扩到七字段（`0006` 明文「共六个字段」）、改 `browser_e2e_start` 的返回契约（`0001` 的「能力函数返回值」表逐个字段列出）、改 README 多处；若同时要在面板显示载体，还要改 `0002-panel-protocol-v1.md` 的 `state` / `tabs` 契约与客户端 bundle。
 - 回收口径**不变**是本项可以收窄影响的部分：隔离模式拉起的仍是 Playwright 管理的自有进程，`closeBrowser` 的强制结束兜底不改；CDP 接管仍只断连。这一点让推荐候选 B1 可以做到「默认路径逐字不变」，但不能改变上述判定。
+
+## 决策记录
+
+- 2026-11-08：采纳**方案 B1**（`browser_e2e_start` 新增 `carrier` 三值 + `Config.defaultCarrier` + 新建 `lib/carrier.js` 探测）；默认 `edge` 时参数、返回、摘要逐字不变；**不采纳** B2（面板显示载体）与 B3；`carrier` 只对隔离模式生效，CDP 忽略；工具参数不接受可执行路径，Chrome 路径只由 `DSH_BROWSER_CHROME_PATH` 与平台惯例位置决定（本机已确认 Chrome 与 Edge 均存在，可在真机验证）。本机 Chrome 位于 `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`。
+- 状态为「已确认、实施待排期」：下文「方案 B1 的目标契约」是实现契约，当前代码未实现；验收第 1 组是实施前的回归基线。
 
 ## 行为
 
@@ -30,7 +35,7 @@
 - `lib/page.js` 的 `createPage` 只按 `session.mode` 选择 `session.context.newPage()` 或 `session.browser.newPage({ viewport })`，不感知载体；`lib/panel.js` 的 `state` 只输出 `mode` / `endpoint`；`lib/session.js` 的 `listPanelTabs` 每个 tab 只带 `mode` / `endpoint`。
 - 既有功能规格 `0002-browser-launch-and-reuse.md` 的「边界」把「不提供其他 channel 或可执行路径参数」写成明确不处理项；`0006` 把 `Config` 固定为六字段。
 
-### 推荐方案 B1（决策通过后的目标契约）
+### 方案 B1（已确认、实施待排期）
 
 #### 工具与参数
 
@@ -75,7 +80,7 @@
 ### 候选方案
 
 - **B0：维持现状**（不实现）。零风险，但 Chrome 用户与无 Edge 环境继续只能用 CDP 接管。
-- **B1：`carrier` 三值 + `Config.defaultCarrier` + 新建 `lib/carrier.js` 探测**（推荐）。默认 `edge` 时行为与摘要逐字不变；面板与协议零改动；回收口径不变。
+- **B1：`carrier` 三值 + `Config.defaultCarrier` + 新建 `lib/carrier.js` 探测**（已采纳）。默认 `edge` 时行为与摘要逐字不变；面板与协议零改动；回收口径不变。
 - **B2：B1 + 面板显示载体**。`lib/protocol.js` 的 `state` 与 `tabs` 项增加 `carrier` 字段，`lib/panel.js` 透传，`client/index.js` 工具条 chip 显示，重建 `lib/client.js`，同步项目规格 `0002` 与 `tests/panel.mjs`。收益是可解释「现在驱动的是哪个浏览器」，代价是协议契约变更 + 客户端构建。
 - **B3：对齐 wqty123 的完整载体面**（内置 Electron / 桌面侧栏 / 桌面桥 / `auto` 实时切换 / 载体就绪状态 / 缺失态载体）。本仓是 `dsh web` 插件，面板是只读 WebSocket 视图，没有 Electron 宿主 API 与安装器；引入要新增运行时依赖与宿主能力探测，超出本仓定位。**不建议**。
 
