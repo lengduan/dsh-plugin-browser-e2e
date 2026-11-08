@@ -999,7 +999,7 @@
       <rect x="700" y="300" width="300" height="84" rx="8" fill="#fff7ed" stroke="#fdba74"></rect>
       <text x="716" y="324" font-size="12" font-weight="bold" fill="#c2410c">isolated 模式</text>
       <text x="716" y="346" font-size="11" fill="#64748b">closeBrowser：browser.close() race</text>
-      <text x="716" y="364" font-size="11" fill="#64748b">CLOSE_TIMEOUT_MS（5000）→ 超时 kill</text>
+      <text x="716" y="364" font-size="11" fill="#64748b">CLOSE_TIMEOUT_MS（5000）→ 超时不强杀</text>
 
       <path d="M630,220 L665,220 L665,132 L700,132" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
       <path d="M630,245 L700,245" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#rcArrow)"></path>
@@ -1020,7 +1020,7 @@
       <!-- 底部说明 -->
       <rect x="40" y="460" width="1170" height="128" rx="8" fill="#f8fafc" stroke="#e2e8f0"></rect>
       <text x="58" y="484" font-size="12" font-weight="bold" fill="#334155">关闭兜底</text>
-      <text x="58" y="504" font-size="11" fill="#334155">系统 Edge 偶发在 graceful close 阶段卡住（进程已退出，Playwright 等不到退出事件）：DSH_BROWSER_CLOSE_TIMEOUT_MS 到点后直接结束主进程，保证关闭路径一定有返回。</text>
+      <text x="58" y="504" font-size="11" fill="#334155">系统 Edge 偶发在 graceful close 阶段卡住：DSH_BROWSER_CLOSE_TIMEOUT_MS 到点后放弃等待，关闭路径一定有返回；但 Browser 没有结束进程的接口（process() 只在 BrowserServer），超时只能如实报告「进程可能残留」，不强杀。</text>
       <text x="58" y="528" font-size="12" font-weight="bold" fill="#b45309">已知边界（已记录，未修）</text>
       <text x="58" y="548" font-size="11" fill="#334155">空闲计时从「本次工具调用开始」算：一次耗时超过 IDLE_CLOSE_MS 的 browser_e2e_wait，可能在等待期间浏览器被回收，该次调用随后报「浏览器尚未启动」。规避：把 DSH_BROWSER_IDLE_MS 设为 0 或大于单次调用时长。</text>
       <text x="58" y="572" font-size="11" fill="#64748b">进程计数类测试断言以「回落到运行前基线」为准，不看绝对值（本机若已开着 Edge，基线不是 0）。</text>

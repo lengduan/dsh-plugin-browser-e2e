@@ -36,7 +36,7 @@
 
 - **启动与上下文**：`lib/session.js` 的 `launch` 在 isolated 分支用 `chromiumImpl.launch({ channel: 'msedge', headless, ignoreHTTPSErrors: true, proxy? })` 起浏览器，随后 `browser.newPage({ viewport: session.viewport })` 建首屏；不创建显式 context、不传 `storageState`。CDP 分支取 `browser.contexts()[0]` 接管既有页面。`sessionOf` 创建的对象里有 `context` 字段，但 isolated 分支从不赋值。
 - **标签页**：`lib/page.js` 的 `createPage` 在 CDP 分支用 `session.context.newPage()`，其它情况用 `session.browser.newPage({ viewport })`；按上一条的 Playwright 语义，isolated 的每个标签页各自一个 context。
-- **关闭与回收**：`lib/session.js` 的 `close` 先把会话从 `sessions` / `keyBySessionId` 摘除，再按模式收浏览器（`closeBrowser` 带 `DSH_BROWSER_CLOSE_TIMEOUT_MS` 兜底 / CDP 只 `browser.close()` 断连）；不读取、不写回任何登录态。`touchSession` 的空闲计时到点也走 `close`，因此登录态可能在无人操作时直接消失。
+- **关闭与回收**：`lib/session.js` 的 `close` 先把会话从 `sessions` / `keyBySessionId` 摘除，再按模式收浏览器（`closeBrowser` 等 graceful close 至 `DSH_BROWSER_CLOSE_TIMEOUT_MS`，超时只如实报告、不强杀 / CDP 只 `browser.close()` 断连）；不读取、不写回任何登录态。`touchSession` 的空闲计时到点也走 `close`，因此登录态可能在无人操作时直接消失。
 - **导入 / 导出**：`lib/` 内没有 `storageState`、`context.cookies`、`addCookies`、`userDataDir`、`launchPersistentContext` 的任何使用（2026-11-08 对 `lib/*.js` 检索无命中）；`lib/tools.js` 的 `browser_e2e_start` 参数只有 `headless` / `proxy` / `viewportWidth` / `viewportHeight` / `mode` / `cdpEndpoint`，没有登录态入口；没有导出类工具。
 - **既有补票（不重叠）**：`lib/auth.js` 的 `topUpIfChallenged` / `tryAuthTopUp` 只在导航后命中 `AUTH_CHALLENGE_PATTERN`、且目标为 loopback http(s) 时，向宿主 `connection.authenticatedUrl` 换一条带 launch-token 的地址重试一次；不读不写 cookie / storage，不落盘，不跨会话，不处理第三方站点。唯一重合的场景是「本机 DSH GUI 的 loopback 登录挑战」，该场景已经由补票覆盖，**部分无需实现**；其余站点的登录态导入 / 导出不在补票能力面内。
 - **面板 / 协议**：`0002` 固定面板是只读视图，命令表只有 `attach` / `select-tab` / `close-tab` / `request-frame` / `configure`；本项不新增命令与事件，也不改 `state` 形状。

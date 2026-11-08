@@ -38,7 +38,7 @@
 | cookie / storage | 新临时 profile 全空（cookie、localStorage、sessionStorage、IndexedDB、缓存随旧 profile 一起丢弃） | **保留**，上述存储面都不清；明确不处理 |
 | ref 表 / 事件环 | 随旧页销毁；新页空 | 新页条目空；用户原页面的历史记录不回放 |
 | 面板 | 收到 `closed`：tab 条清空、`ensureScreencast(null)` 停投屏；`opened` 后重取 tab、按新页面对象重开投屏 | 同左；重连后 tab 列表按用户浏览器重新接管 |
-| 浏览器进程 | 旧 Edge 主进程结束（`closeBrowser`，`DSH_BROWSER_CLOSE_TIMEOUT_MS` 兜底），随后起新进程 | 不启动、不结束；只断连再连 |
+| 浏览器进程 | 旧 Edge 主进程结束（`closeBrowser` 等 graceful close，`DSH_BROWSER_CLOSE_TIMEOUT_MS` 到点后不强杀、只如实报告可能残留），随后起新进程 | 不启动、不结束；只断连再连 |
 | 空闲计时 | `close` 清旧计时器；`launch` 落定后 `touchSession` 重装，从落定起满额（默认 `DSH_BROWSER_IDLE_MS`=600000） | 同左 |
 | 其它 agent 会话 | 不受影响：`sessions` 按 agent key 隔离，`close(key)` 只删本 key | 不受影响；但同一 CDP 浏览器被多个会话接管时标签页视图共享，是 `0008` 的既有口径 |
 | 产物目录 | 新会话经 `ensureArtifactsDir` 生成新目录；旧截图文件仍在磁盘 | 同左 |

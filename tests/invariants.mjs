@@ -12,6 +12,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// 关闭兜底用例要让超时真的发生：20ms 足够假 browser 的立即 resolve 落定，又不必等默认的 5s。
+// 该常量在 lib/session.js 加载时求值，所以必须在 import 之前设置。
+process.env.DSH_BROWSER_CLOSE_TIMEOUT_MS = '20'
+
 import {
   assertBrowserRunning, assertCanCloseLastTab, assertCdpConnected, assertCdpContext, assertCdpHasPages,
   assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled, assertModeNotHotSwitched,
@@ -373,18 +377,40 @@ function fakePage(overrides = {}) {
   }
 }
 
-/** 假 browser：version / process / close 供 reuseInfo 与清理路径使用，closeCalls 记录关闭次数。 */
+/** 假 browser：version / close 供 reuseInfo 与清理路径使用，closeCalls 记录关闭次数。不能伪造
+ *  process()：真实 Playwright Browser 上没有这个方法，假实现给了它会让关闭兜底的分支测出假结果。 */
 function fakeBrowser(overrides = {}) {
   const browser = {
     closeCalls: 0,
     version: () => '0.0.0-fake',
-    process: () => ({ kill() {} }),
     close: async () => {
       browser.closeCalls += 1
     },
     ...overrides,
   }
   return browser
+}
+
+/**
+ * 让假 browser 的关闭永远卡住：返回的 close 挂着等一个 ref'd 定时器，release 负责收掉。
+ *
+ * 不用裸 Promise：裸 Promise 不提供事件循环句柄，closeBrowser 里 unref 的超时定时器可能还没触发，
+ * 进程就判定无事可做而退出（表现为未落定的顶层 await）。
+ */
+function stuckClose(browser) {
+  let timer = null
+  return {
+    close: async () => {
+      browser.closeCalls += 1
+      await new Promise((resolve) => {
+        timer = setTimeout(resolve, 60000)
+      })
+    },
+    release: () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+    },
+  }
 }
 
 /** 假 chromium：只实现 launch / connectOverCDP 两个入口。 */
@@ -460,6 +486,43 @@ await check('隔离模式正常启动：ready + 1 个标签页', async () => {
   assert.equal(session.state, 'ready')
   assert.equal(session.pages.size, 1)
   assert.equal(result.tabs, 1)
+})
+// 关闭兜底只保证「关闭路径一定有返回」：Playwright 的 Browser 没有结束进程的接口，超时后
+// 只能如实报告残留，不能假装已经强杀（这正是 browser.process() 曾静默失效的地方）。
+await check('close 超时：返回 timedOut 并提示进程可能残留', async () => {
+  const browser = fakeBrowser({ newPage: async () => fakePage() })
+  const stuck = stuckClose(browser)
+  browser.close = stuck.close
+  const chromium = fakeChromium({ launch: () => browser })
+  await launch('g-close-timeout', {}, undefined, {}, { chromium })
+  const info = await close('g-close-timeout')
+  stuck.release()
+  assert.equal(info.closed, true)
+  assert.equal(info.timedOut, true)
+  assert.ok(info.summary.includes('超时'), info.summary)
+  assert.ok(info.summary.includes('可能仍在运行'), info.summary)
+  assert.ok(!activeSessionKeys().includes('g-close-timeout'), '超时也要从注册表摘除会话')
+  assert.equal(browser.closeCalls, 1)
+})
+await check('启动失败清理超时：随后的 close 仍如实报告残留，不报干净的已关闭', async () => {
+  const browser = fakeBrowser({
+    newPage: async () => {
+      throw new Error('newPage 失败（模拟）')
+    },
+  })
+  const stuck = stuckClose(browser)
+  browser.close = stuck.close
+  const chromium = fakeChromium({ launch: () => browser })
+  await assert.rejects(
+    () => launch('g-fail-clean-timeout', {}, undefined, {}, { chromium }),
+    /newPage 失败（模拟）/,
+  )
+  assert.equal(sessionOf('g-fail-clean-timeout').closeTimedOut, true)
+  const info = await close('g-fail-clean-timeout')
+  stuck.release()
+  assert.equal(info.closed, true)
+  assert.equal(info.timedOut, true)
+  assert.ok(info.summary.includes('可能仍在运行'), info.summary)
 })
 await check('复用路径 0 标签页（isolated）：自动补建一页并返回成功', async () => {
   const browser = fakeBrowser({ newPage: async () => fakePage() })

@@ -14,7 +14,7 @@
 
 - 任务书硬约束 1 把「改既有工具语义」「回收口径」「载体定位」「多工具联动」列为影响大。本项同时命中「改既有工具语义」（`browser_e2e_start` 的参数表、返回字段与摘要文案）与「载体定位」（`0002-browser-launch-and-reuse.md`「边界」明文「只驱动系统 Edge（`BROWSER_CHANNEL` 固定为 `msedge`），不提供其他 channel 或可执行路径参数」；README 摘要与 `package.json` 的 description 同口径写「用系统 Edge」）。改的是「只驱动 Edge」这条已确认的定位，不是给一个已有维度加取值。
 - 联动面：要新增跨调用不变量（载体重启语义）、把插件 `Config` 从六字段扩到七字段（`0006` 明文「共六个字段」）、改 `browser_e2e_start` 的返回契约（`0001` 的「能力函数返回值」表逐个字段列出）、改 README 多处；若同时要在面板显示载体，还要改 `0002-panel-protocol-v1.md` 的 `state` / `tabs` 契约与客户端 bundle。
-- 回收口径**不变**是本项可以收窄影响的部分：隔离模式拉起的仍是 Playwright 管理的自有进程，`closeBrowser` 的强制结束兜底不改；CDP 接管仍只断连。这一点让推荐候选 B1 可以做到「默认路径逐字不变」，但不能改变上述判定。
+- 回收口径**不变**是本项可以收窄影响的部分：隔离模式拉起的仍是 Playwright 管理的自有进程，`closeBrowser` 的关闭超时处理（到点放弃等待、如实报告可能残留，不强杀——`Browser` 没有结束进程的接口，见 `0001`「关闭兜底」）不改；CDP 接管仍只断连。这一点让推荐候选 B1 可以做到「默认路径逐字不变」，但不能改变上述判定。
 
 ## 决策记录
 
@@ -74,7 +74,7 @@
 
 - 会话：新增 `session.carrier` 字段；状态机、`pages` / `activeTabId` / `viewport` / `artifactsDir` 不变；0 页补建路径不变。
 - 标签页：条目结构不变，`origin` 仍为 `created`；面板 tab 不新增字段（B1）。
-- 进程：隔离模式仍是 Playwright 拉起的自有进程，`closeBrowser` 的超时强制结束兜底不改；被拉起的 Chrome 使用一次性 profile，不复用用户正在运行的 Chrome 实例、不读取用户登录态（与 `mode: 'cdp'` 的区别要在 README 写明）。
+- 进程：隔离模式仍是 Playwright 拉起的自有进程，`closeBrowser` 的关闭超时处理不改（到点放弃等待，超时不强杀、只如实报告可能残留）；被拉起的 Chrome 使用一次性 profile，不复用用户正在运行的 Chrome 实例、不读取用户登录态（与 `mode: 'cdp'` 的区别要在 README 写明）。
 - 面板：B1 不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js`，`state` 仍只有 `mode` / `endpoint`，面板看不出载体；这是本项刻意的范围裁剪。
 
 ### 候选方案
@@ -88,7 +88,7 @@
 
 - 不提供「内置 Chromium」：本仓依赖 `playwright-core`，不自带浏览器二进制，也没有下载浏览器的安装步骤；`channel: 'chromium'` 依赖完整 `playwright` 的浏览器注册表，本仓不可用。要支持内置载体必须换依赖或加下载器，属 B3。
 - 不做桌面侧栏 / Electron 宿主 / 桌面桥载体：本仓没有 Electron 宿主通道（面板是浏览器 WebSocket + 只读投屏），与 wqty123 的形态不同。
-- 不做载体实时热切换：已启动后传不同 `carrier` 直接报错，必须 `browser_e2e_close` 后重开。理由：本仓的 `close` 是唯一回收路径（含强制结束进程兜底与面板 `closed` 广播），热切换要在一处同时释放旧进程、重建页面、失效 ref 表与事件环，并处理并发工具调用，属于另一项规格。
+- 不做载体实时热切换：已启动后传不同 `carrier` 直接报错，必须 `browser_e2e_close` 后重开。理由：本仓的 `close` 是唯一回收路径（含关闭超时兜底与面板 `closed` 广播），热切换要在一处同时释放旧进程、重建页面、失效 ref 表与事件环，并处理并发工具调用，属于另一项规格。
 - 不让工具参数接受可执行路径：Chrome 路径只由 `DSH_BROWSER_CHROME_PATH` 或平台惯例位置决定；`Config` 只增加枚举 `defaultCarrier`。
 - `carrier` 只对隔离模式生效：CDP 的浏览器由用户自己启动，产品名不可知，摘要继续写「系统 Edge」；不因为 `carrier` 改变接管端点校验（仍只允许 loopback / http）。
 - 无头与代理不受影响：`headless` / `proxy` 仍只对隔离模式生效，`carrier` 与它们不互斥。

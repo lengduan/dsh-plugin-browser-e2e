@@ -24,7 +24,7 @@
 
 - 非法 `mode` 在登记会话之前直接报 `mode 只支持 isolated / cdp，收到 ${JSON.stringify(options.mode)}`，不静默降级成 `isolated`，也不留下会话条目。
 - 端点校验在 `normalizeCdpEndpoint`：不是 URL 报 `cdpEndpoint 不是合法 URL：${text}`；协议不是 http 报 `cdpEndpoint 只支持 http，收到 ${url.protocol}`；主机不是 loopback 报 `cdpEndpoint 只允许 loopback 主机（localhost / 127.0.0.1 / ::1），收到 ${url.hostname}`。
-- 启动中被 close：`launch` 的 `finally` 看到 `session.state === 'closing'` 时先收掉可能已建立的浏览器——按本次局部 `mode` 决定用 `closeBrowser`（隔离模式，超时后强制结束主进程）还是 `browser.close()`（CDP 模式，只断连），再把 `closing` 落成 `closed`，不留半初始化会话与孤儿进程。
+- 启动中被 close：`launch` 的 `finally` 看到 `session.state === 'closing'` 时先收掉可能已建立的浏览器——按本次局部 `mode` 决定用 `closeBrowser`（隔离模式；超时后只如实记录「进程可能残留」、不强杀，见 `0001`「关闭兜底」）还是 `browser.close()`（CDP 模式，只断连），再把 `closing` 落成 `closed`，不留半初始化会话与孤儿进程。
 - 启动失败清理：`finally` 里 `launched` 仍为 false 且会话仍是 `launching` 时，清 `browser` / `context` / `pages` / `activeTabId`，按目标模式收掉浏览器；只有广播过 `opened` 的会话才补广播 `closed`；状态从 `launching` 走 `launchFailed` 回 `idle`；清理期间若已被 close，则按 `closeSettled` 收成 `closed`，不被启动结果覆写。
 - 成功判据是「launcher 走完、浏览器在、至少一页」：`launched` 只在 `addPage` 之后置真，因此 `newPage` 抛错、CDP 没有 context / 已打开标签页等情况都算失败，不会停在 `ready + 0 页`。
 - `headless` / `proxy` / `viewportWidth` / `viewportHeight` 只对隔离模式生效；`mode: 'cdp'` 下即使传视口也不作用于被接管的浏览器。
