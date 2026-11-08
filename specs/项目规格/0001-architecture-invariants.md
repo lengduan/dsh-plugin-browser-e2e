@@ -32,18 +32,18 @@
 | `lib/protocol.js` | 面板协议 v1 的单一契约来源：路由路径、版本、关闭码、命令表、事件表、投屏设置区间与默认值、`panelTabId` 组合规则 | 运行时状态、连接对象 |
 | `lib/invariants.js` | 跨调用不变量断言函数；每个函数配「违反后果」注释；全部纯函数 | 入参校验、I/O、读全局 Map |
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
-| `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
-| `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage`、`peekSession`（只读会话视图，不创建会话、不刷新空闲计时）；导出 `normalizeCdpEndpoint` 与 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS` 供诊断复用 | 页面能力、截图落盘、鉴权补票 |
-| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate`、`followTab`（默认标签页绑定与用户当前页判定）、`snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/assertPage/evaluate/consoleEntries`（含 `CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES` / `normalizeConsoleLevel` / `consoleLevelRank` 的级别过滤视图）`/networkEntries/networkDetail`、对话框策略与记录（`dialogPolicy` / `dialogPromptText` / `dialogRing`、`setDialogPolicy` / `dialogEntries`）、`titleOf` | 落盘、协议、面板连接、结构化读取（`lib/read.js`） |
+| `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`doctor.js` 的端点缺省与修法文案、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
+| `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage`、`activeSessionKeys`（只读会话 key 列表，`doctor.js` 用来给当前会话做只读视图）、`peekSession`（只读会话视图，不创建会话、不刷新空闲计时）；导出 `normalizeCdpEndpoint` 与 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS` 供诊断复用 | 页面能力、截图落盘、鉴权补票 |
+| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环（console/network 环形缓冲、ref 表）、快照基线（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch）、`navigate`、`followTab`（默认标签页绑定与用户当前页判定）、`snapshot`（含 delta / query / frame 分支）`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/assertPage/evaluate/consoleEntries`（含 `CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES` / `normalizeConsoleLevel` / `consoleLevelRank` 的级别过滤视图）`/networkEntries/networkDetail`（含正文分类与敏感头脱敏：`SENSITIVE_HEADERS` / `REDACTED_HEADER_VALUE` 在此定义、`raw.js` 借用，M2 拆分时移入 `observation.js`）、对话框策略与记录（`dialogPolicy` / `dialogPromptText` / `dialogRing`、`setDialogPolicy` / `dialogEntries`）、`titleOf` | 落盘、协议、面板连接、结构化读取（`lib/read.js`） |
 | `lib/read.js` | 结构化页面读取：页内扫描 controls / links / tables / forms，唯一 CSS selector 生成与校验，记录整形与文本预算（`readStructured`） | 生命周期、事件环、ref 表、交互动作、截图、面板 |
 | `lib/recipe.js` | 多步声明式步骤编排：一级参数校验、按序执行与总预算、逐步汇总与输出截断（`normalizeRecipe` / `runRecipe` / `renderRecipeReport`）；页面交互一律复用 `page.js` 的既有能力函数，只 `extract` 一种只读页内取值为自带固定脚本 | 生命周期、页面能力实现、事件环、协议、面板 |
 | `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录（`artifactsRoot` 单一定义，`ensureArtifactsDir` 由它派生）、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
 | `lib/fetch.js` | 临时页抓取与正文提取：临时页开 / 关（经 `createTransientPage`）、导航与稳定等待、标题与正文提取、字符预算与截断（`fetchText`） | 会话生命周期、标签页登记、ref 表、事件环、截图、面板 |
-| `lib/raw.js` | 原始 HTTP 逃生口（仅 `mode=context`）：用当前标签页所属浏览器上下文的请求客户端发任意方法 / 头 / 正文，文本与二进制正文分支、敏感响应头脱敏、重定向与字符截断（rawHttp）；原始 CDP 与服务端直连模式未实现（见 `0003-未处理项.md` #9） | 会话生命周期、标签页登记、事件环、ref 表、快照、投屏、面板、落盘 |
+| `lib/raw.js` | 原始 HTTP 逃生口（仅 `mode=context`）：用当前标签页所属浏览器上下文的请求客户端发任意方法 / 头 / 正文，文本与二进制正文分支、重定向与字符截断（rawHttp）；敏感响应头脱敏不在此定义，`redactHeaders` 复用 `page.js` 的 `SENSITIVE_HEADERS` / `REDACTED_HEADER_VALUE`（M2 拆分时随网络正文移入 `observation.js`）；原始 CDP 与服务端直连模式未实现（见 `0003-未处理项.md` #9） | 会话生命周期、标签页登记、事件环、ref 表、快照、投屏、面板、落盘 |
 | `lib/doctor.js` | 环境诊断（只读）：运行时与依赖版本、系统 Edge 候选路径、CDP 端点可达性与 `/json/version` 识别、当前会话只读视图、产物 / 下载目录可写性、环境变量合法性；报告为固定六项文本，不启动浏览器、不改会话与进程 | 生命周期、页面能力、截图落盘、面板协议 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
-| `lib/history.js` | 动作历史的落盘与脱敏：路径解析、脱敏纯函数、JSONL 追加与有界裁剪、读回（`actionHistoryPath` / `historyEnabled` / `redactActionSummary` / `appendAction` / `listActions`） | 面板广播、协议、会话状态、页面能力、工具定义 |
+| `lib/history.js` | 动作历史的落盘与脱敏：路径解析、脱敏纯函数、JSONL 追加与有界裁剪、读回；导出 `DEFAULT_HISTORY_LIMIT` / `MAX_HISTORY_LIMIT` / `HISTORY_MAX_ENTRIES` / `HISTORY_PRUNE_SLACK` / `HISTORY_SUMMARY_LIMIT` / `SENSITIVE_ARGS` / `actionHistoryPath` / `historyEnabled` / `redactActionSummary` / `appendAction` / `listActions` | 面板广播、协议、会话状态、页面能力、工具定义 |
 | `lib/human.js` | 人机协同等待：页内人机验证探测、轮询判定与完成信号（`humanCheck` / `waitForHuman`） | 会话生命周期、面板、工具定义 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
 | `lib/tools.js` | 32 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
@@ -55,8 +55,8 @@
 依赖方向（实现层单向，禁止回指）：
 
 ```
-tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / human.js / history.js / defaults.js / doctor.js
-index.js → tools.js / panel.js / session.js / auth.js / history.js / defaults.js
+tools.js → session.js / page.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js
+index.js → tools.js / panel.js / session.js / auth.js / history.js / defaults.js / protocol.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js
@@ -73,6 +73,8 @@ history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回�
 doctor.js → session.js / capture.js / defaults.js
 protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
 ```
+
+`tools.js` 直接 import 12 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor），新增能力时同步本图。
 
 构建脚本 `scripts/protocol-inject.mjs` 从 `lib/protocol.js` / `lib/defaults.js` 取注入值；
 这是「构建脚本 → lib」的一次性依赖，不进宿主运行期调用图。
@@ -101,12 +103,13 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `activeTabId` | `page.js` 的 `addPage` / `removePage` / `currentTab` / `navigate` / `followTab` 读写；`session.js` 的 `tabs` / `listPanelTabs` 读 | 当前标签页 |
 | `nextTabSeq` | `page.js` 的 `addPage` 读并自增；`session.js` 的 `sessionOf` 初始化 | 分配 `t<N>` |
 | `hookedPages` | `page.js` 的 `attachPageHooks` 读 / 写 | 防止同一个 page 重复挂监听 |
-| `mode` | `page.js` 的 `createPage` 读 | 选择 `newPage` 路径 |
+| `mode` | `page.js` 的 `createPage` / `clipboard` 读；`fetch.js` 的 `fetchText` 读 | 选择 `newPage` 路径、CDP 模式下限制未过滤的剪贴板写入、临时页判定来源 |
 | `context` | `page.js` 的 `createPage` 读 | CDP 模式新建页面 |
 | `browser` | `page.js` 的 `createPage` 读 | 隔离模式新建页面与前置检查 |
 | `viewport` | `page.js` 的 `createPage` 读 | 隔离模式新页视口 |
 | `headless` | `session.js` 的 `sessionOf`（初始 null）与 `launch`（isolated 写本次启动值、cdp 写 false）写；`human.js` 的 `waitForHuman` 读 | 人工等待结果的可见性提示 |
-| `touch` | `page.js` 的 `scroll` / `consoleEntries` / `networkEntries` 调用；定义在 `session.js` 的 `sessionOf`（挂 `touchSession`） | 刷新空闲计时 |
+| `state` | 写：`session.js`（`nextSessionState` 的调用点）；读：`invariants.js` 的 `assertNotClosedDuringLaunch`、`human.js` 的 `waitForHuman` | `closing` / `closed` 期间拦截启动与人工等待，并发关闭后立即报错而不是轮询到超时 |
+| `touch` | `page.js` 的 `scroll` / `consoleEntries` / `networkEntries` / `dialogEntries` / `networkDetail`、`download.js` 的 `download`、`recipe.js` 的 `runRecipe` 调用；定义在 `session.js` 的 `sessionOf`（挂 `touchSession`） | 刷新空闲计时 |
 
 #### 标签页条目（`page.js` 的 `addPage` 创建）
 
@@ -126,7 +129,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`；
   - `browser_e2e_navigate`：`summary` / `title` / `tabId`；
   - `browser_e2e_tabs`：`summary` / `mode` / `text`；
-  - `browser_e2e_follow_tab`：`summary` / `tabId` / `previousTabId` / `changed` / `source` / `activated` / `ambiguous` / `candidates` / `failedProbeCount` / `url` / `title` / `tabs`；
+  - `browser_e2e_follow_tab`：`run` 读 `summary` / `source` / `previousTabId` / `candidates` / `tabs` / `failedProbeCount` / `activated` / `tabId`，返回格式化字符串；`changed` / `ambiguous` / `url` / `title` 由能力函数返回但 `run` 不读；
   - `browser_e2e_close_tab`：`summary` / `activeTabId`；
   - `browser_e2e_snapshot`：`summary` / `url` / `tabId` / `text` / `mode` / `frame` / `baseline` / `added` / `changed` / `removed` / `matches` / `truncated` / `scanTruncated`（`mode` / `frame` / `scanTruncated` 各模式都返回；`baseline` / `added` / `changed` / `removed` 只在 delta，`matches` 只在 query）；
   - `browser_e2e_read`：`summary` / `url` / `tabId` / `text` / `mode` / `sections` / `truncated` / `scanTruncated`；
@@ -142,12 +145,12 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   - `browser_e2e_click` / `fill` / `hover` / `drag` / `scroll` / `press` / `close`：只读 `summary`；
   - `browser_e2e_upload`：`summary` / `multiple` / `accept` / `totalBytes` / `visible` / `replaced` / `selected`；
   - `browser_e2e_download`：`summary` / `file` / `filename` / `bytes` / `sha256` / `source` / `url` / `suggestedFilename` / `finalUrl`；
-  - `browser_e2e_fetch`：`summary` / `url` / `statusCode` / `title` / `text` / `truncated` / `empty` / `elapsedMs` / `tabId` / `mode`；
-  - `browser_e2e_http`：`mode` / `url` / `finalUrl` / `status` / `ok` / `headers` / `body` / `redirect` / `elapsedMs` / `summary`（`run` 读 `summary` 与 `body` 的 `kind` / `bytes` / `chars` / `text` / `sha256`，其余随返回值原样返回）；
+  - `browser_e2e_fetch`：`run` 读 `summary` / `title` / `tabId` / `mode` / `empty` / `text`，返回格式化字符串；`url` / `statusCode` / `truncated` / `elapsedMs` 由能力函数返回但 `run` 不读，不会到达模型；
+  - `browser_e2e_http`：`run` 只读 `summary` 与 `body` 的 `kind` / `bytes` / `chars` / `text` / `sha256`，返回 `summary + 换行 + 正文` 的格式化字符串；`mode` / `url` / `finalUrl` / `status` / `ok` / `headers` / `redirect` / `elapsedMs` 由能力函数返回但 `run` 不读，不会到达模型；
   - `browser_e2e_assert`：`pass` / `total` / `passed` / `failed` / `checks` / `tabId` / `url` / `elapsedMs` / `summary`；
     `checks` 每项为 `{ index, kind, expected, pass, actual }`，`selector` 条目另带 `state`，`url` 条目另带 `urlMatch`。
   - `browser_e2e_clipboard`：`summary` / `action` / `target` / `rich` / `sanitized` / `accepted` / `inserted` / `plainChars` / `htmlChars` / `plainDerived`。
-  - `browser_e2e_dialog`：`summary` / `text`（`policy` / `promptText` / `total` / `count` / `entries` 随返回值原样返回，`run` 不读取）。
+  - `browser_e2e_dialog`：`run` 只读 `summary` 与 `text`（设置策略时另读 `setDialogPolicy` 返回的 `summary`），返回格式化字符串；`policy` / `promptText` / `total` / `count` / `entries` 由能力函数返回但 `run` 不读，不会到达模型。
   - `browser_e2e_captcha_check`：`summary` / `detected` / `kind` / `evidence` / `url` / `tabId`；
   - `browser_e2e_wait_for_human`：`summary` / `needed` / `resolved` / `waitedMs` / `polls` / `probeErrors` / `detected` / `kind` / `url` / `reason` / `selector` / `headless` / `timeoutMs` / `pollMs` / `tabId` / `hint` / `lastProbeError`（后两项仅对应情形出现）。
 
@@ -302,6 +305,9 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
   单次 JPEG 帧（`capture.js` 的 `captureJpeg`）未传 `quality` 时也取它的 `quality`，不另写默认值。
 - host 侧：`mergeConfig`（用户当场操作，越界回错误）与 `initialConfigOf`（插件配置可能被手改脏，
   逐字段回退默认）都从区间表派生。
+- `lib/index.js` 的 `Config` 四个投屏字段只负责设置页展示：描述里的区间与默认值从
+  `PANEL_CONFIG_LIMITS` / `DEFAULT_SCREENCAST_CONFIG` 插值生成，不再手写数字（依赖图因此有
+  `index.js → protocol.js`）；字段名与「不设 schema 默认值、由 `panel.js` 回退」的行为不变。
 - client 侧：`client/index.js` 不手写区间与默认值，由 `scripts/build-client.mjs` 把
   `PANEL_CONFIG_LIMITS` / `DEFAULT_SCREENCAST_CONFIG` / 协议版本 / 路由路径注入成常量块；
   `tests/invariants.mjs` 校验 `lib/client.js` 里的注入块与 `lib/protocol.js` 逐字段相等。
@@ -408,7 +414,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 | 会话解析入口不统一 | 10 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/follow_tab/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs`/`close_tab` 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
 | client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
-| 工具描述里的 limit / timeoutMs 默认值 | `lib/tools.js` 描述与 `lib/page.js` 写死「默认 100」「默认 10000」，与已收敛的视口 / 快照 / 截图 / 缓冲上限常量同类，但尚无单一来源。`browser_e2e_evaluate` 的默认 / 下限 / 上限已收敛为 `lib/page.js` 的 `DEFAULT_EVALUATE_TIMEOUT_MS` / `MIN_EVALUATE_TIMEOUT_MS` / `MAX_EVALUATE_TIMEOUT_MS`，工具描述与错误文案都从这三个常量派生；`wait` 的 10000 与 console / network 的 100 仍是字面量。 | 需新增常量并补本规格的常量口径，属 11 条 P2 清单外的同类残留，留待后续（evaluate 一项已收敛）。 |
+| 工具描述里的 limit / timeoutMs 默认值 | 已处置（M1）：`wait` 的默认超时（`DEFAULT_WAIT_TIMEOUT_MS`）与 status 区间（`WAIT_STATUS_MIN` / `WAIT_STATUS_MAX`）、`console` / `network` 的默认 limit（`DEFAULT_RING_QUERY_LIMIT`）、`download` 的默认总预算（`DEFAULT_DOWNLOAD_TIMEOUT_MS`）、`assert` 条数（`ASSERT_MAX_CHECKS`）、`recipe` 的逐键延迟 / hover 等待（`KEYSTROKE_MAX_DELAY_MS` / `MAX_SETTLE_MS` / `DEFAULT_SETTLE_MS`）、`upload` 的 MiB 上限（`sizeText` 从字节常量派生）都改由能力模块导出的常量插值；`evaluate` 仍为 `DEFAULT_EVALUATE_TIMEOUT_MS` / `MIN_EVALUATE_TIMEOUT_MS` / `MAX_EVALUATE_TIMEOUT_MS`。 | 已处置；保留行以便追溯。 |
 
 ## 验收
 

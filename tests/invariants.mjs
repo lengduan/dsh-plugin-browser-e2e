@@ -22,8 +22,15 @@ import {
   tabs,
 } from '../lib/session.js'
 import {
-  consoleLevelRank, CONSOLE_LEVELS, createPage, navigate, normalizeConsoleLevel, timeOf, titleOf,
+  ASSERT_MAX_CHECKS, consoleLevelRank, CONSOLE_LEVELS, createPage, DEFAULT_MAX_UPLOAD_BYTES,
+  DEFAULT_RING_QUERY_LIMIT, DEFAULT_SETTLE_MS, DEFAULT_WAIT_TIMEOUT_MS, KEYSTROKE_MAX_DELAY_MS,
+  MAX_SETTLE_MS, MAX_UPLOAD_BYTES, navigate, normalizeConsoleLevel, timeOf, titleOf,
+  WAIT_STATUS_MAX, WAIT_STATUS_MIN,
 } from '../lib/page.js'
+import {
+  DEFAULT_DOWNLOAD_TIMEOUT_MS, DEFAULT_MAX_DOWNLOAD_BYTES, MAX_DOWNLOAD_BYTES,
+} from '../lib/download.js'
+import { buildToolTable } from '../lib/tools.js'
 import {
   actionHistoryPath, appendAction, DEFAULT_HISTORY_LIMIT, HISTORY_MAX_ENTRIES, HISTORY_PRUNE_SLACK,
   HISTORY_SUMMARY_LIMIT, MAX_HISTORY_LIMIT, SENSITIVE_ARGS, historyEnabled, listActions, redactActionSummary,
@@ -322,14 +329,19 @@ await check('client 不依赖规格外的 state.message 字段', () => {
     'client 源文件不应读取 state.message')
   assert.ok(!bundle.includes('state.message'), '产物也不应含 state.message')
 })
-await check('默认 CDP 端点宿主侧取自 lib/defaults.js（session / index 不各写一份）', () => {
+await check('默认 CDP 端点宿主侧取自 lib/defaults.js（session / index / doctor 不各写一份）', () => {
   const sessionSource = readFileSync(new URL('../lib/session.js', import.meta.url), 'utf8')
   const indexSource = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+  const doctorSource = readFileSync(new URL('../lib/doctor.js', import.meta.url), 'utf8')
   assert.ok(sessionSource.includes("from './defaults.js'"), 'session.js 应从 defaults.js 取默认端点')
   assert.ok(indexSource.includes("from './defaults.js'"), 'index.js 应从 defaults.js 取默认端点')
+  assert.ok(doctorSource.includes("from './defaults.js'"), 'doctor.js 应从 defaults.js 取默认端点')
   assert.ok(!sessionSource.includes('127.0.0.1:9222'), 'session.js 不应手写默认端点')
   assert.ok(!indexSource.includes('127.0.0.1:9222'), 'index.js 不应手写默认端点（含描述文案）')
+  // doctor 的两处曾写死端口：cdpLaunchFix 的缺省端口与 FAIL 修法示例，都必须走常量。
+  assert.ok(!doctorSource.includes('9222'), 'doctor.js 不应手写默认端点（含修法示例与缺省端口）')
   assert.ok(indexSource.includes('DEFAULT_CDP_ENDPOINT'), 'index.js 的 Config 默认值应使用常量')
+  assert.ok(doctorSource.includes('DEFAULT_CDP_ENDPOINT'), 'doctor.js 应使用 DEFAULT_CDP_ENDPOINT')
 })
 
 console.log('== 用例 G：launch 落定与失败清理（假 chromium，不起 Edge）==')
@@ -762,13 +774,88 @@ await check('tools.js 的工具描述从常量插值，不写死默认值', () =
   assert.ok(!source.includes('http://127.0.0.1:9222'), 'CDP 默认端点应取自 defaults.js')
   assert.ok(!/\b(1600|900|9222|4000|8192|4194304|500)\b/.test(source),
     '视口 / 端点 / 快照 / 截图 / 缓冲上限不应写成数字字面量')
+  // M1 收敛的默认值 / 上限：源码里不得再出现旧字面量（渲染后仍由常量给出同样的数字）。
+  for (const literal of [
+    'limit 默认 100', 'timeoutMs 默认 10000', 'timeoutMs 默认 60000',
+    '100-599', '1-20 条断言', '（20 MiB）', '（512 MiB）', '（100 MiB）', '（1 GiB）',
+    '0-1000', '0-5000', '默认 300',
+  ]) {
+    assert.ok(!source.includes(literal), `tools.js 不应写死「${literal}」`)
+  }
   for (const name of [
     'DEFAULT_VIEWPORT.width', 'DEFAULT_VIEWPORT.height', 'DEFAULT_CDP_ENDPOINT',
     'SNAPSHOT_LIMIT', 'MAX_SHOT_EDGE', 'MAX_SHOT_PIXELS', 'RING_LIMIT',
     'CONSOLE_LEVELS', 'CONSOLE_LEVEL_ALIASES',
+    'DEFAULT_RING_QUERY_LIMIT', 'DEFAULT_WAIT_TIMEOUT_MS', 'WAIT_STATUS_MIN', 'WAIT_STATUS_MAX',
+    'DEFAULT_DOWNLOAD_TIMEOUT_MS', 'ASSERT_MAX_CHECKS', 'KEYSTROKE_MAX_DELAY_MS',
+    'MAX_SETTLE_MS', 'DEFAULT_SETTLE_MS',
   ]) {
     assert.ok(source.includes(name), `tools.js 应引用 ${name}`)
   }
+})
+await check('tools.js 描述里的默认值 / 上限等于能力模块常量（渲染后）', () => {
+  const table = buildToolTable({ ctx: {}, launchDefaults: {} })
+  const definitions = Array.isArray(table) ? table : Object.values(table)
+  const byName = new Map(definitions.map((definition) => [definition.name, definition]))
+  const descriptionOf = (name) => byName.get(name)?.description ?? ''
+  const paramOf = (name, key) => byName.get(name)?.parameters?.properties?.[key]?.description ?? ''
+  // 与 lib/tools.js 的 sizeText 同口径：MiB / GiB 由字节常量换算，不另写数字。
+  const MIB = 1024 * 1024
+  const sizeText = (bytes) => (bytes >= 1024 * MIB ? `${bytes / (1024 * MIB)} GiB` : `${bytes / MIB} MiB`)
+
+  // console / network：默认 limit 与缓冲上限
+  for (const name of ['browser_e2e_console', 'browser_e2e_network']) {
+    assert.ok(descriptionOf(name).includes(`limit 默认 ${DEFAULT_RING_QUERY_LIMIT}（取尾部）`),
+      `${name} 描述的默认 limit 应来自 DEFAULT_RING_QUERY_LIMIT`)
+    assert.equal(paramOf(name, 'limit'), `最多返回尾部多少条，默认 ${DEFAULT_RING_QUERY_LIMIT}`)
+  }
+
+  // wait：默认超时与 response 状态码区间；recipe 的步骤 schema 同源
+  assert.ok(descriptionOf('browser_e2e_wait').includes(`timeoutMs 默认 ${DEFAULT_WAIT_TIMEOUT_MS}`))
+  assert.equal(paramOf('browser_e2e_wait', 'timeoutMs'), `超时毫秒数，默认 ${DEFAULT_WAIT_TIMEOUT_MS}`)
+  assert.ok(paramOf('browser_e2e_wait', 'statusMin')
+    .includes(`，${WAIT_STATUS_MIN}-${WAIT_STATUS_MAX}，默认 ${WAIT_STATUS_MIN}`))
+  assert.ok(paramOf('browser_e2e_wait', 'statusMax')
+    .includes(`，${WAIT_STATUS_MIN}-${WAIT_STATUS_MAX}，默认 ${WAIT_STATUS_MAX}`))
+  const recipeStep = byName.get('browser_e2e_recipe')?.parameters?.properties?.steps?.items
+  assert.ok(recipeStep?.properties?.statusMin?.description
+    ?.includes(`，${WAIT_STATUS_MIN}-${WAIT_STATUS_MAX}，默认 ${WAIT_STATUS_MIN}`),
+  'recipe 步骤的 statusMin 应来自 WAIT_STATUS_MIN / WAIT_STATUS_MAX')
+  assert.ok(recipeStep?.properties?.statusMax?.description
+    ?.includes(`，${WAIT_STATUS_MIN}-${WAIT_STATUS_MAX}，默认 ${WAIT_STATUS_MAX}`),
+  'recipe 步骤的 statusMax 应来自 WAIT_STATUS_MIN / WAIT_STATUS_MAX')
+
+  // download：默认总预算与 MiB / GiB 上限
+  assert.ok(descriptionOf('browser_e2e_download').includes(`timeoutMs 默认 ${DEFAULT_DOWNLOAD_TIMEOUT_MS}`))
+  assert.ok(paramOf('browser_e2e_download', 'timeoutMs')
+    .includes(`默认 ${DEFAULT_DOWNLOAD_TIMEOUT_MS}，取值`))
+  assert.ok(descriptionOf('browser_e2e_download')
+    .includes(`（${sizeText(DEFAULT_MAX_DOWNLOAD_BYTES)}）`),
+  'download 描述的默认上限应按字节常量换算为 MiB')
+  assert.ok(descriptionOf('browser_e2e_download')
+    .includes(`（${sizeText(MAX_DOWNLOAD_BYTES)}）`),
+  'download 描述的最大上限应按字节常量换算为 MiB / GiB')
+  assert.ok(paramOf('browser_e2e_download', 'maxBytes')
+    .includes(`默认 ${DEFAULT_MAX_DOWNLOAD_BYTES}（${sizeText(DEFAULT_MAX_DOWNLOAD_BYTES)}）`))
+
+  // assert：单次条数上限
+  assert.ok(descriptionOf('browser_e2e_assert').includes(`1-${ASSERT_MAX_CHECKS} 条断言`))
+
+  // recipe 步骤：逐键延迟与 hover 等待的区间 / 默认值
+  assert.ok(recipeStep?.properties?.delayMs?.description
+    ?.includes(`0-${KEYSTROKE_MAX_DELAY_MS}`),
+  'recipe 步骤的 delayMs 应来自 KEYSTROKE_MAX_DELAY_MS')
+  assert.ok(recipeStep?.properties?.settleMs?.description
+    ?.includes(`0-${MAX_SETTLE_MS}，默认 ${DEFAULT_SETTLE_MS}`),
+  'recipe 步骤的 settleMs 应来自 MAX_SETTLE_MS / DEFAULT_SETTLE_MS')
+
+  // upload：MiB 上限由字节常量换算
+  assert.ok(paramOf('browser_e2e_upload', 'maxBytes')
+    .includes(`默认 ${DEFAULT_MAX_UPLOAD_BYTES}（${sizeText(DEFAULT_MAX_UPLOAD_BYTES)}）`),
+  'upload 默认上限应从 DEFAULT_MAX_UPLOAD_BYTES 换算 MiB')
+  assert.ok(paramOf('browser_e2e_upload', 'maxBytes')
+    .includes(`1..${MAX_UPLOAD_BYTES}（${sizeText(MAX_UPLOAD_BYTES)}）`),
+  'upload 最大上限应从 MAX_UPLOAD_BYTES 换算 MiB')
 })
 
 console.log('== 用例 L：console 级别归一与排序 ==')
