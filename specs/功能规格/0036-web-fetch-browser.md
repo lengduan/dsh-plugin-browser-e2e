@@ -1,6 +1,6 @@
 # web_fetch 改接浏览器
 
-状态: 已实现（仅 B 切片；宿主 provider 接管待决策）
+状态: 已实现（仅 B 切片）；A（宿主 provider 接管）已否决（2026-11-08）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖方向、工具表单一来源、会话级浏览器与进程回收三道兜底、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表本项不动）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（浏览器按会话隔离、isolated / cdp 差异、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（CDP 接管用户浏览器与登录态、close 只断连）；specs/功能规格/0016-download-integrity.md（既有「经当前浏览器上下文请求」的 url 模式，与本项的分工）；specs/功能规格/0017-structured-read.md（页面读取的既有分工与文本预算）；README.md「Summary」「工具一览」「Known Limitations and Deferred Work」
 代码: B 切片已落地：`lib/fetch.js`（新建，`fetchText`）/ `lib/page.js`（`createTransientPage` / `isTransientPage` / `addPage` 早退）/ `lib/session.js`（CDP `context.on('page')` 跳过临时页）/ `lib/tools.js`（`browser_e2e_fetch`，工具表 30 → 31）/ `README.md` / `docs/architecture.html` / `package.json` / `specs/项目规格/0001-architecture-invariants.md` / 本规格同步；测试面 `tests/fetch.mjs`（新建）/ `tests/cdp.mjs` / `tests/panel.mjs` / `tests/tools.mjs` / `tests/read.mjs` 已补。候选 A 未实现（`lib/fetch-provider.js` / `lib/index.js` 的 `inject` 与 provider 注册 / `cordis.patch.yml` / `package.json` / `tests/fetch-provider.mjs` 均未动）。两种候选都不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
@@ -22,11 +22,11 @@
 
 候选方案（细节与影响面见 `.scratch/browser-plugin-survey/plans/28-web-fetch-browser.md` §1、§4、§6）：
 
-- **A（竞品同构，需决策）**：注册 `browser-e2e` fetch provider 并改钉宿主 `web` 行。解锁条件：先定「provider 如何定位会话浏览器」与「抓取权限闸」两件事，且接受浏览器不可用时 `web_fetch` 全局失败、不再回落内置 `http`。
+- **A（竞品同构，已否决）**：注册 `browser-e2e` fetch provider 并改钉宿主 `web` 行。否决理由：①宿主 `WebFetchRequest` 只有 `url`、无会话标识，provider 无法定位按 `agent.id` 隔离的会话浏览器，三条变通（全局单浏览器 / 未验证的异步上下文 / 取最近 ready 会话）分别改载体定位、依赖未验证能力、跨会话泄漏登录态；②钉死后无回落，浏览器不可用时全 profile 的 `web_fetch` 对所有会话失败，回滚要删 patch 行；③带 cookie 抓任意 URL 需要 SSRF / 内网闸，门控（P1-14）尚未实现；④越出本插件「只提供 `browser_e2e_*` 工具与只读面板」的职责。
 - **B（推荐退路，影响小）**：**不动宿主**，新增本插件自己的 `browser_e2e_fetch`：临时页 + 与 `browser_e2e_read` 同源的正文提取，返回 `{ url, statusCode, title, text, truncated }`。与宿主的 `web_fetch` 分工：本工具走会话浏览器（cdp 模式下带登录态、可被面板看到、受空闲回收约束），宿主 `web_fetch` 保持匿名直连。工具面只增一个工具，不改既有契约。
 - **C（不做）**：维持 `browser_e2e_navigate` + `browser_e2e_read` / `browser_e2e_evaluate` 的既有组合，只在 README 写清分工。收益最小，仅在本项连 B 也不排期时成立。
 
-**A 组仍未决策**：候选 A 的目标契约不构成实现契约，当前代码未实现；B 组已按 §4.2 的实现契约落地，验收第 2 组对应已实现的行为，第 1 组是立项时「现在就能跑的缺口基线」，第 3 组只在决策采纳 A 时适用。
+**A 组已否决**（2026-11-08，理由见候选 A 条）：候选 A 的目标契约不构成实现契约，当前代码未实现，仅作历史记录；B 组已按 §4.2 的实现契约落地，验收第 2 组对应已实现的行为，第 1 组是立项时「现在就能跑的缺口基线」，第 3 组不再适用。
 
 ## 行为
 
@@ -38,7 +38,7 @@
 - **会话与标签页**：浏览器按会话隔离（`sessionKey(exec)`）；`lib/page.js` 的 `createPage` 可在不登记标签页的情况下建页（`addPage` 才登记），`touchSession` 只在 `sessionOf` / 能力入口刷新空闲计时。
 - **面板与协议**：`0002` 固定面板只读、命令与事件表不变；本项两种候选都不新增命令 / 事件。
 
-### 候选 A 的目标契约（决策通过后）
+### 候选 A 的目标契约（已否决，仅存档）
 
 - 新增 `lib/fetch-provider.js`，导出 `createFetchProvider(deps)`，返回实现宿主 `WebFetchProvider` 的对象：`{ id: 'browser-e2e', available(), ready?(), fetch(request, signal) }`。
 - `available()` 只做本地廉价检查、不发网络请求：返回「本进程至少有一个处于 `ready` 且至少一个标签页的会话」。**这是 A 的核心待决点**：该语义等于「任意会话的浏览器可被任意会话的 `web_fetch` 借用」，与按会话隔离冲突；替代方案见计划 §4.1。
