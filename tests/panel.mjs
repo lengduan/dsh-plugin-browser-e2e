@@ -4,7 +4,7 @@
  * 分四段：
  *   A. loopback 围栏的判定（纯函数）；
  *   B. 设置合并与越界拒绝（纯函数）；
- *   C. 插件注册面：32 个工具的参数契约；
+ *   C. 插件注册面：33 个工具的参数契约；
  *   D. 端到端：用真实 http 服务模拟宿主 webServer，注册插件自己的路由与 socket，
  *      真起无头 Edge，走完整协议（attach / hello / 帧 / 动作 / configure /
  *      request-frame / 未知命令 / 协议版本不符 / 关闭后状态清空），并校验围栏
@@ -151,7 +151,7 @@ let upgradeHandler = null
   apply(ctx, { quality: 30, maxWidth: 640 })
   check('注册的工具与工具表逐项一致（顺序与名字）',
     JSON.stringify(toolNames) === JSON.stringify(TOOL_TABLE.map((definition) => definition.name)), JSON.stringify(toolNames))
-  check('工具表共 32 个', TOOL_TABLE.length === 32, String(TOOL_TABLE.length))
+  check('工具表共 33 个', TOOL_TABLE.length === 33, String(TOOL_TABLE.length))
   check('工具名唯一且统一带 browser_e2e_ 前缀',
     new Set(toolNames).size === toolNames.length && toolNames.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(toolNames))
   check('每个工具都有 description 与合法参数 schema（required 是 properties 子集）',
@@ -308,7 +308,7 @@ let upgradeHandler = null
     === JSON.stringify(['isolated', 'cdp']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode))
   check('browser_e2e_start 的 carrier 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier?.enum)
     === JSON.stringify(['edge', 'chrome', 'auto']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier))
-  check('工具总数不因本项变化', tools.size === TOOL_TABLE.length && tools.size === 32, String(tools.size))
+  check('工具总数不因本项变化', tools.size === TOOL_TABLE.length && tools.size === 33, String(tools.size))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
 }

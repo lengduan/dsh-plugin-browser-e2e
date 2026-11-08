@@ -23,7 +23,7 @@
 ```
 接口层   tools.js（工具表）              protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
-实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  auth.js  human.js  screencast.js  carrier.js
+实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  auth.js  human.js  screencast.js  carrier.js  auth-state.js
 公共     invariants.js（不变量断言）       fence.js（安全围栏）
 ```
 
@@ -34,6 +34,7 @@
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`doctor.js` 的端点缺省与修法文案、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/carrier.js` | 载体枚举与探测：`CARRIERS` / `DEFAULT_CARRIER` / `CARRIER_LABELS`、`carrierLabel`、`detectCarrier`（edge 不探测、chrome 按环境变量→PATH→平台惯例位置、auto 回退 edge）、`searchSummary`；只查文件，不启动浏览器 | 会话状态、进程回收、面板、协议 |
+| `lib/auth-state.js` | 登录态导入 / 导出的校验与文件 I/O：storageState 读取（绝对路径、16 MiB 上限、形状校验、域名后缀过滤与域名收集）、导出路径解析（只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json`）、原子写盘（临时文件 + rename，0600）；返回值与错误文案不含 cookie 名 / 值 | 会话状态机、页面能力、协议、面板 |
 | `lib/errors.js` | Playwright 异常判定：`isTimeoutError`（错误名 `TimeoutError`，或文案匹配 `timeout ... exceeded`）；`fetch.js` / `raw.js` / `download.js` 的请求与导航超时共用这一份 | 运行时状态、I/O、各能力模块的报错文案与重试策略 |
 | `lib/hash.js` | 摘要：`sha256Of(buffer)` 返回十六进制 SHA-256；`observation.js` 的网络正文、`raw.js` 的 HTTP 正文、`download.js` 的整包读入共用。流式摘要（`streamToFd` 逐块 `update`）是不同环节，不在本模块 | 运行时状态、I/O、流式 hash |
 | `lib/viewport.js` | 视口基准尺寸：`viewportBounds(page, viewport)`——有固定视口用视口，否则取页面实际内尺寸（`innerWidth` / `innerHeight` 兜底），页内取值异常返回 `null`；`page.js` 的坐标校验与 `capture.js` 的 clip 边界、截图基准尺寸共用 | 标签页生命周期、坐标与截图尺寸的校验规则、截图参数 |
@@ -54,7 +55,7 @@
 | `lib/gate.js` | 工具级权限门控的纯函数层：配置归一（缺失取默认、非法 fail-closed）、工具定性读取（缺失按 `interact`）、`wait + expression` 的按参数升级、判定与拒绝文案；不做 I/O、不碰会话状态 | 会话状态、页面能力、面板、协议 |
 | `lib/frame.js` | 页面 frame 定位：主文档索引 0、其余按 `page.frames()` 顺序过滤主文档编号、字符串按 name / url 匹配、可用索引文案；快照与 `click` / `fill` / `scroll` 共用同一份实现，不做同源检查（由调用方决定） | 会话状态、页面能力、面板、协议 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
-| `lib/tools.js` | 32 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
+| `lib/tools.js` | 33 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
 | `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
@@ -66,7 +67,7 @@
 tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js / carrier.js
 index.js → tools.js / panel.js / session.js / auth.js / history.js / gate.js / defaults.js / protocol.js / carrier.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
-session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js
+session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js / auth-state.js
 page.js → auth.js / invariants.js / viewport.js / frame.js
 snapshot.js → page.js（只借 currentTab / withTimeout；当前未使用 invariants.js）/ frame.js
 observation.js → page.js（只借 currentTab、级别归一、展示格式化与环常量）/ hash.js
@@ -82,7 +83,7 @@ capture.js → protocol.js / viewport.js
 history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回调会话层，不 import 页面能力）
 doctor.js → session.js / capture.js / defaults.js
 invariants.js → carrier.js（只借 `carrierLabel` 拼错误文案；断言本身仍不读全局 Map、不做 I/O）
-protocol.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js / frame.js / carrier.js → （无内部依赖）
+protocol.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js / frame.js / carrier.js / auth-state.js → （无内部依赖）
 ```
 
 `tools.js` 直接 import 13 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor / carrier），另加拆分出来的 snapshot / observation 两个能力模块（共 15 个），新增能力时同步本图。
@@ -119,7 +120,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `hookedPages` | `page.js` 的 `attachPageHooks` 读 / 写 | 防止同一个 page 重复挂监听 |
 | `mode` | `page.js` 的 `createPage` / `clipboard` 读；`fetch.js` 的 `fetchText` 读 | 选择 `newPage` 路径、CDP 模式下限制未过滤的剪贴板写入、临时页判定来源 |
 | `carrier` | `session.js` 的 `sessionOf`（初始 `edge`）/ `launch`（隔离写实际载体、CDP 写 `edge`）/ `reuseInfo` / `assertReuseCompatible` 读写；`invariants.js` 的 `assertCarrierNotHotSwitched` 由调用方传值 | 复用摘要的载体名与「已启动后换载体」的热切换判据 |
-| `context` | `page.js` 的 `createPage` 读 | CDP 模式新建页面 |
+| `context` | `page.js` 的 `createPage` 读 | 新建页面（方案 A 后 isolated 与 CDP 都有显式 context，全部标签页共享 cookie / localStorage） |
+| `storageState` | `session.js` 的 `launch`（isolated 写导入来源与域名过滤，未导入为 null）/ `assertReuseCompatible` 读 | 已启动后是否允许复用同一份登录态；值为 `{ path, domains }`，不复制 cookie |
 | `browser` | `page.js` 的 `createPage` 读 | 隔离模式新建页面与前置检查 |
 | `viewport` | `page.js` 的 `createPage` 读 | 隔离模式新页视口 |
 | `headless` | `session.js` 的 `sessionOf`（初始 null）与 `launch`（isolated 写本次启动值、cdp 写 false）写；`human.js` 的 `waitForHuman` 读 | 人工等待结果的可见性提示 |
@@ -146,7 +148,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 - `panel.js` 的 `ensureScreencast` 读 `screencast.tabId` / `screencast.page`，据此判断「同一个 tab
   但页面对象已经换了」；`Screencast` 的 `cdp` 字段只在 `screencast.js` 内部读写。
 - 能力函数返回值被 `tools.js` 各工具 `run` 读的字段（按工具名）：
-  - `browser_e2e_start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`；
+  - `browser_e2e_start`：`reused` / `summary` / `url` / `mode` / `endpoint` / `artifactsDir`（`storageState` 计数只在 `run` 之外被测试读取，`run` 只读 `summary`）；
+  - `browser_e2e_auth_export`：`run` 只读 `summary`，返回格式化字符串；`file` / `bytes` / `cookies` / `origins` / `domains` / `overwrite` 由能力函数返回但 `run` 不读，不会到达模型；
   - `browser_e2e_navigate`：`summary` / `title` / `tabId`；
   - `browser_e2e_tabs`：`summary` / `mode` / `text`；
   - `browser_e2e_follow_tab`：`run` 读 `summary` / `source` / `previousTabId` / `candidates` / `tabs` / `failedProbeCount` / `activated` / `tabId`，返回格式化字符串；`changed` / `ambiguous` / `url` / `title` 由能力函数返回但 `run` 不读；
@@ -304,6 +307,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `assertCdpConnected(session, isConnected)` | 会话仍持有 CDP context，且 `isConnected`（调用方传入的 `browser.isConnected()` 结果）不为 `false`；未探测（undefined）时只按 context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
 | `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
 | `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |
+| `assertSessionContext(session)` | isolated 且 `state=ready` 的会话持有显式 context（方案 A 的每会话一个 context） | 隔离模式浏览器上下文缺失，请重新 browser_e2e_close 再 browser_e2e_start |
 | `assertRefBelongsToTab(tab, ref)` | ref 在该 tab 的 ref 表 | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |
 | `assertRefRevalidated(ref, check)` | 元素仍命中且宽高 > 0 | ref {ref} 已失效…（两条原文案） |
 | `assertSingleScreencast(activeCdp)` | `activeCdp` 为 null/undefined（当前没有持有 CDP 会话） | 同一时刻只能有一个投屏会话（违反后果：画面串台） |

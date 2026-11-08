@@ -20,7 +20,7 @@ import {
   assertBrowserRunning, assertCanCloseLastTab, assertCarrierNotHotSwitched, assertCdpConnected, assertCdpContext,
   assertCdpHasPages, assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled,
   assertModeNotHotSwitched, assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated,
-  assertSingleScreencast, assertTabExists,
+  assertSessionContext, assertSingleScreencast, assertTabExists,
 } from '../lib/invariants.js'
 import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
@@ -159,6 +159,13 @@ await check('assertCarrierNotHotSwitched：两个方向都报错并带载体名'
     /浏览器已启动（载体 系统 Edge）；如需切换为 系统 Chrome 请先 browser_e2e_close/)
   assert.throws(() => assertCarrierNotHotSwitched('chrome', 'edge'),
     /浏览器已启动（载体 系统 Chrome）；如需切换为 系统 Edge 请先 browser_e2e_close/)
+})
+await check('assertSessionContext：isolated ready 会话无 context 时报错', () => {
+  assert.throws(() => assertSessionContext(makeSession({ state: 'ready', mode: 'isolated', context: null })),
+    /隔离模式浏览器上下文缺失/)
+})
+await check('assertSessionContext：有 context 时通过', () => {
+  assert.doesNotThrow(() => assertSessionContext(makeSession({ state: 'ready', mode: 'isolated', context: {} })))
 })
 await check('CDP 三条不变量各自报原文案', () => {
   assert.doesNotThrow(() => assertCdpConnected(makeSession({ context: {} })))
@@ -406,7 +413,9 @@ function fakePage(overrides = {}) {
 }
 
 /** 假 browser：version / close 供 reuseInfo 与清理路径使用，closeCalls 记录关闭次数。不能伪造
- *  process()：真实 Playwright Browser 上没有这个方法，假实现给了它会让关闭兜底的分支测出假结果。 */
+ *  process()：真实 Playwright Browser 上没有这个方法，假实现给了它会让关闭兜底的分支测出假结果。
+ *  隔离模式改为显式 context 后，默认 newContext 把 newPage 委托给 browser.newPage，
+ *  让既有「newPage 抛错」等假实现继续覆盖真实路径。 */
 function fakeBrowser(overrides = {}) {
   const browser = {
     closeCalls: 0,
@@ -416,6 +425,8 @@ function fakeBrowser(overrides = {}) {
     },
     ...overrides,
   }
+  browser.newContext = overrides.newContext
+    ?? (async (options) => ({ newPage: async () => browser.newPage(options) }))
   return browser
 }
 

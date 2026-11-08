@@ -81,6 +81,8 @@ function fakeBrowser({ version = '0.0.0-fake', pages = [] } = {}) {
       browser.closeCalls += 1
     },
     newPage: async () => fakePage(),
+    // 隔离模式改为显式 context：newContext().newPage() 是 launch 的真实调用路径。
+    newContext: async () => ({ newPage: async () => fakePage() }),
     contexts: () => [{ pages: () => pages, on() {} }],
   }
   return browser

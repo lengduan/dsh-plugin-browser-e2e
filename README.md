@@ -1,5 +1,5 @@
 ---
-description: "DSH 浏览器端到端验证插件：32 个 browser_e2e_* 工具用系统 Edge（或可选的系统 Chrome）驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
+description: "DSH 浏览器端到端验证插件：33 个 browser_e2e_* 工具用系统 Edge（或可选的系统 Chrome）驱动 Playwright 完成导航、快照、结构化读取、点击、填表、文件上传、下载、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板读写、悬停、拖拽、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、截图与取证、动作历史落盘与脱敏读回，并在 Web UI 右侧提供实时浏览器画面面板，供安装、配置、排障或改这个 profile bundle 的人阅读。"
 kind: "package-bundle"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-装进 DSH profile 后，模型获得 32 个 `browser_e2e_*` 工具，默认用本机系统 Edge（可显式选用本机 Google Chrome）完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
+装进 DSH profile 后，模型获得 33 个 `browser_e2e_*` 工具，默认用本机系统 Edge（可显式选用本机 Google Chrome）完成页面导航、DOM 快照、结构化读取、点击、填表、文件上传、下载与完整性校验、浏览器内抓取、原始 HTTP 请求（仅页面上下文）、剪贴板写入与粘贴投递、悬停、拖拽、滚动、截图、控制台与网络取证（含按 request_id 读取响应体）、条件等待、断言、声明式多步步骤（recipe）、人机验证检测与人工等待、页面脚本求值，以及动作历史读回（宿主落盘、写入前脱敏）。DSH Web UI 右侧另有一个实时浏览器画面，人可以在对话旁边直接看到模型正在操作的页面，而不必读对话里的一句转述。浏览器按会话隔离、同会话复用，并以空闲、会话销毁、插件卸载三道回收释放进程。主要边界：所有页面操作只能由工具发起，面板是只读视图；CDP 模式只接管已用远程调试端口启动的浏览器，不启动新进程。
 
 ## Table of Contents
 
@@ -42,7 +42,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 `browser_e2e_start` 统一管理启动，两种模式：
 
-- **isolated（默认）**：自己拉起浏览器，一次性 profile，用完关闭。默认载体是系统 Edge（Playwright `channel: 'msedge'`，不触发 360 进程防护弹窗）；可传 `carrier` 选择 `edge` / `chrome` / `auto`（见下），`chrome` 用本机安装的 Google Chrome。可传 `headless`（默认 true）、`proxy`、`viewportWidth` / `viewportHeight`（默认 1600×900）。
+- **isolated（默认）**：自己拉起浏览器，一次性 profile，用完关闭。默认载体是系统 Edge（Playwright `channel: 'msedge'`，不触发 360 进程防护弹窗）；可传 `carrier` 选择 `edge` / `chrome` / `auto`（见下），`chrome` 用本机安装的 Google Chrome。每会话一个显式 context，全部标签页共享 cookie / localStorage；可用 `storageState` 导入登录态（见「登录态导入与导出」）。可传 `headless`（默认 true）、`proxy`、`viewportWidth` / `viewportHeight`（默认 1600×900）。
 - **cdp**：经 `chromium.connectOverCDP` 接管已用远程调试端口启动的浏览器，只接受 loopback 端点（默认 `http://127.0.0.1:9222`），不启动新进程、不新建页面、不设置视口。需要先自己启动浏览器：`msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\edge-cdp-profile"`（Chrome 136+ 对默认数据目录忽略该开关，必须用非默认 `--user-data-dir`）。
 
 载体的三个取值（只对 isolated 生效，cdp 忽略、载体由接管端点决定）：
@@ -74,11 +74,12 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 工具一览
 
-32 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
+33 个工具统一带 `browser_e2e_` 前缀，可与提供 `browser_*` 的插件（如 `@linxin666/dsh-client-ui-browser-view`）共存而不冲突。作用于页面的工具都可带可选的 `tab_id`，不给时作用于当前 active tab。
 
 | 工具 | 作用 |
 |---|---|
-| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，支持 `headless`、`proxy`、视口尺寸 |
+| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸 |
+| `browser_e2e_auth_export` | 把当前 isolated 会话的登录态（cookie + localStorage）导出成 Playwright storageState JSON：`path` 必填且必须位于 `~/.dsh/browser-e2e/auth/` 下（`.json`），`domains` 可选按域名后缀过滤，`overwrite` 默认 false；返回路径 / 字节数 / 条目数与域名，不含任何 cookie 名或值；文件是明文凭据，勿提交仓库；CDP 模式拒绝导出 |
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
 | `browser_e2e_tabs` | 列出本会话标签页：`tab_id` / url / title / active / `loading` / `origin`（`created` 本会话新建 / `adopted` CDP 接管） |
 | `browser_e2e_close_tab` | 关闭指定标签页；最后一个标签页不允许关闭，结束整个浏览器用 `browser_e2e_close` |
@@ -95,7 +96,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_clipboard` | 剪贴板读写：`action=write` 把 `text` 与可选富文本 `html` 写进浏览器剪贴板（isolated 自动授予 `clipboard-write`，cdp 不授权）；`action=paste` 把带 `text/plain` / `text/html` 的 paste 事件投递到 `ref` / `selector` / 当前焦点元素，页面未消费且目标是 input / textarea 时在选区处插入文本。`html` 缺省在页内按白名单净化，`sanitize: false` 只在 isolated 模式允许；不做真实快捷键粘贴，也不回读剪贴板内容 |
 | `browser_e2e_screenshot` | 截图：支持 `clip` / `format`(png\|jpeg) / `quality` / `fullPage` / `scale`（`css`、`device` 或整数倍率 1/2/3）/ `name`；落盘返回路径，宿主有附件服务时一并返回图片 |
 | `browser_e2e_download` | 下载并校验完整性：`url`（HTTP(S) 直接经当前浏览器上下文取回，共享 Cookie / 登录态）或 `ref` / `selector` / `x`+`y`（点击触发 download 事件）二选一；`filename` 覆盖服务器建议名，`maxBytes` 默认 100 MiB（上限 1 GiB），`expectedSha256` 可选强校验，`timeoutMs` 默认 60000；落盘到产物目录的 `downloads/` 子目录（`DSH_BROWSER_DOWNLOAD_DIR` 覆盖），返回路径、字节数与 SHA-256，同名不覆盖 |
-| `browser_e2e_fetch` | 浏览器内抓取正文：CDP 下在 `tab_id` 所属上下文开临时页（共享用户浏览器登录态），isolated 下另开一页（该模式每页独立 context，不共享 Cookie）→ domcontentloaded → 等 `settleMs`（默认 400，0-5000）→ 取 `article` / `main` / `[role=main]`（缺省 `body`）的 `innerText` 与标题；返回 `tabId` / `url` / `statusCode` / `title` / `text` / `truncated` / `empty` / `elapsedMs` / `mode`。不导航当前页、不改 ref 表与事件环；`maxChars` 默认 16000（上限 180000），`timeoutMs` 默认 25000（1000-60000，只约束导航）；非 2xx 与空正文是结果不是错误；临时页用完即关、不登记为标签页；不返回 HTML、不落盘 |
+| `browser_e2e_fetch` | 浏览器内抓取正文：CDP 下在 `tab_id` 所属上下文开临时页（共享用户浏览器登录态），isolated 下另开一页（临时页在独立 context，不共享会话 Cookie）→ domcontentloaded → 等 `settleMs`（默认 400，0-5000）→ 取 `article` / `main` / `[role=main]`（缺省 `body`）的 `innerText` 与标题；返回 `tabId` / `url` / `statusCode` / `title` / `text` / `truncated` / `empty` / `elapsedMs` / `mode`。不导航当前页、不改 ref 表与事件环；`maxChars` 默认 16000（上限 180000），`timeoutMs` 默认 25000（1000-60000，只约束导航）；非 2xx 与空正文是结果不是错误；临时页用完即关、不登记为标签页；不返回 HTML、不落盘 |
 | `browser_e2e_http` | 原始 HTTP（仅 `mode=context`）：用当前标签页所属浏览器上下文发任意 `method` / `headers` / `body`，不导航当前页、共享 Cookie、不受页面 CORS 限制（不是页面内 `fetch`）；返回状态码、响应头（敏感头脱敏）与正文（文本按 `max_chars` 截断，二进制只给字节数与 SHA-256），非 2xx 是结果不是错误（`ok=false`）；不落盘；方法限 GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS，`timeout_ms` 默认 30000（1000-120000） |
 | `browser_e2e_dialog` | 读取页面弹出的 alert / confirm / prompt 记录（类型、文案、prompt 默认值、实际应答），并按 `tab_id` 设置后续对话框的应答策略：`policy`（`dismiss` 默认 / `accept`，不传表示只读）、`prompt_text`（仅 accept 时可用，缺省用页面默认值）、`limit`（默认 20，最多 50）；对话框在打开时立即按策略应答并记录，策略必须在触发动作前设好 |
 | `browser_e2e_console` | 读取控制台记录（log/info/warn/error/debug 与未捕获异常），环形 500 条，`limit` 取尾部（默认 100）；`level` 只看不低于该严重级别的记录（`debug` < `log` < `info` < `warning` < `error`，`warn` 等同 `warning`），不可判级的记录类型（`table` / `assert` 等）始终保留 |
@@ -208,12 +209,23 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 不另设 reset 工具，重置由既有调用组合承担：
 
-- **清 cookie / storage、换登录态（isolated，默认模式）**：先 `browser_e2e_close`，再 `browser_e2e_start`。isolated 模式每次启动都是一次性 profile（`chromium.launch`，不带 `userDataDir` / `storageState`），关闭即丢弃 cookie、localStorage、sessionStorage、IndexedDB 与缓存；重新启动得到一张新的空白 `t1`。`browser_e2e_close` 不保留上一会话的 `mode` / `cdpEndpoint`，非默认模式要在 `start` 时重新显式传。
+- **清 cookie / storage、换登录态（isolated，默认模式）**：先 `browser_e2e_close`，再 `browser_e2e_start`。isolated 模式每次启动都是一次性 profile（`chromium.launch`，不带 `userDataDir`），关闭即丢弃 cookie、localStorage、sessionStorage、IndexedDB 与缓存；重新启动得到一张新的空白 `t1`。`browser_e2e_close` 不保留上一会话的 `mode` / `cdpEndpoint`，非默认模式要在 `start` 时重新显式传。**不带 `storageState` 的 `start` 才会清空登录态**；带 `storageState` 时按文件恢复（见下节）。
 - **只重置 ref 表与事件环**：`browser_e2e_navigate` 到任意新文档即可，同 URL reload 也算（判据见「事件环重置」）；不必关浏览器。
 - **回到空白页**：`browser_e2e_navigate` 的 `url: "about:blank"`。
 - **不影响其它会话**：`browser_e2e_close` 只关闭本 agent 会话的浏览器；其它会话的浏览器与登录态不受影响。
 - **CDP 接管模式**：`browser_e2e_close` 只断开连接，不清用户浏览器的 cookie / storage，也不关用户标签页；需要干净上下文请改用 isolated 会话。
 - 两步之间没有浏览器，页面工具会报「浏览器尚未启动」；这是两步组合，不是原子操作。
+
+### 登录态导入与导出
+
+isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢弃。要跨会话复用登录后的状态，用一对显式入口（不自动持久化）：
+
+- **导入**：`browser_e2e_start` 传 `storageState`（宿主绝对路径的 `.json`，Playwright storageState 格式）与可选的 `storageDomains`（域名后缀数组，`example.com` 与 `*.example.com` 同义；不传=文件内全部条目）。只在 isolated 新启动时读取：导入后同一会话的全部标签页共享 cookie / localStorage，新开的标签页也自动共享。启动摘要会追加「已导入 N 个 cookie、M 个 origin（D 个域名）」。已启动后再传 `storageState` 会报错且不重建 context；CDP 模式直接拒绝导入。
+- **导出**：`browser_e2e_auth_export` 把当前 isolated 会话的登录态写成 JSON。`path` 必填，且必须位于 `~/.dsh/browser-e2e/auth/` 下（`.json`；上级目录不存在时自动创建）；文件已存在时必须显式 `overwrite: true`。`domains` 可选过滤。返回值与日志不含任何 cookie 名 / 值，只给路径、字节数、条目数与域名；文件权限 `0600`（POSIX）。CDP 模式拒绝导出——那等于把用户浏览器的 cookie 复制到磁盘。
+- **不自动持久化**：`browser_e2e_close`（含空闲回收、会话销毁、插件卸载）不会导出登录态；忘记导出就随进程一起丢失。
+- **明文凭据警告**：导出物是明文 cookie + localStorage，不要提交进仓库、不要放进 profile；返回摘要也会提示这一点。
+- **文件校验**：导入侧接受任意绝对路径（读的是调用方自己给的文件），只要求是合法 JSON、形状正确、≤ 16 MiB；相对路径、文件不存在、不是文件、不是合法 JSON、形状非法都会报可诊断错误。
+- **载体范围**：storageState 只含 cookies 与各 origin 的 localStorage，不含 sessionStorage、IndexedDB、CacheStorage、Service Worker 缓存与 HTTP 认证凭据；仅靠 sessionStorage / IndexedDB 的登录（部分 SPA、OAuth PKCE 存储）不会因此恢复。
 
 ### 等待 URL 与网络响应
 
@@ -301,7 +313,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 - **取页链路**：`currentTab` 解析目标页 → 建临时页 → `goto`（`waitUntil=domcontentloaded`，`timeoutMs` 只约束这一步）→ 等 `settleMs`（默认 400，`0` 表示不等）→ 页内取 `article` / `main` / `[role=main]`，没有则退回 `body` 的 `innerText`，标题取 `document.title`。
 - **临时页不登记**：临时页不写进 `session.pages`，CDP 分支的 `context.on('page')` 也会跳过它，因此 `browser_e2e_tabs`、面板 tab 条与 `state` 都不变；抓取不向 console / network 环形缓冲新增记录。
-- **isolated 与 cdp 的差异**：isolated 下临时页是无头、不可见的，且走 `browser.newPage` 另开 context（`browser.newPage` 建出的 context 不接受再 `newPage`；该模式本来每页一个 context，没有跨页登录态可共享，关闭临时页会一并关闭它的 context）。cdp 下临时页建在当前页所属 context（共享用户浏览器整体登录态），是用户浏览器里真实新开又关闭的标签页（会一闪），但不进本会话的标签页列表。
+- **isolated 与 cdp 的差异**：isolated 下临时页是无头、不可见的，且走 `browser.newPage` 另开 context（`browser.newPage` 建出的 context 不接受再 `newPage`；临时页因此不共享会话 Cookie，关闭临时页会一并关闭它的 context）。cdp 下临时页建在当前页所属 context（共享用户浏览器整体登录态），是用户浏览器里真实新开又关闭的标签页（会一闪），但不进本会话的标签页列表。
 - **返回**：`{ tabId, url, statusCode, title, text, truncated, empty, elapsedMs, mode, summary }`。非 2xx 照常返回结果（以 `statusCode` 为准），`empty` 表示正文提取到 0 字符（非文本响应如 PDF / 图片会落到这里）；正文超过 `maxChars`（默认 16000，上限 180000）时截断并置 `truncated: true`。
 - **边界**：只支持 http / https；`innerText` 只含渲染后的可见文本，不返回 HTML，表格按行文本流出、不保留结构，不进入 iframe 与 shadow root；不做 UA / 指纹伪装、不点击、不等特定元素；不落盘（要文件用 `browser_e2e_download`），不缓存、不去重。
 
@@ -498,6 +510,9 @@ node tests/frames.mjs
 # 多载体：载体探测纯函数 / channel 与 executablePath 装配 / 摘要 / 复用 / 热切换 / CDP 忽略（假 chromium；本机有 Chrome 时真起一次）
 node tests/carrier.mjs
 
+# 登录态导入与导出：cookie / localStorage 生效、新页共享、导出再导入、文件校验、域过滤、热导入与 CDP 拒绝（真起无头 Edge + 本地 HTTP 夹具）
+node tests/auth-state.mjs
+
 # 面板宿主半区：围栏 / 设置 / 工具参数契约 / 真实 Edge + WebSocket 端到端协议（含 close-tab）
 node tests/panel.mjs
 
@@ -567,7 +582,7 @@ npm run test:integration
 按「接口契约分层 + 按变化原因拆分」，依赖单向不回流：
 
 ```
-接口层   tools.js（32 个工具的表）        protocol.js（面板协议表）
+接口层   tools.js（33 个工具的表）        protocol.js（面板协议表）
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  history.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
@@ -602,7 +617,7 @@ npm run test:integration
 <a id="model-experience"></a>
 ## Model Experience
 
-模型侧只看到工具，不看到面板。32 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
+模型侧只看到工具，不看到面板。33 个 `browser_e2e_*` 工具的 `name` / `description` / `parameters` 进入工具表；`browser_e2e_` 前缀避免与 `browser_*` 工具冲突。
 
 - **每次调用的可见文本**：首行是本次结果的一句话摘要；导航追加标题、当前标签页与「导航后请重新快照」提示；截图追加落盘路径、媒体类型与字节数，附件可用时再追加一个图片内容块；`console` / `network` 返回尾部若干条并在截断时注明缓冲总数，`console` 传 `level` 时只读不低于该级别的记录、摘要写明命中与缓冲；`network_detail` 把请求头 / 请求体 / 响应头 / 响应体分行返回，JSON 两空格缩进，二进制只给字节数与 sha256；失败时抛错，文本为具体原因（如缺少必填参数、ref 失效、最后一个标签页不可关）。
 - **状态可见性**：模型只能经 `browser_e2e_tabs` 与各工具返回值推断会话状态，插件不向模型注入额外系统提示或上下文段落。
@@ -621,6 +636,7 @@ npm run test:integration
 - **结构化读取的边界** —— `browser_e2e_read` 只读主文档，不进入任何 iframe（同源也不进）与 shadow root；不可见元素不列出，读隐藏表单需先让页面显示；表格不识别分页与虚拟滚动，`totalRows` 只是 DOM 行数；`input[type=file]` 只给 `hasValue`、不返回文件名；`href` 超过 500 字符时截断并置 `hrefTruncated: true`，截断值不可用于导航；`unique: false` 的 selector 在页面上不唯一，直接交给 click / fill 会因 Playwright strict 模式报错。页面脚本无超时与取消（与快照一致），耗时由 20000 元素扫描上限与 `maxItems` 限住；文本按 16000 字符预算分节截断，大页面请只请求一节或用 `selector` 收窄。
 - **跟随不做静默自动跟随** —— `browser_e2e_follow_tab` 只在显式调用时改绑默认标签页；用户随后切页，不传 `tab_id` 的工具仍作用在旧绑定页，需要再调一次。无参判定靠每页主文档的 `document.visibilityState` / `document.hasFocus()`（单页 2000ms 并行超时），无头模式与后台窗口区分度不稳，可能落到「保持当前」（`source=current`、`ambiguous=true`）；isolated 模式下用户自己新开的标签页不登记，只在会话已有页里选；受保护页面（`edge://` 等）与主线程卡死的页会被剔除出候选。确定性绑定请显式传 `tab_id`。
 - **载体只支持 Edge 与系统 Chrome** —— isolated 模式可选 `carrier: edge / chrome / auto`，但只认本机已安装的 Google Chrome：不内置 Chromium（依赖 `playwright-core`，没有浏览器下载步骤），不做桌面侧栏 / Electron 宿主 / 桌面桥载体，也不接受工具传入的可执行路径（路径只来自 `DSH_BROWSER_CHROME_PATH` 与平台惯例位置）。Chrome 用 Playwright 的一次性 profile，不复用你正在运行的 Chrome、不读取你的登录态；要复用登录态用 cdp。已启动后不能热切换载体，必须 `browser_e2e_close` 后重开。`browser_e2e_doctor` 的 `edge` 项仍只体检系统 Edge，不检查 Chrome。
+- **登录态导入 / 导出的边界** —— storageState 只含 cookies 与各 origin 的 localStorage，不含 sessionStorage、IndexedDB、CacheStorage、Service Worker 缓存与 HTTP 认证凭据，因此仅靠 sessionStorage / IndexedDB 的登录（部分 SPA、OAuth PKCE 存储）不会恢复。不读系统 Chrome / Edge 的 cookie 库、不做 profile 命名与多 profile 切换、不做 cookie 过期刷新、不自动化登录表单、不新增高层登录工具。导出写侧只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json`（明文凭据；默认不覆盖、权限 0600，Windows 上 mode 位不生效），返回值与日志不含 cookie 名 / 值；导入读侧接受任意绝对路径，文件来源由调用方负责，插件不校验 cookie 的 `secure` / `sameSite` 与目标站策略是否兼容。**不自动持久化**：close（含空闲回收、会话销毁、卸载）不导出；已启动后不能热导入，必须 `browser_e2e_close` 再 `browser_e2e_start`；CDP 模式既不导入也不导出（那是用户自己的浏览器）。域过滤是安全边界而不是完整沙箱：不传 `storageDomains` 时按文件内全部条目导入。
 - **多标签页测试的进程计数是观察项** —— `tests/multitab.mjs` 收尾只打印剩余 msedge 主进程数与启动前基线，不据此断言；`tests/reclaim.mjs` 末尾打印的「应为 0」同样只是观察，真正的断言是「回落到 before 基线」——本机若已开着 Edge，基线不是 0，绝对值不可比。
 - **profile 里的版本是 git 快照** —— `dsh plugin add` 装的是指定 commit 的快照，改完源码必须 commit + push，再在 profile 里重新解析，否则跑的还是旧提交。
 - **插件卡片座位不注册** —— 客户端暂不注册 `web-ui.plugin.item` / `plugins.bundle.config`；在当前桌面宿主上注册会让客户端 entry 激活失败（`web boot: 1 entry did not activate`），插件行改由宿主按 `Config` 自动渲染。

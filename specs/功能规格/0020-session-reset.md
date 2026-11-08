@@ -16,7 +16,7 @@
 
 不新增 `browser_e2e_*` 工具、参数或协议命令。重置由既有操作组合承担：
 
-- **上下文与进程重置（isolated，默认模式）**：`browser_e2e_close`（无参数）→ `browser_e2e_start`（参数沿用现有表，全部可选：`headless` / `proxy` / `viewportWidth` / `viewportHeight` / `mode` / `cdpEndpoint`）。`close` 删掉本 agent 的会话对象并收掉浏览器；`start` 新建会话对象、起新临时 profile、分配新标签页 `t1`。
+- **上下文与进程重置（isolated，默认模式）**：`browser_e2e_close`（无参数）→ `browser_e2e_start`（参数沿用现有表，全部可选：`headless` / `proxy` / `viewportWidth` / `viewportHeight` / `mode` / `cdpEndpoint` / `carrier` / `storageState` / `storageDomains`）。`close` 删掉本 agent 的会话对象并收掉浏览器；`start` 新建会话对象、起新临时 profile、分配新标签页 `t1`。不带 `storageState` 时新会话登录态为空；带 `storageState` 时会按文件恢复登录态（见 `0021-auth-state-import.md`）。
 - **单页回到空白**：`browser_e2e_navigate` 的 `url: "about:blank"`（缺省作用于 active tab，可带 `tab_id`）。
 - **ref 表与事件环重置**：`browser_e2e_navigate` 到任意新文档；同 URL reload 也算，hash 变化与 SPA 路由不算（判据见 `lib/page.js` 的 `isNewDocumentRequest`）。
 
@@ -35,7 +35,7 @@
 |---|---|---|
 | 会话 | 旧对象从 `sessions` / `keyBySessionId` 删除，新对象进入 `ready`；agent id 不变 | 旧对象删除；重连后新对象进入 `ready`，`mode: 'cdp'` |
 | 标签页 | 旧页随进程结束全部消失；新页 `t1`（`origin: 'created'`），`nextTabSeq` 从 1 重新分配 | 用户浏览器标签页不动；重连按 `context.pages()` 重新接管（`origin: 'adopted'`），tab_id 从 `t1` 重新分配 |
-| cookie / storage | 新临时 profile 全空（cookie、localStorage、sessionStorage、IndexedDB、缓存随旧 profile 一起丢弃） | **保留**，上述存储面都不清；明确不处理 |
+| cookie / storage | 新临时 profile 全空（cookie、localStorage、sessionStorage、IndexedDB、缓存随旧 profile 一起丢弃）；**不带 `storageState` 时成立**——带 `storageState` 的 start 会按文件恢复登录态（`0021-auth-state-import.md`） | **保留**，上述存储面都不清；明确不处理 |
 | ref 表 / 事件环 | 随旧页销毁；新页空 | 新页条目空；用户原页面的历史记录不回放 |
 | 面板 | 收到 `closed`：tab 条清空、`ensureScreencast(null)` 停投屏；`opened` 后重取 tab、按新页面对象重开投屏 | 同左；重连后 tab 列表按用户浏览器重新接管 |
 | 浏览器进程 | 旧 Edge 主进程结束（`closeBrowser` 等 graceful close，`DSH_BROWSER_CLOSE_TIMEOUT_MS` 到点后不强杀、只如实报告可能残留），随后起新进程 | 不启动、不结束；只断连再连 |
@@ -48,7 +48,7 @@
 - **明确不新增 `browser_e2e_reset` / `browser_e2e_reset_session`**：两者在本仓要么是 `close` + `start` 的两步包装（无新能力，还需伪装成原子操作），要么要求「保留进程、原地重建 context」，后者需要串行锁或新的 `resetting` 状态，属影响大（见实施计划 §6）。
 - **CDP 模式不清 cookie / storage、不关用户标签页**：与 README「CDP 只断连」一致；清用户真实浏览器数据超出接管语义。需要干净上下文时用 isolated 会话，或在用户浏览器里自行清理。
 - **不按单个标签页清登录态**：cookie / storage 是 context 级；`close` + `start` 会影响本 agent 的全部标签页。只想要 ref 表 / 事件环重置时用 `browser_e2e_navigate`，不要关浏览器。
-- **不保留、不导出登录态**：登录态导入与持久化属 `0021-auth-state-import`，本项不做。
+- **导入 / 导出登录态不属本项**：本项的重置（close + start）不读取也不写回登录态；显式导入 / 导出由 `0021-auth-state-import.md` 的 `storageState` 与 `browser_e2e_auth_export` 承担。不带 `storageState` 时新会话登录态为空，带 `storageState` 时按文件恢复——这是本项「close 再 start 后 cookie 与 localStorage 已清空」的唯一例外条件。
 - **不恢复旧标签页 URL**：新 `start` 得到一张空白页；要回到原页面由调用方重新 `navigate`。
 - **不保证原子性与并发安全**：两步之间任何页面工具都会报未启动；并发 `start` 复用同一实例；启动中的 `close` 由 `launch` 的收尾路径清理并按 `closing → closed` 落定，启动落定前会话已被 close 时后到的 `launch` 报「浏览器已关闭（启动与关闭并发）」。既有行为，不新增互斥。
 - **失败不回滚**：`start` 失败则当前无浏览器，重试 `start` 即可；`close` 在未启动时返回 `浏览器未启动，无需关闭`，不报错。

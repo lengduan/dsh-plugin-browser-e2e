@@ -1,8 +1,8 @@
 # 登录态导入与持久化
 
-状态: 已确认（采纳方案 A；实施待排期）
+状态: 已实现（采纳方案 A）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、`session` 对象契约、不变量清单、会话状态机、进程回收三道兜底、已知结构性债务「`session.js` 粒度过大」）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（`launch` 参数、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（接管复用用户登录态、close 只断连）；specs/功能规格/0009-auth-topup.md（loopback 补票，与本项不重叠）；specs/功能规格/0020-session-reset.md（close + start 的上下文重置口径）
-代码: 当前无代码改动（本项已确认、实施待排期）。方案 A 落地时预计涉及 `lib/auth-state.js`（新建）/ `lib/session.js` / `lib/page.js` / `lib/tools.js` / `lib/invariants.js` / `tests/auth-state.mjs`（新建）/ `tests/invariants.mjs` / `README.md`；不改 `lib/protocol.js` / `client/index.js` / `lib/client.js`。
+代码: 已实现：新增 `lib/auth-state.js`；改 `lib/session.js`（isolated 每会话显式 context、导入 / 导出入口、热导入拒绝）、`lib/page.js`（`createPage` 走 `session.context.newPage()`）、`lib/tools.js`（`start` 加 `storageState` / `storageDomains`，新增 `browser_e2e_auth_export`）、`lib/invariants.js`（`assertSessionContext`）；新增 `tests/auth-state.mjs`，`tests/invariants.mjs` / `tests/tools.mjs` 补断言；同步 README 与规格 `0001` / `0002` / `0020` / `0023`。不改 `lib/protocol.js` / `client/index.js` / `lib/client.js`。
 
 ## 需求
 
@@ -28,7 +28,7 @@
 ## 决策记录
 
 - 2026-11-08：采纳**方案 A**（isolated 改为每会话一个显式 context + 显式导入 / 导出，不自动持久化）；同时定决策点 D4：导出（写侧）只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json`，导入（读侧）仍接受任意绝对路径。B（持久 profile）/ C（close 自动导出）/ D（热导入）/ A0（每页一份）不采纳。
-- 当前状态为「已确认、实施待排期」：下文「行为」的方案 A 目标是实现契约，当前代码未实现；验收第 1、2 组仍是现在可跑的基线与缺口判定。
+- 2026-11-08 已实现：下文「方案 A 的目标契约」已成为实现契约；验收第 1、2 组保留为历史基线，第 4 组由 `tests/auth-state.mjs` 覆盖。
 
 ## 行为
 
@@ -121,10 +121,11 @@
 4. `node tests/cdp.mjs`：exit 0、无 FAIL（本机无 Edge 时按脚本既有 SKIP 口径以 0 退出）。相关用例名 `接管成功且 mode 为 cdp`、`close 返回 cdp 模式`、`浏览器进程仍然存活`。
 5. `npm run test:unit`：exit 0、无 FAIL。
 
-### 2. 缺口判定（当前代码可执行）
+### 2. 缺口判定（实现后已失效，保留说明）
 
-1. `pwsh -NoProfile -Command "if (Select-String -Path 'lib\*.js' -Pattern 'storageState|addCookies|launchPersistentContext|userDataDir' -Quiet) { exit 1 } else { exit 0 }"`：exit 0，证明 `lib/` 内没有登录态读写能力（读取时点 2026-11-08；后续实现后本命令预期变成非 0，届时删除本条）。
-2. `pwsh -NoProfile -Command "if ((Select-String -Path 'lib\page.js' -Pattern 'browser.newPage').Count -ge 1) { exit 0 } else { exit 1 }"`：exit 0，证明 isolated 仍走 `browser.newPage`（每个标签页一个新 context，见 `createPage`；采纳 A 后本命令预期变成非 0，届时删除本条）。
+实现前用 `lib/*.js` 里是否出现 `storageState` 与 `lib/page.js` 是否仍走 `browser.newPage` 判定缺口；
+方案 A 落地后这两条命令的预期已反转（`storageState` 存在、`page.js` 不再出现 `browser.newPage` 作为标签页建页路径），
+故不再作为验收命令，改由第 4 组的 `tests/auth-state.mjs` 覆盖。
 
 ### 3. 决策记录（Lead 录入后）
 

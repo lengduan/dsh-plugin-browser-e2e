@@ -1650,10 +1650,27 @@ try {
     const { buildToolTable } = await import('../lib/tools.js')
     const table = buildToolTable({ ctx: { get: () => undefined }, launchDefaults: () => ({}) })
     check('注册的工具与工具表逐项一致', JSON.stringify(names) === JSON.stringify(table.map((definition) => definition.name)), JSON.stringify(names))
-    check('工具表共 32 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / follow_tab / history）', table.length === 32 && names.length === 32, String(table.length))
+    check('工具表共 33 个（含 read / fetch / http / dialog / clipboard / assert / recipe / human / doctor / follow_tab / history）', table.length === 33 && names.length === 33, String(table.length))
     check('工具名唯一且统一带 browser_e2e_ 前缀', new Set(names).size === names.length
       && names.every((name) => name.startsWith('browser_e2e_')), JSON.stringify(names))
     const startTool = definitions.find((definition) => definition.name === 'browser_e2e_start')
+    check('start 的参数表含 storageState 与 storageDomains',
+      startTool.parameters.properties.storageState?.type === 'string'
+        && startTool.parameters.properties.storageDomains?.type === 'array'
+        && startTool.parameters.properties.storageDomains?.items?.type === 'string'
+        && startTool.parameters.additionalProperties === false
+        && !startTool.parameters.required.includes('storageState'),
+      JSON.stringify(startTool.parameters))
+    const authExportTool = definitions.find((definition) => definition.name === 'browser_e2e_auth_export')
+    check('auth_export 的参数表含 path / domains / overwrite 且 path 必填',
+      JSON.stringify(Object.keys(authExportTool?.parameters.properties ?? {}).sort())
+        === JSON.stringify(['domains', 'overwrite', 'path'])
+        && authExportTool.parameters.properties.path?.type === 'string'
+        && authExportTool.parameters.properties.domains?.type === 'array'
+        && authExportTool.parameters.properties.overwrite?.type === 'boolean'
+        && JSON.stringify(authExportTool.parameters.required) === JSON.stringify(['path'])
+        && authExportTool.parameters.additionalProperties === false,
+      JSON.stringify(authExportTool?.parameters))
     check('browser_e2e_start 的参数表含 carrier 枚举',
       JSON.stringify(startTool?.parameters.properties.carrier?.enum) === JSON.stringify(['edge', 'chrome', 'auto'])
         && startTool.parameters.properties.carrier?.type === 'string'

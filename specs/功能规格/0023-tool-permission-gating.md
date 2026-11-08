@@ -2,7 +2,7 @@
 
 状态: 已实现（方案 A）
 关联: specs/项目规格/0001-architecture-invariants.md（模块表、依赖方向、工具表单一来源、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表本项不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0006-plugin-config-and-live-apply.md（插件配置字段与即时生效口径）；specs/功能规格/0002-browser-launch-and-reuse.md（`start` / `close` 生命周期工具）；specs/功能规格/0004-snapshot-and-ref-table.md、0005-console-network-ring.md（纯观察能力的既有口径）；specs/功能规格/0008-cdp-attach.md（CDP 接管用户浏览器，方案 C 的冲突点）
-代码: 已落地：新增 `lib/gate.js`（纯函数：`ACCESS_KINDS` / `accessModeOf` / `allowScriptOf` / `accessOf` / `effectiveAccess` / `toolNamesWithAccess` / `decide`）；`lib/index.js` 的 Config 新增 `accessMode` / `allowScript`、`execute` 最开头门控早拒；`lib/tools.js` 的 32 个定义各加 `access`；`tests/gate.mjs`（新建，30 条用例）与 `package.json` 的 `test:unit`；`README.md`（配置表 / 工具权限门控节 / Known Limitations / 验证）；`specs/项目规格/0001`（模块表与依赖图）。不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
+代码: 已落地：新增 `lib/gate.js`（纯函数：`ACCESS_KINDS` / `accessModeOf` / `allowScriptOf` / `accessOf` / `effectiveAccess` / `toolNamesWithAccess` / `decide`）；`lib/index.js` 的 Config 新增 `accessMode` / `allowScript`、`execute` 最开头门控早拒；`lib/tools.js` 的 33 个定义各加 `access`；`tests/gate.mjs`（新建，30 条用例）与 `package.json` 的 `test:unit`；`README.md`（配置表 / 工具权限门控节 / Known Limitations / 验证）；`specs/项目规格/0001`（模块表与依赖图）。不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
 本项原判定为「**影响大 → 待决策**」，已于 2026-11-08 决策采纳方案 A 并实现；下文「方案 A 的目标契约」即当前实现契约。判定依据见 `.scratch/browser-plugin-survey/plans/15-tool-permission-gating.md` §1 与 §6.1。
 
@@ -19,7 +19,7 @@
 ## 决策记录
 
 - 2026-11-08：采纳**方案 A**（`accessMode` 两档 `full` / `readonly` + `allowScript` + 工具表 `access` 定性 + `execute` 早拒）；默认 `accessMode=full` / `allowScript=true`，默认不改变现有行为；`readonly` 下 `navigate` 按 `observe` 放行（否则只读模式无法开页）；**不做**注册期裁剪（候选 B），模型仍看得见全部工具，靠拒绝文案引导。B / C / D / E 均不采纳。
-- 2026-11-08：已实现。实现时的定性按 `buildToolTable()` 的实际 32 个工具派生（`observe` 18 / `interact` 13 / `script` 1），`http` 按 `interact` 定性（它能发 POST / PUT / DELETE 等写请求，虽不派发页面输入事件）；`history` 按 `observe`。`tests/gate.mjs` 覆盖 30 条用例，`npm run test:unit` 已纳入。
+- 2026-11-08：已实现。实现时的定性按 `buildToolTable()` 的实际工具条数派生（当时 32 个：`observe` 18 / `interact` 13 / `script` 1；登录态导出（`0021` 方案 A）落地后为 33 个：`observe` 19 / `interact` 13 / `script` 1），`http` 按 `interact` 定性（它能发 POST / PUT / DELETE 等写请求，虽不派发页面输入事件）；`history` 按 `observe`。`tests/gate.mjs` 覆盖 30 条用例，`npm run test:unit` 已纳入。
 
 ## 行为
 
@@ -49,7 +49,7 @@
 
 | `access` | 工具 | 数量 | 判据 |
 |---|---|---|---|
-| `observe` | `start`、`navigate`、`tabs`、`close_tab`、`snapshot`、`screenshot`、`console`、`network`、`network_detail`、`wait`、`close` | 11 | 不向页面派发输入事件、不在页面上下文执行调用方给的脚本。`navigate` 只发一次导航请求（GET），算观察；`close_tab` / `close` / `start` 是会话生命周期，与面板允许人关页一致 |
+| `observe` | `start`、`auth_export`、`navigate`、`tabs`、`close_tab`、`snapshot`、`screenshot`、`console`、`network`、`network_detail`、`wait`、`close` | 12 | 不向页面派发输入事件、不在页面上下文执行调用方给的脚本。`navigate` 只发一次导航请求（GET），算观察；`auth_export` 只读会话登录态并写宿主磁盘（文件写入不是页面动作）；`close_tab` / `close` / `start` 是会话生命周期，与面板允许人关页一致 |
 | `interact` | `click`、`fill`、`hover`、`drag`、`upload`、`scroll`、`press` | 7 | 向页面派发真实鼠标 / 键盘 / 文件事件，或触发页面事件处理器 |
 | `script` | `evaluate` | 1 | 在页面上下文执行任意 JS |
 
@@ -140,7 +140,7 @@
 1. 纯函数归一：`accessMode 缺失按 full`、`accessMode 合法值原样`、`accessMode 非法值按 readonly 并标记 illegal`、`allowScript 缺失按 true`、`allowScript 合法值原样`、`allowScript 非法值按 false 并标记 illegal`、`缺 access 的工具按 interact`。
 2. 定性完整：`工具表的每个工具都有合法 access`、`定性分布非空且 observe / interact / script 都有`、`evaluate 是唯一的 script 类工具`、`wait 默认是 observe，带 expression 时升级为 script`。
 3. 缺省放行：`缺省配置下 interact / script 工具都不被门控拒绝`、`缺省配置下 accessMode 为 full / allowScript 为 true`。
-4. 只读模式：`readonly 拒绝全部 interact 工具（13 个）`、`readonly 放行全部 observe 工具（18 个）`、`readonly 拒绝 evaluate`、`readonly 拒绝 wait 的 expression 条件`、`readonly 下 wait 的 selector 条件放行`、`拒绝文案含工具名 accessMode=readonly 与可用工具清单`、`被拒调用不进入 run（不创建会话）`。
+4. 只读模式：`readonly 拒绝全部 interact 工具（13 个）`、`readonly 放行全部 observe 工具（19 个）`、`readonly 拒绝 evaluate`、`readonly 拒绝 wait 的 expression 条件`、`readonly 下 wait 的 selector 条件放行`、`拒绝文案含工具名 accessMode=readonly 与可用工具清单`、`被拒调用不进入 run（不创建会话）`。
 5. 脚本开关：`full + allowScript=false 拒绝 evaluate`、`full + allowScript=false 拒绝 wait 的 expression 条件`、`full + allowScript=false 时 click 仍放行`、`full + allowScript=true 放行 evaluate`。
 6. 脏值 fail-closed：`accessMode 非法值按 readonly 处理`、`allowScript 非法值按 false 处理`。
 7. 即时生效：`改配置后下一次调用即按新值判定（无需重启）`。
