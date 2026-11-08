@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/snapshot.js / lib/observation.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/errors.js / lib/hash.js / lib/viewport.js / lib/auth.js / lib/history.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/snapshot.js / lib/observation.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/errors.js / lib/hash.js / lib/viewport.js / lib/auth.js / lib/history.js / lib/gate.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -50,6 +50,7 @@
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/history.js` | 动作历史的落盘与脱敏：路径解析、脱敏纯函数、JSONL 追加与有界裁剪、读回；导出 `DEFAULT_HISTORY_LIMIT` / `MAX_HISTORY_LIMIT` / `HISTORY_MAX_ENTRIES` / `HISTORY_PRUNE_SLACK` / `HISTORY_SUMMARY_LIMIT` / `SENSITIVE_ARGS` / `actionHistoryPath` / `historyEnabled` / `redactActionSummary` / `appendAction` / `listActions` | 面板广播、协议、会话状态、页面能力、工具定义 |
 | `lib/human.js` | 人机协同等待：页内人机验证探测、轮询判定与完成信号（`humanCheck` / `waitForHuman`） | 会话生命周期、面板、工具定义 |
+| `lib/gate.js` | 工具级权限门控的纯函数层：配置归一（缺失取默认、非法 fail-closed）、工具定性读取（缺失按 `interact`）、`wait + expression` 的按参数升级、判定与拒绝文案；不做 I/O、不碰会话状态 | 会话状态、页面能力、面板、协议 |
 | `lib/screencast.js` | CDP 投屏适配器（帧源之一） | 面板状态 |
 | `lib/tools.js` | 32 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
@@ -61,7 +62,7 @@
 
 ```
 tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js
-index.js → tools.js / panel.js / session.js / auth.js / history.js / defaults.js / protocol.js
+index.js → tools.js / panel.js / session.js / auth.js / history.js / gate.js / defaults.js / protocol.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
 page.js → auth.js / invariants.js / viewport.js
@@ -78,7 +79,7 @@ screencast.js → protocol.js
 capture.js → protocol.js / viewport.js
 history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回调会话层，不 import 页面能力）
 doctor.js → session.js / capture.js / defaults.js
-protocol.js / invariants.js / fence.js / defaults.js / errors.js / hash.js / viewport.js → （无内部依赖）
+protocol.js / invariants.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js → （无内部依赖）
 ```
 
 `tools.js` 直接 import 12 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor），另加拆分出来的 snapshot / observation 两个能力模块（共 14 个），新增能力时同步本图。
@@ -347,8 +348,9 @@ closed：终态，任何事件非法
 - 转移函数 `nextSessionState(state, event)` 纯函数：只读两个参数，不读全局 `Map`，非法转移抛错；
   `tests/invariants.mjs` 覆盖全部合法 / 非法组合。
 - 启动收尾（`launch` 的 `finally` 分支）发现会话已是 `closing` 时，必须走 `closeSettled`：先按
-  本次目标 mode 拆掉已建立的浏览器（isolated 强制结束进程、cdp 只断连），再把 `closing` 收成
-  `closed`，不留半初始化会话与孤儿进程。注意这不是给转移表加边：`closing --launchSettled-->`
+  本次目标 mode 拆掉已建立的浏览器（isolated 走 `closeBrowser`，超时只如实记录、不强杀进程，
+  见下文「关闭兜底」；cdp 只断连），再把 `closing` 收成 `closed`，不留半初始化会话与孤儿进程。
+  注意这不是给转移表加边：`closing --launchSettled-->`
   仍非法（`tests/invariants.mjs` 的非法转移用例覆盖），`launchSettled` 只在非关闭路径上使用。
 - `ready` 表示「浏览器可用」，允许 0 个标签页；标签页增删不改会话状态，0 页是可恢复态：
   页面工具（`assertBrowserRunning` / `assertCurrentTabAvailable`）仍报「浏览器尚未启动」，
@@ -373,8 +375,10 @@ closed：终态，任何事件非法
 2. **会话回收**：`session/disposed` 按 `session.id` 经 `keyBySessionId` 精确关闭。
 3. **卸载回收**：插件卸载 / 热替换时 `closeAll()`。
 
-关闭兜底：`DSH_BROWSER_CLOSE_TIMEOUT_MS`（默认 5000）到点强制结束主进程，避免 graceful close 挂死；
-CDP 模式只断连，绝不结束用户浏览器进程。
+关闭兜底：`DSH_BROWSER_CLOSE_TIMEOUT_MS`（默认 5000）到点后放弃等待，保证关闭路径一定有返回；
+但 Playwright 的 `Browser` 没有结束进程的接口（`process()` 只存在于 `BrowserServer` / `ElectronApplication`），
+所以超时后**无法强制结束进程**，`close` 返回 `timedOut: true`，摘要明确写「进程可能仍在运行，请手动结束」，
+不谎称已关闭。CDP 模式只断连，绝不结束用户浏览器进程。
 
 ## P4：实现层调用图（切口核对）
 

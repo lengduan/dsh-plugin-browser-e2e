@@ -101,6 +101,25 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `browser_e2e_history` | 读取本机动作历史（宿主落盘、已脱敏）：每次 `browser_e2e_*` 调用结束写一条，按时间倒序返回 `#seq` / UTC 时间 / 工具名 / 摘要；`limit` 1-200（默认 20）、`tool` 精确过滤、`ok` 只取成功 / 失败、`scope=self`（默认，只看本会话）/ `all`（含同机其它会话）；不依赖浏览器，读历史本身不写入历史 |
 | `browser_e2e_close` | 关闭本会话的浏览器实例；CDP 模式只断开连接，不结束浏览器进程、不关标签页 |
 
+### 工具权限门控（accessMode / allowScript）
+
+两个插件配置项把工具收窄成「只读验证」，挡的是模型误点，不是恶意模型：
+
+| 档位 | 放行 | 拒绝 |
+|---|---|---|
+| `accessMode=full`（默认） | 全部工具 | 无（`allowScript=false` 时另拒脚本类） |
+| `accessMode=readonly` | 观察类工具 | 会向页面派发真实输入的工具、脚本类工具 |
+
+工具的定性写在 `lib/tools.js` 的每个定义上（`access` 字段），只有三类：
+
+- `observe`：不向页面派发输入、不跑调用方脚本——`start` / `navigate` / `tabs` / `close_tab` / `follow_tab` / `snapshot` / `read` / `screenshot` / `fetch` / `console` / `network` / `network_detail` / `wait` / `captcha_check` / `assert` / `doctor` / `history` / `close`。
+- `interact`：派发鼠标 / 键盘 / 文件事件或触发页面事件处理器——`click` / `fill` / `hover` / `drag` / `upload` / `scroll` / `press` / `clipboard` / `download` / `dialog` / `wait_for_human` / `recipe` / `http`。
+- `script`：在页面上下文执行任意 JS——`evaluate`；`wait` 带 `expression` 条件时也按脚本处理。
+
+被拒调用在 `definition.run` 之前抛错：不产生页面动作、不刷新空闲计时、不写会话 / 标签页状态；面板仍收到一条 `被拒绝：<原因>` 动作摘要。拒绝文案里会列出只读模式可用的工具清单。
+
+两种档位都即时生效（`.volatile()`），保存设置后下一次调用即按新值判定，不需要重启 profile。缺失取缺省（`full` / `true`），存在但不合法时取更严的一端（`readonly` / `false`）并输出一次 warn。
+
 ### 逐键输入（mode=keystrokes）
 
 `browser_e2e_fill` 默认 `mode=insert`，一次写入并替换原值。受控组件（React / Vue）、掩码输入、防抖输入以及只监听 keydown / keypress / keyup 的输入框，需要真人逐键路径时传 `mode=keystrokes`：先 `fill('')` 清空（产生 1 次 Delete），再 `pressSequentially` 逐字符按键；`delayMs`（0-1000，默认 0）控制相邻按键之间的等待。
@@ -338,7 +357,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 配置
 
-插件级 Config 共 6 个字段，全部声明为即时字段（`.volatile()`）：设置页保存时宿主只替换配置引用并广播 `loader/volatile-update`，不重载插件，因此 `apply` 里读到的是 `{ get() }` 引用，每次取值都取当前快照。
+插件级 Config 共 8 个字段，全部声明为即时字段（`.volatile()`）：设置页保存时宿主只替换配置引用并广播 `loader/volatile-update`，不重载插件，因此 `apply` 里读到的是 `{ get() }` 引用，每次取值都取当前快照。
 
 | 字段 | 区间 / 默认值 | 生效路径 |
 |---|---|---|
@@ -348,6 +367,8 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 | `maxWidth` | 整数 100-4096，默认 1280 | 面板投屏初始参数 |
 | `maxHeight` | 整数 100-4096，默认 800 | 面板投屏初始参数 |
 | `everyNthFrame` | 整数 1-10，默认 1 | 面板投屏初始参数 |
+| `accessMode` | `full` / `readonly`，默认 `full` | 工具权限档位：`readonly` 只放行观察类工具，拒绝会向页面派发输入的工具 |
+| `allowScript` | 布尔，默认 `true` | 是否允许页面脚本求值（`browser_e2e_evaluate` 与 `browser_e2e_wait` 的 `expression` 条件） |
 
 在 profile 的 `cordis.patch.yml` 里按行 id 覆盖（patch 是整行替换、不深合并，必须重述该行全部键）：
 
@@ -360,9 +381,12 @@ dsh plugin --profile desktop remove dsh-browser-e2e
     maxWidth: 1280
     maxHeight: 800
     everyNthFrame: 1
+    accessMode: full
+    allowScript: true
 ```
 
 - **首次启动默认值**：`apply` 把 `defaultMode` / `cdpEndpoint` 整理成 `launchDefaults` 交给 `launch`。工具显式传参优先；已启动会话的一致性校验只看工具显式参数，配置默认值不会让运行中的会话报「mode 不一致」。`mode` 只认 `isolated` / `cdp`，端点必须非空，非法值当作未配置。
+- **门控两项的脏值口径与投屏四项相反**：`accessMode` / `allowScript` 缺失取缺省（`full` / `true`），存在但不合法时取更严的一端（`readonly` / `false`）并由 `apply` 输出一次 warn。原因是安全向配置「读不懂」不得解析为「允许」。
 - **面板投屏初始参数**：插件加载时 `new PanelHub({ config: screencastConfigOf(config) })`，`PanelHub` 构造里用 `initialConfigOf` 按 `PANEL_CONFIG_LIMITS` 逐字段校验，缺失或越界回退 `DEFAULT_SCREENCAST_CONFIG`（70 / 1280 / 800 / 1），一处脏值不会把面板整个卡死。投屏四项在 Config schema 里不设默认值，区间与默认值只在 `lib/protocol.js` 一处定义，客户端构建时从同一份注入。
 - **运行中保存**：设置页保存触发 `loader/volatile-update` 后，`lib/index.js` 重读配置并调用 `hub.applyConfig`；与当前设置比较后，有变化先按新参数重开投屏再广播 `state`，无变化直接返回。
 
@@ -374,7 +398,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 2. **会话回收**：`session/disposed` 时按 `session.id` 精确关闭对应浏览器。
 3. **卸载回收**：插件卸载或热替换时关闭全部浏览器。
 
-关闭本身也有兜底：Edge 偶发在 graceful close 阶段卡住（进程已退出但 Playwright 等不到退出事件），`DSH_BROWSER_CLOSE_TIMEOUT_MS`（默认 5000）到点后直接结束主进程，避免关闭调用永久挂起。空闲回收计时由 launch 接管（启动过程不装计时器），启动耗时长于 `DSH_BROWSER_IDLE_MS` 时不会被当成闲置在启动中回收。
+关闭本身也有兜底：Edge 偶发在 graceful close 阶段卡住（进程已退出但 Playwright 等不到退出事件），`DSH_BROWSER_CLOSE_TIMEOUT_MS`（默认 5000）到点后不再等待，关闭调用一定有返回。但 Playwright 的 `Browser` 不提供结束进程的接口（`process()` 只在 `BrowserServer` 上，`Browser` 没有），所以超时后**无法强制结束进程**：`browser_e2e_close` 会在摘要里明确提示「关闭超时，进程可能仍在运行，请手动结束」，不会谎称已关闭。空闲回收计时由 launch 接管（启动过程不装计时器），启动耗时长于 `DSH_BROWSER_IDLE_MS` 时不会被当成闲置在启动中回收。
 
 ### 环境变量与产物目录
 
@@ -451,6 +475,9 @@ node tests/client-bundle.mjs
 
 # 投屏串行队列与面板命令串行队列（假 CDP，不启动浏览器）
 node tests/screencast.mjs
+
+# 工具权限门控：缺省放行 / 只读拒绝 / 脚本开关 / 配置脏值 / 定性完整 / 即时生效（纯函数 + 假 ctx）
+node tests/gate.mjs
 
 # 面板宿主半区：围栏 / 设置 / 工具参数契约 / 真实 Edge + WebSocket 端到端协议（含 close-tab）
 node tests/panel.mjs
@@ -566,6 +593,7 @@ npm run test:integration
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **工具门控是软护栏，不是安全边界** —— `accessMode=readonly` 挡的是模型误点，不是恶意模型：`navigate` 仍会发出真实导航请求（GET 可能带副作用，如退出登录），页面自身脚本照常执行，`allowScript=true` 时脚本也能绕过交互限制。门控配置是插件级、进程级，所有会话共享一份。要模型改不掉的限制只能靠 profile 配置文件，而配置文件在宿主侧，本插件不校验其完整性。
 - **同一会话的并发启动** —— 同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例，不会并行拉起第二个浏览器；若等待期间会话被 close，后到者收到「浏览器已关闭（启动与关闭并发）」并提示重新启动。
 - **快照 4000 上限的体积** —— 全 DOM 逐节点返回并附一行缩进文本，上限 4000 条。实测 4100 个简单 div 的页面返回 4000 条，模型可见文本 193,317 字节（约 189 KB）；DOM 更复杂时体积更大，会明显占用上下文。`delta: true` 与 `query` 可压缩模型可见文本，但 delta 只对比前 4000 个可见节点，4000 条以外的节点不参与对比也不进基线；delta 与 query 的正文各 20000 字符上限，delta 的 removed 列表最多逐条列 200 个。
 - **快照脚本 15 秒超时不可终止** —— 单次快照的页面脚本在宿主侧有 15000ms 超时，超时后本次调用报错，但页面脚本本身无法被终止，可能继续占用页面线程并让后续 `evaluate` 排队；遇到同步死循环页面请稍后重试或改用 `browser_e2e_evaluate` 小范围读取。扫描上限 20000 个元素，超过时 `scanTruncated` 为真且 `total` 表示已扫描到的可见元素数。
