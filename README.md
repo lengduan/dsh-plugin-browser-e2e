@@ -346,8 +346,9 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 - **实时画面**：宿主半区对当前 tab 走 CDP `Page.startScreencast`，`Page.screencastFrame` 的 JPEG 帧经 WebSocket 推给面板，面板用 `<img src="data:image/jpeg;base64,...">` 逐帧替换；每帧都回 `Page.screencastFrameAck`，否则浏览器不再推下一帧。页面不变时没有新帧，这是协议本身的行为。
 - **tab 条**：仅当页面数大于 1 时显示；每个页面一个 tab，id 是「会话 key#tab_id」的组合 id（`example-session#t1`），可切换、可点 × 关闭（只剩一个页面时协议返回 `last-tab`）；tab 文字取页面标题，取不到回退「浏览器画面」，加载中的 tab 附带「加载中」标记。
 - **右栏 chip**：右侧栏 `browser-e2e` tab 的标题跟着当前页面标题走。面板 body 从 `state.tabs` 里取当前选中 tab 的 `title`，写进按 `sessionId` 分槽的 liveTitle 通道，chip 用 `useSyncExternalStore` 订阅读出；导航、切 tab、标题变化都会更新，取不到标题时回退「浏览器画面」。
-- **工具条**：连接状态灯、模式 chip（「隔离」/「CDP 接管」，CDP 时右侧附带端点，均取自当前选中 tab 所属会话的实际 mode / endpoint）、只读地址栏（`readOnly`，聚焦时自动全选，无页面时显示「无页面」）、刷新按钮、历史按钮。
+- **工具条**：连接状态灯、模式 chip（「隔离」/「CDP 接管」，CDP 时右侧附带端点，均取自当前选中 tab 所属会话的实际 mode / endpoint）、只读地址栏（`readOnly`，聚焦时自动全选，无页面时显示「无页面」）、刷新按钮、历史按钮、复制画面按钮。
 - **刷新按钮**：静态页面不会产生新帧，点刷新由宿主直接截一帧 JPEG，保证「按一下就有画面」。
+- **复制画面**：把当前帧转成 PNG 写进系统剪贴板（`navigator.clipboard.write`），方便直接粘到别处；没有帧时按钮禁用，成功后按钮短暂显示「已复制」，失败在 errorBanner 位置显示一行 `复制画面失败：<原因>`（`data-dsh-part="copy-error"`）。这是纯客户端能力，不发协议命令、不动页面状态。
 - **设置卡片**：`quality`(10-100)、`maxWidth`(100-4096)、`maxHeight`(100-4096)、`everyNthFrame`(1-10)，输入后客户端按区间取整 clamp，再经 socket `configure` 推给宿主（宿主 `mergeConfig` 再校验一次，非整数或越界报错）；只改宿主进程内的 `PanelHub` 配置，不写回 profile，插件重载后回到插件 Config 的值。
 - **动作提示**：每次 `browser_e2e_*` 工具调用后，面板收到一条 `action` 事件（工具名 + 一句话摘要），动作提示里显示最近 5 条，新的在前。同一份摘要还会由宿主追加到动作历史文件（写入前脱敏），可用 `browser_e2e_history` 读回，见「动作历史落盘」。
 - **历史抽屉**：点工具条的「历史」按钮把画面区换成操作历史抽屉，可回看本次面板会话内最近 50 条动作（时间 + 工具名 + 摘要，新的在前，行内 ellipsis 截断、`title` 给全文）；再点抽屉里的「关闭」回画面。历史只在前端内存，刷新面板或卸载组件后清空；无动作时打开显示「还没有动作」。宿主侧的持久副本由 `browser_e2e_history` 读回，抽屉不读它。
