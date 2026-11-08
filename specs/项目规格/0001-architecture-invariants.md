@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: ../功能规格/0001-client-entry-activation-failure.md（客户端注册面）；0002-panel-protocol-v1.md（面板协议契约）
-代码: lib/invariants.js / lib/session.js / lib/page.js / lib/snapshot.js / lib/observation.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/auth.js / lib/history.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
+代码: lib/invariants.js / lib/session.js / lib/page.js / lib/snapshot.js / lib/observation.js / lib/capture.js / lib/download.js / lib/fetch.js / lib/raw.js / lib/errors.js / lib/hash.js / lib/viewport.js / lib/auth.js / lib/history.js / lib/tools.js / lib/protocol.js / lib/defaults.js / lib/panel.js / lib/index.js / lib/screencast.js / lib/fence.js / client/index.js / lib/client.js（构建产物） / tests/invariants.mjs
 
 ## 需求
 
@@ -33,13 +33,16 @@
 | `lib/invariants.js` | 跨调用不变量断言函数；每个函数配「违反后果」注释；全部纯函数 | 入参校验、I/O、读全局 Map |
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`doctor.js` 的端点缺省与修法文案、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
+| `lib/errors.js` | Playwright 异常判定：`isTimeoutError`（错误名 `TimeoutError`，或文案匹配 `timeout ... exceeded`）；`fetch.js` / `raw.js` / `download.js` 的请求与导航超时共用这一份 | 运行时状态、I/O、各能力模块的报错文案与重试策略 |
+| `lib/hash.js` | 摘要：`sha256Of(buffer)` 返回十六进制 SHA-256；`observation.js` 的网络正文、`raw.js` 的 HTTP 正文、`download.js` 的整包读入共用。流式摘要（`streamToFd` 逐块 `update`）是不同环节，不在本模块 | 运行时状态、I/O、流式 hash |
+| `lib/viewport.js` | 视口基准尺寸：`viewportBounds(page, viewport)`——有固定视口用视口，否则取页面实际内尺寸（`innerWidth` / `innerHeight` 兜底），页内取值异常返回 `null`；`page.js` 的坐标校验与 `capture.js` 的 clip 边界、截图基准尺寸共用 | 标签页生命周期、坐标与截图尺寸的校验规则、截图参数 |
 | `lib/session.js` | 会话注册表（`Map`）、显式状态机、`launch/close/closeTab/closeBySessionId/closeAll`、空闲与关闭兜底计时、面板事件总线、`tabs/listPanelTabs/panelPage`、`activeSessionKeys`（只读会话 key 列表，`doctor.js` 用来给当前会话做只读视图）、`peekSession`（只读会话视图，不创建会话、不刷新空闲计时）；导出 `normalizeCdpEndpoint` 与 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS` 供诊断复用 | 页面能力、截图落盘、鉴权补票 |
-| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环的写入（console / network 环形缓冲、`networkContext`、ref 表）、快照基线的持有与失效（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch，`invalidateBaselines` 在导航与 frame 换文档时调用）、`navigate`、`followTab`（默认标签页绑定与用户当前页判定）、`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/assertPage/evaluate`、对话框策略与记录的写入（`dialogPolicy` / `dialogPromptText` / `dialogRing` 字段与 `page.on('dialog')` 应答）、`titleOf`、展示格式化与视口度量（`nowAt` / `pushRing` / `truncateText` / `timeOf` / `oneLine` / `viewportBounds`）；console 级别的归一与排序位次（`CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES` / `normalizeConsoleLevel` / `consoleLevelRank`）为事件环的共用口径，留在本文件导出、由 `observation.js` 单向借用 | 落盘、协议、面板连接、结构化读取（`lib/read.js`）、快照引擎（`lib/snapshot.js`）、事件环的只读视图与网络正文（`lib/observation.js`） |
+| `lib/page.js` | 标签页条目与生命周期（`addPage/removePage/currentTab/createPage`、`attachPageHooks`）、事件环的写入（console / network 环形缓冲、`networkContext`、ref 表）、快照基线的持有与失效（`snapshotBaselines`：delta 的 key / 摘要 / ref / epoch，`invalidateBaselines` 在导航与 frame 换文档时调用）、`navigate`、`followTab`（默认标签页绑定与用户当前页判定）、`/click/fill/hover/drag/upload/clipboard/scroll/press/waitFor/assertPage/evaluate`、对话框策略与记录的写入（`dialogPolicy` / `dialogPromptText` / `dialogRing` 字段与 `page.on('dialog')` 应答）、`titleOf`、展示格式化（`nowAt` / `pushRing` / `truncateText` / `timeOf` / `oneLine`）；console 级别的归一与排序位次（`CONSOLE_LEVELS` / `CONSOLE_LEVEL_ALIASES` / `normalizeConsoleLevel` / `consoleLevelRank`）为事件环的共用口径，留在本文件导出、由 `observation.js` 单向借用 | 落盘、协议、面板连接、结构化读取（`lib/read.js`）、快照引擎（`lib/snapshot.js`）、事件环的只读视图与网络正文（`lib/observation.js`）、视口度量（`lib/viewport.js`） |
 | `lib/snapshot.js` | DOM 快照引擎与快照能力：页内扫描脚本（`snapshotScript`）、ref 分配、delta / query / frame 分支（`runFullSnapshot` / `runDeltaSnapshot` / `runQuery` / `resolveSnapshotFrame` / `assertSameOriginFrame`）、快照基线的比较与文本整形（字段摘要、节点行格式化、文本截断）、`SNAPSHOT_*` 常量 | 标签页生命周期、事件环写入、交互动作、网络正文、协议、面板 |
 | `lib/observation.js` | 事件环的只读视图与网络正文：console / network 读取（`consoleEntries` / `networkEntries`）、level 过滤视图、对话框策略与记录读取（`setDialogPolicy` / `dialogEntries`）、网络详情与正文解码（`networkDetail` / `bodyViewOf` / `decodeText`）、敏感头脱敏（`SENSITIVE_HEADERS` / `REDACTED_HEADER_VALUE`）、`NETWORK_BODY_*` 常量 | 标签页生命周期、事件环写入、快照、交互动作、协议、面板、落盘 |
 | `lib/read.js` | 结构化页面读取：页内扫描 controls / links / tables / forms，唯一 CSS selector 生成与校验，记录整形与文本预算（`readStructured`） | 生命周期、事件环、ref 表、交互动作、截图、面板 |
 | `lib/recipe.js` | 多步声明式步骤编排：一级参数校验、按序执行与总预算、逐步汇总与输出截断（`normalizeRecipe` / `runRecipe` / `renderRecipeReport`）；页面交互一律复用 `page.js` 的既有能力函数，只 `extract` 一种只读页内取值为自带固定脚本 | 生命周期、页面能力实现、事件环、协议、面板 |
-| `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录（`artifactsRoot` 单一定义，`ensureArtifactsDir` 由它派生）、单次 JPEG 帧（`captureJpeg(page, options)`） | 面板连接、会话注册表 |
+| `lib/capture.js` | 截图参数与尺寸校验、clip / 倍率、产物目录（`artifactsRoot` 单一定义，`ensureArtifactsDir` 由它派生）、单次 JPEG 帧（`captureJpeg(page, options)`）、JPEG quality 区间常量（`MIN_SHOT_QUALITY` / `MAX_SHOT_QUALITY`）；视口基准尺寸复用 `lib/viewport.js` 的 `viewportBounds` | 面板连接、会话注册表、视口度量的实现 |
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
 | `lib/fetch.js` | 临时页抓取与正文提取：临时页开 / 关（经 `createTransientPage`）、导航与稳定等待、标题与正文提取、字符预算与截断（`fetchText`） | 会话生命周期、标签页登记、ref 表、事件环、截图、面板 |
 | `lib/raw.js` | 原始 HTTP 逃生口（仅 `mode=context`）：用当前标签页所属浏览器上下文的请求客户端发任意方法 / 头 / 正文，文本与二进制正文分支、重定向与字符截断（rawHttp）；敏感响应头脱敏不在此定义，`redactHeaders` 复用 `observation.js` 的 `SENSITIVE_HEADERS` / `REDACTED_HEADER_VALUE`（`page.js` 的 `networkDetail` 用同一份）；原始 CDP 与服务端直连模式未实现（见 `0003-未处理项.md` #9） | 会话生命周期、标签页登记、事件环、ref 表、快照、投屏、面板、落盘 |
@@ -61,21 +64,21 @@ tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / r
 index.js → tools.js / panel.js / session.js / auth.js / history.js / defaults.js / protocol.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
 session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js
-page.js → auth.js / invariants.js
+page.js → auth.js / invariants.js / viewport.js
 snapshot.js → page.js（只借 currentTab / withTimeout；当前未使用 invariants.js）
-observation.js → page.js（只借 currentTab、级别归一、展示格式化与环常量）
+observation.js → page.js（只借 currentTab、级别归一、展示格式化与环常量）/ hash.js
 read.js → page.js
 recipe.js → page.js
-download.js → page.js / capture.js
-fetch.js → page.js / read.js
-raw.js → page.js / observation.js
+download.js → page.js / capture.js / errors.js / hash.js
+fetch.js → page.js / read.js / errors.js
+raw.js → page.js / observation.js / errors.js / hash.js
 human.js → page.js
 auth.js → fence.js
 screencast.js → protocol.js
-capture.js → protocol.js
+capture.js → protocol.js / viewport.js
 history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回调会话层，不 import 页面能力）
 doctor.js → session.js / capture.js / defaults.js
-protocol.js / invariants.js / fence.js / defaults.js → （无内部依赖）
+protocol.js / invariants.js / fence.js / defaults.js / errors.js / hash.js / viewport.js → （无内部依赖）
 ```
 
 `tools.js` 直接 import 12 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor），另加拆分出来的 snapshot / observation 两个能力模块（共 14 个），新增能力时同步本图。
@@ -419,14 +422,19 @@ CDP 模式只断连，绝不结束用户浏览器进程。
 
 | 项 | 现状 | 未处置理由 |
 |---|---|---|
-| `page.js` 粒度过大 | 一期已处置（M2）：`snapshot.js` / `observation.js` 已拆出。拆分前后实测（HEAD `41957e9` → 本次）：`page.js` 4158 行 / 87 导出 → **2787 行 / 73 导出**；`snapshot.js` **880 行 / 4 导出**、`observation.js` **515 行 / 13 导出**。迁出的是快照引擎（含 delta / query / frame 与基线比较）与观察 / 网络正文（含 `SENSITIVE_HEADERS` / `decodeText`，B-A3 / B-A4 的归属随之落定）；`page.js` 保留标签页注册表与生命周期、`attachPageHooks` 的事件环写入、`snapshotBaselines` 失效、`navigate` / `followTab`、交互动作、等待、断言、剪贴板、`evaluate`、展示格式化与视口度量。 | 二期待办：`interaction` / `wait` / `assert` / `clipboard` / `evaluate` 仍在 `page.js`（约 1900 行、5 类变化原因），拆它们要再改一次模块表与依赖图，按 0003 的决策节奏另立批次；本表一期的拆法不覆盖这几块。 |
-| 视口度量三份 | `page.js` 的 `viewportBounds`、`capture.js` 的 `viewportBounds`、`capture.js` 内联的 `innerWidth/innerHeight` 兜底。 | 收敛需要新建公共模块或调整依赖方向（`capture.js` 现仅依赖 `protocol.js`），会改动本规格的依赖图，故留待拆分 `page.js` 时一并处理。 |
+| `page.js` 粒度过大 | 一期已处置（M2）：`snapshot.js` / `observation.js` 已拆出。拆分前后实测（HEAD `41957e9` → 本次）：`page.js` 4158 行 / 87 导出 → **2787 行 / 73 导出**；`snapshot.js` **880 行 / 4 导出**、`observation.js` **515 行 / 13 导出**。迁出的是快照引擎（含 delta / query / frame 与基线比较）与观察 / 网络正文（含 `SENSITIVE_HEADERS` / `decodeText`，B-A3 / B-A4 的归属随之落定）；`page.js` 保留标签页注册表与生命周期、`attachPageHooks` 的事件环写入、`snapshotBaselines` 失效、`navigate` / `followTab`、交互动作、等待、断言、剪贴板、`evaluate`、展示格式化。 | 二期待办：`interaction` / `wait` / `assert` / `clipboard` / `evaluate` 仍在 `page.js`（约 1900 行、5 类变化原因），拆它们要再改一次模块表与依赖图，按 0003 的决策节奏另立批次；本表一期的拆法不覆盖这几块。 |
+| 视口度量三份 | **已处置（M3）**：收敛到 `lib/viewport.js` 的单一 `viewportBounds`。实测（HEAD `ef93636` 工作区，M3 施工后）：定义 1 处（`lib/viewport.js`）；消费方 `lib/page.js` 1 处调用（`assertPointInViewport`）、`lib/capture.js` 2 处调用（clip 边界校验与 `shotBaseSize`）。`shotBaseSize` 的第三份内联改为调用同一函数，正常路径与原实现逐字等价；唯一差异是页内取值异常时该函数返回 `null`（原内联写法透传页面错误），只发生在页面已关闭 / 崩溃、截图本来也无法完成的路径。 | 已处置；保留行以便追溯。 |
 | `session.js` 粒度过大 | 约 680 行、16 个导出，混装四类变化原因：会话注册表与状态机、`launch`/`close` 与进程回收、面板事件总线、面板读模型（`panelPage`/`listPanelTabs`）与工具能力（`tabs`）。与 `page.js` 同性质。 | 面板读模型（`panelPage`/`listPanelTabs`）与事件总线是「面板视图」关注点，与浏览器生命周期无关，建议拆 `lib/view.js`；但 `sessions` Map 是私有状态，拆分需同时决定注册表暴露面，属本规格模块表变更，须先改规格。**处置前不得再往 `session.js` 加职责。** |
 | 串行队列两份 | `lib/panel.js` 与 `lib/screencast.js` 各有一份 enqueue/queue 实现（除队列字段名外逻辑相同）。 | 两者分属不同模块的私有同步原语，抽出公共模块会增加一条依赖边并改本规格依赖图，留待拆分 `session.js` / `page.js` 时一并评估。 |
 | 会话解析入口不统一 | 10 个工具用 `sessionOf`（会创建会话对象：navigate/snapshot/follow_tab/click/fill/scroll/press/screenshot/wait/evaluate），`console`/`network` 用 `requireSession`，`tabs`/`close_tab` 分别经 `listSessionTabs`/`closeTab` 内部读注册表（不创建）。未启动时前一类会留下 idle 会话条目，且报错文案不同（「浏览器尚未启动或没有可用标签页」vs「浏览器尚未启动，请先调用…」）。 | 行为差异只影响未启动时的会话表残留与文案，不影响已有会话；统一入口需要逐工具核对语义，留待后续。 |
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
 | client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
 | 工具描述里的 limit / timeoutMs 默认值 | 已处置（M1）：`wait` 的默认超时（`DEFAULT_WAIT_TIMEOUT_MS`）与 status 区间（`WAIT_STATUS_MIN` / `WAIT_STATUS_MAX`）、`console` / `network` 的默认 limit（`DEFAULT_RING_QUERY_LIMIT`）、`download` 的默认总预算（`DEFAULT_DOWNLOAD_TIMEOUT_MS`）、`assert` 条数（`ASSERT_MAX_CHECKS`）、`recipe` 的逐键延迟 / hover 等待（`KEYSTROKE_MAX_DELAY_MS` / `MAX_SETTLE_MS` / `DEFAULT_SETTLE_MS`）、`upload` 的 MiB 上限（`sizeText` 从字节常量派生）都改由能力模块导出的常量插值；`evaluate` 仍为 `DEFAULT_EVALUATE_TIMEOUT_MS` / `MIN_EVALUATE_TIMEOUT_MS` / `MAX_EVALUATE_TIMEOUT_MS`。 | 已处置；保留行以便追溯。 |
+| 进程回收环境变量的校验规则与默认值两套 | `session.js` 用 `Number(process.env.… ?? 默认值)` 直取（不校验，`DSH_BROWSER_CLOSE_TIMEOUT_MS=0` 直接生效、负数 / NaN 也照用）；`doctor.js` 另有一套校验（`integerTextOf` 后 `IDLE_CLOSE_MS` 要求非负整数、`CLOSE_TIMEOUT_MS` 要求正整数），修复文案仍写死「默认 600000 / 5000」。同一输入两者结论相反：`DSH_BROWSER_CLOSE_TIMEOUT_MS=0` 时 `session.js` 用 0（`setTimeout(…, 0)` 与 `browser.close()` 竞争），`doctor.js` 报 WARN「不是正整数」。 | 需要先定规格：0 / 负数是否合法、校验归 `session.js` 还是 `doctor.js`；收紧运行时校验会碰回收口径，留待单独一轮。 |
+| `recipe.js` 的 `STEP_FIELDS` 与 `tools.js` 的步骤 schema 两份手工同步 | `recipe.js` 的 `STEP_FIELDS` 是按步骤类型的运行期白名单（`normalizeStep` 用它拒绝未声明字段）；`tools.js` 的 `steps.items` 是扁平 `properties` + `additionalProperties: false`，不按步骤类型分组。两侧字段集合当前一致，靠注释互相提醒。 | 收敛成单一来源要改 `tools.js` 的 schema 生成方式（`oneOf` + `additionalProperties: false`），会改模型看到的参数形状，风险大于收益，留待单独一轮。 |
+| 页内脚本三套注入口径 | 函数序列化 + 参数（`read.js` / `snapshot.js` / clipboard）、字符串 IIFE（`human.js` 的 `humanProbeScript`）、字符串拼接表达式（`page.js` 的 `assertExpressionCheck`）；字符串脚本无法在模块解析期做语法检查。 | 属代码风格；页内脚本不能直接 import 普通函数，统一口径要逐个改页内脚本并跑真起 Edge 的回归，收益不抵风险。 |
+| 临时页机制在 `page.js`，业务消费者只有 `fetch.js` | `page.js` 持 `transientPages` / `pendingTransient` 与 `createTransientPage` / `isTransientPage` / `hasPendingTransientPage`；`fetch.js` 是唯一业务消费者，`session.js` 的 CDP `context.on('page')` 又依赖两个判定。 | 移动会造 `fetch → session` 或反向依赖（依赖图里没有 `session.js → fetch.js`）；`page.js` 不 import 会话层，故机制留在页面生命周期模块。 |
+| `visibleEnough` 三处页内脚本内联副本 | `snapshot.js` 的 `snapshotScript`、`page.js` 的 `assertSelectorCheck`、`read.js` 的 `readScript` 各一份同判据实现（assert 版与 read 版除 `rect` 取值位置外逐字相同）。 | 共享需把函数序列化成源码字符串再注入三个页内脚本，收益不抵风险；改可见性口径必须三处同改。 |
 
 ## 验收
 
@@ -442,6 +450,7 @@ CDP 模式只断连，绝不结束用户浏览器进程。
    - 改 `snapshot.js`：`npm run test:unit && node tests/snapshot.mjs && node tests/tools.mjs && node tests/read.mjs`。
    - 改 `observation.js`：`npm run test:unit && node tests/tools.mjs && node tests/dialog.mjs && node tests/fetch.mjs && node tests/raw-http.mjs`。
    - 改 `read.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
+   - 改 `errors.js` / `hash.js` / `viewport.js`：`npm run test:unit && node tests/tools.mjs && node tests/panel.mjs`。
    - 改 `history.js`：`node tests/invariants.mjs`（用例 M：纯函数 + 临时目录，不起浏览器）
      与 `node tests/panel.mjs`（真起无头 Edge，串行）。
    - 改 `fetch.js`：`npm run test:unit && node tests/fetch.mjs && node tests/tools.mjs && node tests/panel.mjs`。

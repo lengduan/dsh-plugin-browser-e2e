@@ -525,6 +525,7 @@ npm run test:integration
 编排层   index.js（注册/生命周期）        panel.js（面板状态与命令分发）
 实现层   session.js  page.js  snapshot.js  observation.js  read.js  capture.js  download.js  fetch.js  raw.js  auth.js  human.js  history.js  screencast.js
 公共     invariants.js（跨调用不变量）    fence.js（安全围栏）  defaults.js（全局默认值）
+         errors.js（超时判定）  hash.js（SHA-256）  viewport.js（视口基准尺寸）
 ```
 
 - `invariants.js` 只放「违反 = 跨调用状态损坏」的断言，且全部是纯函数；单次入参校验留在各能力函数入口。完整不变量清单、状态机与回收口径见 `specs/项目规格/0001-architecture-invariants.md`。
@@ -534,7 +535,7 @@ npm run test:integration
 - 新增工具只改 `lib/tools.js`；改协议只改 `lib/protocol.js` 并重新构建客户端。宿主半区是纯 JS，客户端 bundle 手写（不引入打包器）。
 - `package.json` 的 `files` 只含 `lib` 与 `cordis.patch.yml`，`client/`、`scripts/`、`tests/` 不会被安装进 profile。改了 `client/index.js` 必须重新跑 `node scripts/build-client.mjs`。
 
-源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/snapshot.js`（快照引擎）、`lib/observation.js`（事件环只读视图与网络正文）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/fetch.js`（浏览器内抓取）、`lib/raw.js`（原始 HTTP）、`lib/history.js`（动作历史落盘与脱敏）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`client/index.js`（面板 UI）。
+源码入口：`lib/tools.js`（工具表）、`lib/session.js`（状态机）、`lib/page.js`（页面能力）、`lib/snapshot.js`（快照引擎）、`lib/observation.js`（事件环只读视图与网络正文）、`lib/read.js`（结构化读取）、`lib/capture.js`（截图）、`lib/download.js`（下载）、`lib/fetch.js`（浏览器内抓取）、`lib/raw.js`（原始 HTTP）、`lib/history.js`（动作历史落盘与脱敏）、`lib/human.js`（人机验证与人工等待）、`lib/panel.js`（面板）、`lib/protocol.js`（协议）、`lib/errors.js`（Playwright 超时判定）、`lib/hash.js`（SHA-256 摘要）、`lib/viewport.js`（视口基准尺寸）、`client/index.js`（面板 UI）。
 
 </details>
 

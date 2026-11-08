@@ -43,6 +43,9 @@ import {
 } from '../lib/protocol.js'
 import { HEADER, injectProtocol, readSource } from '../scripts/protocol-inject.mjs'
 import { DEFAULT_CDP_ENDPOINT } from '../lib/defaults.js'
+import { isTimeoutError } from '../lib/errors.js'
+import { sha256Of } from '../lib/hash.js'
+import { viewportBounds } from '../lib/viewport.js'
 
 let pass = 0
 let fail = 0
@@ -1205,6 +1208,49 @@ delete process.env.DSH_BROWSER_HISTORY_FILE
 delete process.env.DSH_BROWSER_HISTORY
 delete process.env.DSH_BROWSER_HISTORY_MAX
 rmSync(historyRoot, { recursive: true, force: true })
+
+// 用例 L 被 console 级别、M 被动作历史占用，纯函数叶子模块顺延为用例 N。全部纯函数，不起浏览器。
+console.log('== 用例 N：纯函数叶子模块（errors / hash / viewport）==')
+await check('isTimeoutError：name=TimeoutError 判定为超时', () => {
+  assert.equal(isTimeoutError(Object.assign(new Error('boom'), { name: 'TimeoutError' })), true)
+})
+await check('isTimeoutError：文案含 timeout ... exceeded 判定为超时', () => {
+  assert.equal(isTimeoutError(new Error('page.waitForSelector: Timeout 30000ms exceeded.')), true)
+  assert.equal(isTimeoutError(new Error('Timeout 1000ms exceeded')), true)
+})
+await check('isTimeoutError：普通错误与空值不判超时', () => {
+  assert.equal(isTimeoutError(new Error('net::ERR_CONNECTION_REFUSED')), false)
+  assert.equal(isTimeoutError(new Error('timeout while connecting')), false)
+  assert.equal(isTimeoutError({ name: 'Error', message: '' }), false)
+  assert.equal(isTimeoutError(null), false)
+  assert.equal(isTimeoutError(undefined), false)
+})
+await check('sha256Of：空 Buffer 的已知向量', () => {
+  assert.equal(sha256Of(Buffer.alloc(0)), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+})
+await check('sha256Of：abc 的已知向量、十六进制形态与幂等', () => {
+  assert.equal(sha256Of(Buffer.from('abc')), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+  assert.match(sha256Of(Buffer.from('abc')), /^[0-9a-f]{64}$/)
+  assert.equal(sha256Of(Buffer.from('abc')), sha256Of(Buffer.from('abc')))
+})
+await check('viewportBounds：固定视口直接取视口，不调 evaluate', async () => {
+  let calls = 0
+  const page = { evaluate: async () => { calls += 1; throw new Error('不应调用 evaluate') } }
+  const viewport = { width: 800, height: 600 }
+  const bounds = await viewportBounds(page, viewport)
+  assert.deepEqual(bounds, { width: 800, height: 600 })
+  assert.notEqual(bounds, viewport, '应返回新对象，不把入参视口对象透传出去')
+  assert.equal(calls, 0)
+})
+await check('viewportBounds：无固定视口时取页面内尺寸', async () => {
+  const page = { evaluate: async () => ({ width: 800, height: 600 }) }
+  assert.deepEqual(await viewportBounds(page, null), { width: 800, height: 600 })
+  assert.deepEqual(await viewportBounds(page, undefined), { width: 800, height: 600 })
+})
+await check('viewportBounds：页内取值异常返回 null 而不抛出', async () => {
+  const page = { evaluate: async () => { throw new Error('Target page, context or browser has been closed') } }
+  assert.equal(await viewportBounds(page, null), null)
+})
 
 await closeAll()
 await check('收尾检查：会话注册表已清空', () => {
