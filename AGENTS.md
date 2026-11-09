@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本仓是 DeepSeek Harness（DSH）浏览器端到端验证插件：宿主半区 15 个 `browser_e2e_*` 工具 + 右侧实时浏览器面板。
+本仓是 DeepSeek Harness（DSH）浏览器端到端验证插件：宿主半区 30 个 `browser_e2e_*` 工具（以 `lib/tools.js` 工具表为准）+ 右侧实时浏览器面板。
 `README.md` 是给使用者的说明书；本文件只规定代理在本仓做事时的流程与固定约定。
 
 ## 做需求前先读规格
