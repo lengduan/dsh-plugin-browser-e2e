@@ -1,7 +1,7 @@
 # web_fetch 改接浏览器
 
 状态: 已实现（仅 B 切片）；A（宿主 provider 接管）已否决（2026-11-08）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖方向、工具表单一来源、会话级浏览器与进程回收三道兜底、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表本项不动）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（浏览器按会话隔离、isolated / cdp 差异、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（CDP 接管用户浏览器与登录态、close 只断连）；specs/功能规格/0016-download-integrity.md（既有「经当前浏览器上下文请求」的 url 模式，与本项的分工）；specs/功能规格/0017-structured-read.md（页面读取的既有分工与文本预算）；README.md「Summary」「工具一览」「Known Limitations and Deferred Work」
+关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖方向、工具表单一来源、会话级浏览器与进程回收三道兜底、`invariants.js` 边界）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表本项不动）；specs/项目规格/0003-决策记录.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（浏览器按会话隔离、isolated / cdp 差异、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（CDP 接管用户浏览器与登录态、close 只断连）；specs/功能规格/0016-download-integrity.md（既有「经当前浏览器上下文请求」的 url 模式，与本项的分工）；specs/功能规格/0017-structured-read.md（页面读取的既有分工与文本预算）；README.md「Summary」「工具一览」「Known Limitations and Deferred Work」
 代码: B 切片已落地：`lib/fetch.js`（新建，`fetchText`）/ `lib/page.js`（`createTransientPage` / `isTransientPage` / `addPage` 早退）/ `lib/session.js`（CDP `context.on('page')` 跳过临时页）/ `lib/tools.js`（`browser_e2e_fetch`，工具表 30 → 31）/ `README.md` / `docs/architecture.html` / `package.json` / `specs/项目规格/0001-architecture-invariants.md` / 本规格同步；测试面 `tests/fetch.mjs`（新建）/ `tests/cdp.mjs` / `tests/panel.mjs` / `tests/tools.mjs` / `tests/read.mjs` 已补。候选 A 未实现（`lib/fetch-provider.js` / `lib/index.js` 的 `inject` 与 provider 注册 / `cordis.patch.yml` / `package.json` / `tests/fetch-provider.mjs` 均未动）。两种候选都不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
 ## 需求
@@ -16,7 +16,7 @@
 2. **需要宿主 provider 接管**：要生效必须同时做两件事——(a) 在 `lib/index.js` 增加对 `ctx.web` 的依赖并调 `registerFetchProvider`（本仓当前 `inject` 只有 `tools`，且 `package.json` 未声明 `@deepseek-ai/dsh-web`）；(b) 在 `cordis.patch.yml` 按 id **整行替换**宿主 `web` 行（宿主 patch 不做深合并，必须重述 `searchProvider`），把 `fetchProvider` 钉到本插件 id。其中 (b) 属于 profile 配置层，不是工具面。
 3. **改宿主工具面语义**：宿主 `web_fetch` 的描述、输出 schema、系统提示（「web_fetch returns external, untrusted page content」）与错误码都归宿主所有。改钉 provider 后同名工具的**抓取语义**变成「浏览器渲染 + 会话 cookie」，且**没有回落**：宿主选择规则是「钉了 id 就只用它；钉的 id 已注册但 `available()` 为 false 报 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`」，浏览器不可用时该工具对所有会话直接失败（Tabbit 在 `cordis.patch.yml:70-72` 明确接受这个权衡）。
 4. **接口不匹配（硬冲突）**：宿主 `WebFetchProvider.fetch(request, signal)` 的请求体只有 `{ url }`（宿主类型声明 `WebFetchRequest` 只有 `readonly url: string`），**没有会话标识**；而本插件的浏览器是**按会话隔离**的（`lib/tools.js` 的 `sessionKey(exec)` 取 `agent.id`，`lib/session.js` 的 `sessions` 按 key 各一份，README「重置会话」：「`browser_e2e_close` 只关闭本 agent 会话的浏览器」）。provider 拿不到 calling agent，就无法知道该用哪个会话的浏览器；可选的变通（全局单浏览器 / 用 `tools/pre-execute` 记录当前 agent 再经异步上下文传递 / 取「最近一个 ready 会话」）分别是改载体定位、依赖未验证的异步上下文、跨会话泄漏登录态。
-5. **权限面与门控前置未落地**：经浏览器抓任意 URL 会带上真实 cookie（cdp 模式尤甚），需要 SSRF / 内网闸才谈得上「安全接管」；本仓门控（P1-14）本身仍未决策（`specs/项目规格/0003-未处理项.md` #3），本项不能先把抓取通道打开再补门。
+5. **权限面与门控前置未落地**：经浏览器抓任意 URL 会带上真实 cookie（cdp 模式尤甚），需要 SSRF / 内网闸才谈得上「安全接管」；本仓门控（P1-14）本身仍未决策（`specs/项目规格/0003-决策记录.md` #3），本项不能先把抓取通道打开再补门。
 
 另有一点产品语义要先说清：**isolated 模式没有登录态**。`lib/page.js` 的 `createPage` 在非 CDP 分支走 `session.browser.newPage({ viewport })`，Playwright 的 `browser.newPage` 每次新建一个 browser context（`node_modules/playwright-core/types/types.d.ts:11232`）——隔离模式的每个标签页各自一个 context，一次性 profile 关闭即丢弃。因此「带登录态的浏览器抓取」只在 `mode: 'cdp'`（接管用户浏览器）下成立；默认 isolated 下本项买到的是「真实 Edge 的 JS 渲染与请求指纹」，不是登录态。
 

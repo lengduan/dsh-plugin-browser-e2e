@@ -1,7 +1,7 @@
 # 多载体选择
 
 状态: 已实现（采纳方案 B1）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖图、进程内对象契约「session 对象」、不变量清单、能力函数返回值字段）；specs/项目规格/0002-panel-protocol-v1.md（`state` 形状、`tabs` 项字段、面板只读边界）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（启动 / 复用 / 摘要 / 热切换拒绝 / 边界「只驱动系统 Edge」）；specs/功能规格/0008-cdp-attach.md（CDP 接管不参与载体选择）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 字段口径与即时生效）；README.md「浏览器启动与模式」「配置」「Known Limitations and Deferred Work」
+关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖图、进程内对象契约「session 对象」、不变量清单、能力函数返回值字段）；specs/项目规格/0002-panel-protocol-v1.md（`state` 形状、`tabs` 项字段、面板只读边界）；specs/项目规格/0003-决策记录.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（启动 / 复用 / 摘要 / 热切换拒绝 / 边界「只驱动系统 Edge」）；specs/功能规格/0008-cdp-attach.md（CDP 接管不参与载体选择）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 字段口径与即时生效）；README.md「浏览器启动与模式」「配置」「Known Limitations and Deferred Work」
 代码: 已实现：新增 lib/carrier.js；lib/session.js / lib/invariants.js / lib/index.js / lib/tools.js；新增 tests/carrier.mjs，tests/invariants.mjs / tests/tools.mjs / tests/panel.mjs / tests/cdp.mjs 补断言；README.md 与 specs/功能规格/0002、0006、0008、0001 已同步。
 
 ## 需求
@@ -108,8 +108,8 @@
 
 ### 2. 决策记录（Lead 录入后）
 
-- `specs/项目规格/0003-未处理项.md` 存在本项（P2-25）的待决策行。判定命令：
-  `pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-未处理项.md' -Pattern 'P2-25') { exit 0 } else { exit 1 }"`，exit 0。
+- `specs/项目规格/0003-决策记录.md` 存在本项（P2-25）的待决策行。判定命令：
+  `pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-决策记录.md' -Pattern 'P2-25') { exit 0 } else { exit 1 }"`，exit 0。
 
 ### 3. 决策通过并采纳 B1 后的实施验收
 

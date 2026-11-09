@@ -1,7 +1,7 @@
 # 图片草稿 / 附件回写会话
 
 状态: 已实现（仅 B0 切片：复制画面到剪贴板）；A（新工具）与 B（面板命令 `stage-draft`）已否决
-关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/capture.js` / `lib/panel.js`、依赖方向、进程内对象契约「能力函数返回值」、不变量边界）；specs/项目规格/0002-panel-protocol-v1.md（路由与版本、命令表、事件表、错误码表、「边界」第 1 条面板只读定位、投屏设置单一来源）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0003-screenshot-output.md（截图参数、`screenshot` 返回形状、附件写入与输出契约）；specs/功能规格/0031-tab-mention-injection.md（同属 composer 面，待决策）；specs/功能规格/0032-panel-history-direct-control.md（同属面板只读定位面，待决策）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/capture.js` / `lib/panel.js`、依赖方向、进程内对象契约「能力函数返回值」、不变量边界）；specs/项目规格/0002-panel-protocol-v1.md（路由与版本、命令表、事件表、错误码表、「边界」第 1 条面板只读定位、投屏设置单一来源）；specs/项目规格/0003-决策记录.md（本项由 Lead 录入）；specs/功能规格/0003-screenshot-output.md（截图参数、`screenshot` 返回形状、附件写入与输出契约）；specs/功能规格/0031-tab-mention-injection.md（同属 composer 面，待决策）；specs/功能规格/0032-panel-history-direct-control.md（同属面板只读定位面，待决策）
 代码: 行为 1 的现状由 lib/tools.js（`screenshotOutput`、`browser_e2e_screenshot`）、lib/capture.js（`screenshot`）承担，无需改动。B0 落地时预计只涉及 `client/index.js`（工具条按钮 + canvas 转 PNG + Clipboard API + 提示）、`lib/client.js`（`node scripts/build-client.mjs` 重建）、`tests/client-bundle.mjs`（新增用例）与 `README.md`；不改 `lib/protocol.js` / `lib/panel.js` / `lib/index.js` / `lib/capture.js`。
 
 > 2026-11-08 决策：本项只采纳 **B0 切片**（客户端「复制画面到剪贴板」，零协议），A（新工具 `browser_e2e_draft_image`）与 B（面板命令 `stage-draft` + 事件 `draft-staged`）**已否决**——两者都依赖宿主 composer 的草稿写入通道（`composer.stageAttachment`），而取证结论是宿主没有该通道（`ctx.attachments` 只有存储与准入、`prompt` 是网关 `@Remote`、`dsh-client-ui-attachment` 明写草稿只活在浏览器内且未发送不保存）；B 另会把面板从只读视图扩成输入区写者，且 socket 无鉴权时本机任意进程可往输入区放图。

@@ -6,7 +6,7 @@
 
 ## 需求
 
-`browser_e2e_network` 只回 url / method / status / mimeType / failure，验证接口返回内容时模型只能从 DOM 反推。本项让模型按 `request_id` 读取单条请求的请求头、请求体、响应头与响应体：JSON 自动格式化，文本有字符上限，二进制只回大小与摘要；列表模式原有参数与语义保持不变。详情读取最初是独立工具 `browser_e2e_network_detail`，2026-11-08 的工具面合并后并入 `browser_e2e_network` 的 `request_id` 分支（决策与理由见 `specs/项目规格/0003-未处理项.md` #12），行为不变。
+`browser_e2e_network` 只回 url / method / status / mimeType / failure，验证接口返回内容时模型只能从 DOM 反推。本项让模型按 `request_id` 读取单条请求的请求头、请求体、响应头与响应体：JSON 自动格式化，文本有字符上限，二进制只回大小与摘要；列表模式原有参数与语义保持不变。详情读取最初是独立工具 `browser_e2e_network_detail`，2026-11-08 的工具面合并后并入 `browser_e2e_network` 的 `request_id` 分支（决策与理由见 `specs/项目规格/0003-决策记录.md` #12），行为不变。
 
 ## 行为
 

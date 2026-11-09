@@ -1,7 +1,7 @@
 # 原始 CDP / HTTP 逃生口
 
 状态: 已实现（仅 B1）；A（原始 CDP 与 `mode=server`）与 C（CDP 白名单子集）已否决（2026-11-08）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖方向、进程内对象契约、不变量清单、`invariants.js` 边界、验收命令）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位与投屏链路，本项不改协议）；specs/项目规格/0003-未处理项.md（本项待决策、P1-14 门控）；specs/功能规格/0008-cdp-attach.md（CDP 接管与「close 只断连」承诺）；specs/功能规格/0005-console-network-ring.md（事件环重置口径）；specs/功能规格/0019-evaluate-timeout.md（脚本超时与中断）；specs/功能规格/0015-network-response-body.md（请求详情与敏感头脱敏口径）；specs/功能规格/0016-download-integrity.md（既有浏览器上下文网络出口）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 字段与脏值口径）；specs/功能规格/0023-tool-permission-gating.md（工具定性 `access` 与门控判定矩阵）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表与依赖方向、进程内对象契约、不变量清单、`invariants.js` 边界、验收命令）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位与投屏链路，本项不改协议）；specs/项目规格/0003-决策记录.md（本项待决策、P1-14 门控）；specs/功能规格/0008-cdp-attach.md（CDP 接管与「close 只断连」承诺）；specs/功能规格/0005-console-network-ring.md（事件环重置口径）；specs/功能规格/0019-evaluate-timeout.md（脚本超时与中断）；specs/功能规格/0015-network-response-body.md（请求详情与敏感头脱敏口径）；specs/功能规格/0016-download-integrity.md（既有浏览器上下文网络出口）；specs/功能规格/0006-plugin-config-and-live-apply.md（Config 字段与脏值口径）；specs/功能规格/0023-tool-permission-gating.md（工具定性 `access` 与门控判定矩阵）
 代码: 候选 B1 已落地：新增 `lib/raw.js`（`rawHttp`）、`lib/tools.js` 注册 `browser_e2e_http`、`lib/page.js` 导出复用符号，同步 `README.md`、`docs/architecture.html`、`package.json` 与 `specs/项目规格/0001-architecture-invariants.md`；原始 CDP（`rawCdp`）与 `mode=server` 未实现。不改 `lib/protocol.js` / `lib/panel.js` / `client/index.js` / `lib/client.js`。
 
 本项原按任务书硬约束 1 判「**影响大 → 待决策**」；Lead 采纳候选 B1（只做 `browser_e2e_http` 的 `mode=context`）作为可独立施工的切片——它不动既有承诺、不改配置与门控，因此只施工该切片，B1 已落地。2026-11-08 进一步决策：候选 A（原始 CDP 与 `mode=server`）与候选 C（CDP 白名单子集）**均否决**（理由见「边界」的否决条）。下文「候选 A 的目标契约」仅作历史记录，不得据此实施。判定依据见 `.scratch/browser-plugin-survey/plans/27-raw-cdp-http.md` §1 与 §6.4。
@@ -170,7 +170,7 @@ A（原始 CDP）与 C（CDP 白名单子集）已否决，因此本组只核对
 
 ### 3. 决策记录（Lead 录入后）
 
-`pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-未处理项.md' -Pattern 'P2-26' -Quiet) { exit 0 } else { exit 1 }"`：exit 0。
+`pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-决策记录.md' -Pattern 'P2-26' -Quiet) { exit 0 } else { exit 1 }"`：exit 0。
 
 ### 4. 采纳候选 B1 后（tester 新建 `tests/raw-http.mjs`，真起无头 Edge + `node:http` 夹具）
 

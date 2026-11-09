@@ -6,7 +6,7 @@
 
 ## 需求
 
-用户在真实浏览器里切到另一个标签页后，不传 `tab_id` 的页面工具仍作用在会话内部的 active tab（`lib/page.js` 的 `currentTab` 只认显式 `tab_id`，否则取 `session.activeTabId`；`lib/tools.js` 的 `TAB_ID_PARAM` 描述为「缺省用当前 active tab」）。agent 想「跟随用户正看着的页」只能先 `browser_e2e_tabs` 再逐个工具传 `tab_id`。本规格固定 `browser_e2e_tabs` 的 `action=follow`：把后续页面工具的默认目标绑定到某个标签页；不给 `tab_id` 时自动判定用户当前正在看的标签页，`activate: true` 时把该页带到前台。只做一次显式绑定，不做静默自动跟随（理由见「边界」）。原独立工具 `browser_e2e_follow_tab` 已在 2026-11-08 的工具面合并中并入 `browser_e2e_tabs`（决策与理由见 `specs/项目规格/0003-未处理项.md` #12），行为不变。
+用户在真实浏览器里切到另一个标签页后，不传 `tab_id` 的页面工具仍作用在会话内部的 active tab（`lib/page.js` 的 `currentTab` 只认显式 `tab_id`，否则取 `session.activeTabId`；`lib/tools.js` 的 `TAB_ID_PARAM` 描述为「缺省用当前 active tab」）。agent 想「跟随用户正看着的页」只能先 `browser_e2e_tabs` 再逐个工具传 `tab_id`。本规格固定 `browser_e2e_tabs` 的 `action=follow`：把后续页面工具的默认目标绑定到某个标签页；不给 `tab_id` 时自动判定用户当前正在看的标签页，`activate: true` 时把该页带到前台。只做一次显式绑定，不做静默自动跟随（理由见「边界」）。原独立工具 `browser_e2e_follow_tab` 已在 2026-11-08 的工具面合并中并入 `browser_e2e_tabs`（决策与理由见 `specs/项目规格/0003-决策记录.md` #12），行为不变。
 
 ## 行为
 

@@ -1,7 +1,7 @@
 # iframe 内元素操作
 
 状态: 已实现（方案 A1）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` 的职责；进程内对象契约「标签页条目」与各工具返回字段；不变量清单 `assertRefBelongsToTab` / `assertRefRevalidated`；已知结构性债务「page.js 粒度过大」）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0004-snapshot-and-ref-table.md（ref 生命周期）；specs/功能规格/0007-click-fill-targets.md（目标解析、坐标口径与失败文案）；specs/功能规格/0012-snapshot-delta-query-frame.md（frame 快照、子 frame 只读与跨源报错）；README.md「Known Limitations and Deferred Work」（快照只读同源 iframe；悬停与拖拽只作用于主 frame）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表 `lib/page.js` 的职责；进程内对象契约「标签页条目」与各工具返回字段；不变量清单 `assertRefBelongsToTab` / `assertRefRevalidated`；已知结构性债务「page.js 粒度过大」）；specs/项目规格/0003-决策记录.md（本项由 Lead 录入）；specs/功能规格/0004-snapshot-and-ref-table.md（ref 生命周期）；specs/功能规格/0007-click-fill-targets.md（目标解析、坐标口径与失败文案）；specs/功能规格/0012-snapshot-delta-query-frame.md（frame 快照、子 frame 只读与跨源报错）；README.md「Known Limitations and Deferred Work」（快照只读同源 iframe；悬停与拖拽只作用于主 frame）
 代码: 已落地：新增 `lib/frame.js`（`frameListOf` / `describeFrames` / `frameInfoOf` / `resolveFrame` / `actionFrameOf`，快照与交互工具共用同一份定位实现）；`lib/snapshot.js` 的 frame 解析改为复用 `frame.js`（行为与文案不变）；`lib/page.js` 的 `click` / `fill` / `scroll` 新增 `frame` 分支与互斥校验、frame 卸载文案；`lib/tools.js` 三个工具的参数与描述；`tests/frames.mjs`（新建，23 条用例，本规格「3. 采纳方案 A1 后的实施验收」点名的 4 条用例已补：`frame 1 内点击后 press 生效` / `frame 内坐标点击按主视口命中` / `frame 导航后 selector 重新解析` / `t1 与 t2 的 frame 互不影响`）；`tests/cdp.mjs` 新增 `CDP 接管下 frame 内 selector 点击生效` / `CDP 接管下跨源 frame 内 selector 点击生效`；`tests/tools.mjs` 新增 `click / fill / scroll 的参数表含 frame` / `press 的参数表不含 frame`；`package.json` 的 `test:integration`；`README.md`；`specs/项目规格/0001`（模块表与依赖图）。`press` 不加 `frame`；`hover` / `drag` / `upload` 仍只作用主 frame。
 
 ## 需求
@@ -119,8 +119,8 @@
 
 ### 2. 决策记录
 
-- `specs/项目规格/0003-未处理项.md` 存在本项（P1-9）的记录（决策行由 Lead 维护）。判定命令：
-  `pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-未处理项.md' -Pattern 'P1-9') { exit 0 } else { exit 1 }"`，exit 0。
+- `specs/项目规格/0003-决策记录.md` 存在本项（P1-9）的记录（决策行由 Lead 维护）。判定命令：
+  `pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-决策记录.md' -Pattern 'P1-9') { exit 0 } else { exit 1 }"`，exit 0。
 
 ### 3. 采纳方案 A1 后的实施验收
 

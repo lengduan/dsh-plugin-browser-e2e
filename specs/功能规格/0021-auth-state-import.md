@@ -1,7 +1,7 @@
 # 登录态导入与持久化
 
 状态: 已实现（采纳方案 A）
-关联: specs/项目规格/0001-architecture-invariants.md（模块表、`session` 对象契约、不变量清单、会话状态机、进程回收三道兜底、已知结构性债务「`session.js` 粒度过大」）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表不变）；specs/项目规格/0003-未处理项.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（`launch` 参数、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（接管复用用户登录态、close 只断连）；specs/功能规格/0009-auth-topup.md（loopback 补票，与本项不重叠）；specs/功能规格/0020-session-reset.md（close + start 的上下文重置口径）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表、`session` 对象契约、不变量清单、会话状态机、进程回收三道兜底、已知结构性债务「`session.js` 粒度过大」）；specs/项目规格/0002-panel-protocol-v1.md（面板只读定位；命令 / 事件 / 错误码表不变）；specs/项目规格/0003-决策记录.md（本项由 Lead 录入）；specs/功能规格/0002-browser-launch-and-reuse.md（`launch` 参数、复用与热切换拒绝）；specs/功能规格/0008-cdp-attach.md（接管复用用户登录态、close 只断连）；specs/功能规格/0009-auth-topup.md（loopback 补票，与本项不重叠）；specs/功能规格/0020-session-reset.md（close + start 的上下文重置口径）
 代码: 已实现：新增 `lib/auth-state.js`；改 `lib/session.js`（isolated 每会话显式 context、导入 / 导出入口、热导入拒绝）、`lib/page.js`（`createPage` 走 `session.context.newPage()`）、`lib/tools.js`（`start` 加 `storageState` / `storageDomains`，新增 `browser_e2e_auth_export`）、`lib/invariants.js`（`assertSessionContext`）；新增 `tests/auth-state.mjs`，`tests/invariants.mjs` / `tests/tools.mjs` 补断言；同步 README 与规格 `0001` / `0002` / `0020` / `0023`。不改 `lib/protocol.js` / `client/index.js` / `lib/client.js`。
 
 ## 需求
@@ -129,7 +129,7 @@
 
 ### 3. 决策记录（Lead 录入后）
 
-- `pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-未处理项.md' -Pattern 'P1-12') { exit 0 } else { exit 1 }"`：exit 0。
+- `pwsh -NoProfile -Command "if (Select-String -Path 'specs\项目规格\0003-决策记录.md' -Pattern 'P1-12') { exit 0 } else { exit 1 }"`：exit 0。
 
 ### 4. 采纳方案 A 后的实施验收（决策通过后由 tester 新建 `tests/auth-state.mjs`）
 
