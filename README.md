@@ -78,7 +78,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 | 工具 | 作用 |
 |---|---|
-| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸 |
+| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`cdpCopyProfile` / `cdpProfileSource` / `cdpProfileDir` 复制用户 Edge profile（登录态 + 扩展）后接管副本，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸 |
 | `browser_e2e_auth_export` | 把当前 isolated 会话的登录态（cookie + localStorage）导出成 Playwright storageState JSON：`path` 必填且必须位于 `~/.dsh/browser-e2e/auth/` 下（`.json`），`domains` 可选按域名后缀过滤，`overwrite` 默认 false；返回路径 / 字节数 / 条目数与域名，不含任何 cookie 名或值；文件是明文凭据，勿提交仓库；CDP 模式拒绝导出 |
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
 | `browser_e2e_tabs` | 标签页操作，`action` 三选一：`list`（缺省）列出本会话标签页（`tab_id` / url / title / active / `loading` / `origin`，`created` 本会话新建 / `adopted` CDP 接管）；`close` 关闭 `tab_id` 指定的标签页（最后一个不允许关，结束整个浏览器用 `browser_e2e_close`）；`follow` 把后续页面工具的默认标签页绑定到 `tab_id`，不给时自动判定用户当前正在看的页（窗口焦点页优先，其次唯一可见页，无法唯一判定时保持当前），`activate: true` 把该页带到前台，绑定后不传 `tab_id` 的工具都默认作用到该页 |
@@ -337,7 +337,9 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 
 - 只接受 loopback 的 http 端点（默认 `http://127.0.0.1:9222`），其它主机/协议直接报错。
 - 不启动新进程、接管时不新建页面、不设置视口；tab 列表取 `context.pages()`，用户新开的页面也会纳入。`browser_e2e_navigate` 传 `new_tab: true` 时会新建一个标签页（`session.context.newPage()`）。
-- `browser_e2e_close` 只断开连接，不结束你的浏览器进程，也不关闭标签页。
+- **复制接管（`cdpCopyProfile: true`）**：插件先把你的 Edge profile 复制到副本目录，用副本启动 Edge（`--user-data-dir=<副本> --remote-debugging-port=<端点端口>`）再接管。复制白名单是登录态 + 扩展（`Local State`、`Preferences`、`Secure Preferences`、`Cookies`、`Login Data`、`Web Data`、`Bookmarks`、`Local Storage`、`Extensions`、`Local Extension Settings` 等），不复制缓存；原 profile 只被读取，不被连接。可用 `cdpProfileSource` 指定源目录、`cdpProfileDir` 指定副本目录。`browser_e2e_close` 会结束副本浏览器并删除副本目录。注意：副本里 App-Bound 加密（v20）的 cookie 与 localStorage 不一定能解密，v10 cookie 与 Edge 账户登录可保留；需要完整登录态时在副本里手动登录一次。
+- **防呆**：直连接管（未开 `cdpCopyProfile`）时，插件读 `edge://version` 的「用户配置路径」，用 `realpath` 解析 junction / 符号链接；若命中系统 Edge 默认 Profile 就断开并拒绝，提示改用 `cdpCopyProfile: true`。
+- `browser_e2e_close` 只断开连接，不结束你的浏览器进程，也不关闭标签页（复制接管例外：副本由插件启动，会一并结束并删除副本目录）。
 
 ### 右侧实时浏览器面板
 

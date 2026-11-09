@@ -37,6 +37,7 @@
 | `lib/fence.js` | loopback 围栏（既有） | 不变 |
 | `lib/defaults.js` | 插件全局默认值：`DEFAULT_CDP_ENDPOINT`；`session.js` 的启动缺省端点、`doctor.js` 的端点缺省与修法文案、`index.js` 的 Config 默认值、`tools.js` 的工具描述与 `scripts/protocol-inject.mjs` 的客户端注入共用这一份 | 运行时状态 |
 | `lib/carrier.js` | 载体枚举与探测：`CARRIERS` / `DEFAULT_CARRIER` / `CARRIER_LABELS`、`carrierLabel`、`detectCarrier`（edge 不探测、chrome 按环境变量→PATH→平台惯例位置、auto 回退 edge）、`searchSummary`；只查文件，不启动浏览器 | 会话状态、进程回收、面板、协议 |
+| `lib/profile-copy.js` | CDP 复制接管的 profile 复制：`defaultEdgeUserDataDir`（平台惯例位置）、`resolveProfileSource`（源目录校验）、`copyUserProfile`（登录态 + 扩展白名单复制，失败删除半份副本）、`removeUserProfileDir`、`defaultProfileCopyDir`；不做浏览器启动与 CDP 连接 | 会话状态机、CDP 连接、进程回收、协议、面板 |
 | `lib/auth-state.js` | 登录态导入 / 导出的校验与文件 I/O：storageState 读取（绝对路径、16 MiB 上限、形状校验、域名后缀过滤与域名收集）、导出路径解析（只允许 `~/.dsh/browser-e2e/auth/` 下的 `.json`）、原子写盘（临时文件 + rename，0600）；返回值与错误文案不含 cookie 名 / 值 | 会话状态机、页面能力、协议、面板 |
 | `lib/errors.js` | Playwright 异常判定：`isTimeoutError`（错误名 `TimeoutError`，或文案匹配 `timeout ... exceeded`）；`fetch.js` / `raw.js` / `download.js` 的请求与导航超时共用这一份 | 运行时状态、I/O、各能力模块的报错文案与重试策略 |
 | `lib/hash.js` | 摘要：`sha256Of(buffer)` 返回十六进制 SHA-256；`observation.js` 的网络正文、`raw.js` 的 HTTP 正文、`download.js` 的整包读入共用。流式摘要（`streamToFd` 逐块 `update`）是不同环节，不在本模块 | 运行时状态、I/O、流式 hash |

@@ -1,7 +1,7 @@
 # CDP 接管
 
 状态: 已实现
-关联: specs/项目规格/0001-architecture-invariants.md（模块表、进程内对象契约、不变量清单、会话状态机、进程回收、边界）；specs/项目规格/0002-panel-protocol-v1.md（事件表、`state` 形状与 `tabs` 项字段）；specs/功能规格/0034-multi-carrier.md（CDP 不参与载体选择）
+关联: specs/项目规格/0001-architecture-invariants.md（模块表、进程内对象契约、不变量清单、会话状态机、进程回收、边界）；specs/项目规格/0002-panel-protocol-v1.md（事件表、`state` 形状与 `tabs` 项字段）；specs/功能规格/0034-multi-carrier.md（CDP 不参与载体选择）；specs/功能规格/0039-cdp-profile-copy.md（复制 profile 后接管，以及直连默认 Profile 的防呆）
 代码: lib/session.js / lib/invariants.js / lib/tools.js / lib/defaults.js / lib/carrier.js / lib/capture.js / tests/cdp.mjs / tests/invariants.mjs / tests/panel.mjs
 
 ## 需求
