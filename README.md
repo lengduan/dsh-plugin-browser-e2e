@@ -55,6 +55,24 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 工具参数只接受上面三个枚举，不接受可执行路径（路径只由环境变量与平台惯例位置决定）。未显式传 `carrier` 时取插件配置的 `defaultCarrier`，再缺省 `edge`。隔离模式拉起的 Chrome 同样是 Playwright 管理的一次性 profile：不复用你正在运行的 Chrome、不读取你的登录态（要复用登录态请用 cdp，或见「重置会话」）。
 
+### 冻结动画（`freezeAnimations`）
+
+无限 CSS 动画会让整页每帧重绘。节点多、内联样式大、带整屏 canvas 的页面上（实测 DSH GUI 1557 个节点 + 约 1MB 内联 CSS + 1320×860 canvas），
+会话行一个小小的「进行中」旋转点就能把空闲占用拉高一个量级；Playwright 又默认带 `--disable-renderer-backgrounding` / `--disable-backgrounding-occluded-windows`，headless 下动画永不节流。
+
+不需要复现或验证动画时，给 `browser_e2e_start` 传 `freezeAnimations: true`：
+
+```
+browser_e2e_start { headless: true, freezeAnimations: true }
+browser_e2e_navigate  http://127.0.0.1:<port>/     # 每次换文档后自动重放
+browser_e2e_close
+```
+
+- 每次换文档（navigate、reload、CDP 接管页、recipe 内的 goto）后自动注入 `#dsh-e2e-freeze` 样式（`animation / transition: none !important`）并 pause 现存动画。
+- 已启动的会话再传该参数**就地切换**，不必重开浏览器；关闭只改开关，已注入的页面保持现状。
+- DSH GUI 实测（4 个与 `_dsh-state-dot-spin` 同构的 CSS 无限动画，20 秒采样）：不开 14.9% 单核，开启 1.3% 单核，动画数 4 → 0。
+- 边界：`animation:none` 对导航后用 `element.animate()` 新建的 WAAPI 动画无效，这类动画要等下一次 `domcontentloaded` 才会被 pause。**要验证动画本身时不要开这个开关**，否则相关断言恒假。
+
 同一会话复用同一实例，`browser_e2e_start` 可重复调用。未显式传 `mode` / `cdpEndpoint` / `carrier` 时，首次启动使用插件配置里的默认值，工具参数优先。已启动后要切换 `mode`（isolated ↔ cdp）、改 `cdpEndpoint` 或换载体，必须先 `browser_e2e_close` 再重新启动；已启动时传入与当前不一致的值会直接报错，不会静默复用。同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例。
 
 ### 环境诊断
@@ -78,7 +96,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 | 工具 | 作用 |
 |---|---|
-| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`cdpCopyProfile` / `cdpProfileSource` / `cdpProfileDir` 复制用户 Edge profile（登录态 + 扩展）后接管副本，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸 |
+| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`cdpCopyProfile` / `cdpProfileSource` / `cdpProfileDir` 复制用户 Edge profile（登录态 + 扩展）后接管副本，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸；`freezeAnimations`（默认 false）冻结页面动画，见下节 |
 | `browser_e2e_auth_export` | 把当前 isolated 会话的登录态（cookie + localStorage）导出成 Playwright storageState JSON：`path` 必填且必须位于 `~/.dsh/browser-e2e/auth/` 下（`.json`），`domains` 可选按域名后缀过滤，`overwrite` 默认 false；返回路径 / 字节数 / 条目数与域名，不含任何 cookie 名或值；文件是明文凭据，勿提交仓库；CDP 模式拒绝导出 |
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
 | `browser_e2e_tabs` | 标签页操作，`action` 三选一：`list`（缺省）列出本会话标签页（`tab_id` / url / title / active / `loading` / `origin`，`created` 本会话新建 / `adopted` CDP 接管）；`close` 关闭 `tab_id` 指定的标签页（最后一个不允许关，结束整个浏览器用 `browser_e2e_close`）；`follow` 把后续页面工具的默认标签页绑定到 `tab_id`，不给时自动判定用户当前正在看的页（窗口焦点页优先，其次唯一可见页，无法唯一判定时保持当前），`activate: true` 把该页带到前台，绑定后不传 `tab_id` 的工具都默认作用到该页 |
