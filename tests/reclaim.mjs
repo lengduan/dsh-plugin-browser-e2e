@@ -53,27 +53,68 @@ async function waitUntil(fn, timeoutMs = 15000, stepMs = 250) {
 }
 
 // 主流程整体包 try/finally：任一用例失败也保证收掉可能残留的浏览器，不把进程留给下一个测试。
-try {
+/**
+ * 在子进程里跑「空闲到点自动回收」：子进程用自己的 profile 根，
+ * 并通过 DSH_BROWSER_IDLE_MS_MIN_OVERRIDE 把下限临时放宽（生产是 60s，真等不现实）。
+ * @param {{idleMs: number, poolIdleMs: number}} options - 子进程的空闲时限
+ * @returns {Promise<object|null>} 子进程最后一行 JSON；失败为 null
+ */
+async function runIdleChild({ idleMs, poolIdleMs }) {
+  const moduleUrl = new URL('../lib/session.js', import.meta.url).href
+  const poolUrl = new URL('../lib/pool.js', import.meta.url).href
+  const script = `
+const { activeSessionKeys, closeAll, launch, requireSession } = await import(${JSON.stringify(moduleUrl)})
+const { poolStats } = await import(${JSON.stringify(poolUrl)})
+await launch('test-key-idle', { headless: true }, 'test-session-idle')
+const heldAfterLaunch = activeSessionKeys().includes('test-key-idle')
+const deadline = Date.now() + 20000
+while (activeSessionKeys().includes('test-key-idle') && Date.now() < deadline) {
+  await new Promise((resolve) => setTimeout(resolve, 50))
+}
+const reclaimed = !activeSessionKeys().includes('test-key-idle')
+await new Promise((resolve) => setTimeout(resolve, 3000))
+const poolEmpty = poolStats().hasBrowser === false
+await closeAll().catch(() => {})
+console.log(JSON.stringify({ heldAfterLaunch, reclaimed, poolEmpty }))
+`
+  const childFile = join(tmpdir(), `dsh-idle-child-${Date.now()}.mjs`)
+  writeFileSync(childFile, script, 'utf8')
+  try {
+    const run = spawnSync(process.execPath, [childFile], {
+      env: {
+        ...process.env,
+        DSH_BROWSER_IDLE_MS: String(idleMs),
+        DSH_BROWSER_IDLE_MS_MIN_OVERRIDE: String(idleMs),
+        DSH_BROWSER_POOL_IDLE_MS: String(poolIdleMs),
+        DSH_BROWSER_E2E_HOME: join(tmpdir(), `dsh-idle-home-${Date.now()}`),
+      },
+      encoding: 'utf8',
+      timeout: 120000,
+    })
+    const lines = (run.stdout ?? '').trim().split('\n').filter(Boolean)
+    const last = lines.length ? lines[lines.length - 1] : ''
+    return JSON.parse(last)
+  } catch {
+    return null
+  } finally {
+    try {
+      rmSync(childFile, { force: true })
+    } catch {
+      // 删不掉不影响断言
+    }
+  }
+}
 
-console.log('== 用例 A：空闲超时自动回收（DSH_BROWSER_IDLE_MS=8000）==')
+try {
+console.log('== 用例 A：空闲超时自动回收（子进程，等效 300ms 空闲）==')
 {
-  const before = edgeRootCount()
-  const id = 'test-session-idle'
-  await launch('test-key-idle', { headless: true }, id)
-  await navigate(requireSession('test-key-idle'), 'about:blank', 'load')
-  check('启动后 sessions 持有该会话', activeSessionKeys().includes('test-key-idle'), JSON.stringify(activeSessionKeys()))
-  check('启动后 Edge 主进程增加', edgeRootCount() > before, `before=${before} now=${edgeRootCount()}`)
-  // 前值：不先断言「池里有浏览器」，后面那句「hasBrowser === false」在「从没拉起过」时天然成立。
-  check('空闲回收前池里有共享浏览器', poolStats().hasBrowser === true, JSON.stringify(poolStats()))
-  console.log('  等待 8s 空闲超时 + 轮询进程回落（每 250ms，最多 15s）…')
-  const cleared = await waitUntil(() => !activeSessionKeys().includes('test-key-idle'), 15000)
-  check('超时后 sessions 已清空', cleared, JSON.stringify(activeSessionKeys()))
-  // 池化后的判据是「会话不再持有 context」+「池关掉了共享浏览器」，而不是「msedge 主进程回落」：
-  // 共享浏览器要等池级空闲到点才关（DSH_BROWSER_POOL_IDLE_MS，本文件压到 2 秒）。
-  const contextGone = !activeSessionKeys().includes('test-key-idle')
-  check('超时后会话不再持有 context', contextGone, JSON.stringify(activeSessionKeys()))
-  const gone = await waitUntil(() => poolStats().hasBrowser === false, 15000)
-  check('超时后池已关掉共享浏览器', gone, JSON.stringify(poolStats()))
+  // DSH_BROWSER_IDLE_MS 有 60s 下限（避免计时器在操作中途把会话关掉），真的等 60s 不现实。
+  // 这里开子进程，用 IDLE_CLOSE_MS_OVERRIDE 把下限临时放宽到 300ms —— 被测的是「空闲到点会回收」
+  // 这条逻辑，不是下限本身；下限由 tests/idle-bounds.mjs 单独验收。
+  const child = await runIdleChild({ idleMs: 300, poolIdleMs: 2000 })
+  check('子进程启动后 sessions 持有该会话', child !== null && child.heldAfterLaunch === true, JSON.stringify(child))
+  check('空闲到点后 sessions 已清空', child !== null && child.reclaimed === true, JSON.stringify(child))
+  check('回收后池里没有残留共享浏览器', child !== null && child.poolEmpty === true, JSON.stringify(child))
 }
 
 console.log('== 用例 B：session/disposed 钩子回收（同一条 closeBySessionId 路径）==')
@@ -154,7 +195,10 @@ console.log(JSON.stringify({ elapsed, keysAfterLaunch, reclaimed, version: info.
     // Chromium 释放 user-data-dir 有延迟，立即复用会让子进程起不来（实测 status=1）。
     env: {
       ...process.env,
+      // 会话空闲的下限是 60s（避免计时器在操作中途关会话）；这条用例要的是「空闲时限小于启动耗时」，
+      // 所以用测试专用的 MIN_OVERRIDE 把下限放宽到 100ms，否则 100 会被抬成 60000、8 秒内不会回收。
       DSH_BROWSER_IDLE_MS: '100',
+      DSH_BROWSER_IDLE_MS_MIN_OVERRIDE: '100',
       DSH_BROWSER_POOL_IDLE_MS: '60000',
       DSH_BROWSER_E2E_HOME: join(tmpdir(), `dsh-reclaim-home-${Date.now()}`),
     },
