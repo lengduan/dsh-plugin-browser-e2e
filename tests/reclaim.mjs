@@ -8,14 +8,21 @@
  * 运行：node tests/reclaim.mjs
  */
 import { spawnSync } from 'node:child_process'
+import { rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // 用例 A 依赖 8 秒空闲回收；session.js 在模块加载时读取该环境变量，
 // 所以必须在动态 import 之前设置（ESM 的静态 import 会先于模块体执行）。
 process.env.DSH_BROWSER_IDLE_MS ??= '8000'
+// 池化后「会话回收」只关本会话的 context，共享浏览器要等池级空闲到点才关（默认 2 分钟，
+// 功能规格 0041 / 决策 D5）。本文件断言的是「回收后不留下浏览器进程」，所以把池级空闲压到 2 秒。
+process.env.DSH_BROWSER_POOL_IDLE_MS ??= '2000'
 
 const {
   activeSessionKeys, close, closeAll, closeBySessionId, launch, requireSession,
 } = await import('../lib/session.js')
+const { poolStats } = await import('../lib/pool.js')
 const { navigate } = await import('../lib/page.js')
 
 const EDGE_MIN_IDLE = 30
@@ -56,25 +63,37 @@ console.log('== 用例 A：空闲超时自动回收（DSH_BROWSER_IDLE_MS=8000�
   await navigate(requireSession('test-key-idle'), 'about:blank', 'load')
   check('启动后 sessions 持有该会话', activeSessionKeys().includes('test-key-idle'), JSON.stringify(activeSessionKeys()))
   check('启动后 Edge 主进程增加', edgeRootCount() > before, `before=${before} now=${edgeRootCount()}`)
+  // 前值：不先断言「池里有浏览器」，后面那句「hasBrowser === false」在「从没拉起过」时天然成立。
+  check('空闲回收前池里有共享浏览器', poolStats().hasBrowser === true, JSON.stringify(poolStats()))
   console.log('  等待 8s 空闲超时 + 轮询进程回落（每 250ms，最多 15s）…')
   const cleared = await waitUntil(() => !activeSessionKeys().includes('test-key-idle'), 15000)
   check('超时后 sessions 已清空', cleared, JSON.stringify(activeSessionKeys()))
-  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
-  check('超时后 Edge 主进程已回落', gone, `before=${before} now=${edgeRootCount()}`)
+  // 池化后的判据是「会话不再持有 context」+「池关掉了共享浏览器」，而不是「msedge 主进程回落」：
+  // 共享浏览器要等池级空闲到点才关（DSH_BROWSER_POOL_IDLE_MS，本文件压到 2 秒）。
+  const contextGone = !activeSessionKeys().includes('test-key-idle')
+  check('超时后会话不再持有 context', contextGone, JSON.stringify(activeSessionKeys()))
+  const gone = await waitUntil(() => poolStats().hasBrowser === false, 15000)
+  check('超时后池已关掉共享浏览器', gone, JSON.stringify(poolStats()))
 }
 
 console.log('== 用例 B：session/disposed 钩子回收（同一条 closeBySessionId 路径）==')
 {
-  const before = edgeRootCount()
   const id = 'test-session-disposed'
   await launch('test-key-disposed', { headless: true }, id)
   await navigate(requireSession('test-key-disposed'), 'about:blank', 'load')
   check('启动后 sessions 持有该会话', activeSessionKeys().includes('test-key-disposed'), JSON.stringify(activeSessionKeys()))
+  const leasesBeforeDispose = poolStats().leases
   const r = await closeBySessionId(id)
   check('disposed 路径返回 closed=true', r.closed === true, JSON.stringify(r))
   check('disposed 后 sessions 已清空', !activeSessionKeys().includes('test-key-disposed'), JSON.stringify(activeSessionKeys()))
-  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
-  check('disposed 后 Edge 主进程已回落', gone, `before=${before} now=${edgeRootCount()}`)
+  // 先断言前值，否则「租约 0」在「压根没 acquire 过」时天然成立，release 改成空实现也绿。
+  check('disposed 前租约为 1', leasesBeforeDispose === 1, JSON.stringify({ leasesBeforeDispose }))
+  check('disposed 后租约已归还', poolStats().leases === 0, JSON.stringify(poolStats()))
+  // 池化：dispose 只回收该会话的 context 并归还租约；共享浏览器由池级空闲回收。
+  // 判据用池状态而不是数进程：edgeRootCount 每次要起一个 pwsh（2~2.7s），20 秒窗口内只能采到几次，
+  // 而进程回落本身还要等操作系统回收，容易假红。进程收尾由文件末尾的统一断言负责。
+  const gone = await waitUntil(() => poolStats().hasBrowser === false, 15000)
+  check('disposed 后池已关掉共享浏览器', gone, JSON.stringify(poolStats()))
 }
 
 console.log('== 用例 C：不显式传 sessionId 时，用 agent.id（= key）仍能被 disposed 命中 ==')
@@ -109,7 +128,7 @@ console.log('== 用例 F：小空闲时限不打断 launch（launch 与空闲回
   // session.js 在模块加载时读取 DSH_BROWSER_IDLE_MS，只能用子进程模拟「空闲时限小于启动耗时」。
   const moduleUrl = new URL('../lib/session.js', import.meta.url).href
   const childScript = `
-const { activeSessionKeys, close, launch } = await import(${JSON.stringify(moduleUrl)})
+const { activeSessionKeys, closeAll, launch } = await import(${JSON.stringify(moduleUrl)})
 const started = Date.now()
 const info = await launch('test-key-tiny-idle', { headless: true }, 'test-session-tiny-idle')
 const elapsed = Date.now() - started
@@ -119,14 +138,35 @@ while (activeSessionKeys().includes('test-key-tiny-idle') && Date.now() < deadli
   await new Promise((resolve) => setTimeout(resolve, 20))
 }
 const reclaimed = !activeSessionKeys().includes('test-key-tiny-idle')
-await close('test-key-tiny-idle').catch(() => {})
+// 池化：close 只回收 context，共享浏览器仍在（Playwright 连接会挂住事件循环），
+// 必须 closeAll 才会 shutdown 池，子进程才能正常退出。
+await closeAll().catch(() => {})
 console.log(JSON.stringify({ elapsed, keysAfterLaunch, reclaimed, version: info.version }))
 `
-  const run = spawnSync(process.execPath, ['--input-type=module', '-e', childScript], {
-    env: { ...process.env, DSH_BROWSER_IDLE_MS: '100' },
+  // 用临时脚本文件而不是 `-e` 内联：内联脚本在本仓的子进程里会撞上入口解析问题
+  // （stderr 只有 run_main:107 + triggerUncaughtException，无错误文本），落盘后同一脚本可稳定复现。
+  const childFile = join(tmpdir(), `dsh-reclaim-child-${Date.now()}.mjs`)
+  writeFileSync(childFile, childScript, 'utf8')
+  const run = spawnSync(process.execPath, [childFile], {
+    // 子进程只验证「会话级 100ms 空闲不打断 launch」这一条竞态：池级空闲必须留足，
+    // 否则浏览器刚拉起就被池回收（本文件的 2 秒池级空闲正是给别的用例用的）。
+    // 子进程用自己的 profile 根：前序用例刚关掉的浏览器与子进程同签名、同目录，
+    // Chromium 释放 user-data-dir 有延迟，立即复用会让子进程起不来（实测 status=1）。
+    env: {
+      ...process.env,
+      DSH_BROWSER_IDLE_MS: '100',
+      DSH_BROWSER_POOL_IDLE_MS: '60000',
+      DSH_BROWSER_E2E_HOME: join(tmpdir(), `dsh-reclaim-home-${Date.now()}`),
+    },
     encoding: 'utf8',
     timeout: 60000,
   })
+  // 子进程脚本用完即删，不给 .scratch / tmp 留垃圾。
+  try {
+    rmSync(childFile, { force: true })
+  } catch {
+    // 删不掉不影响断言
+  }
   const output = (run.stdout ?? '').trim()
   let child = null
   try {
@@ -134,7 +174,12 @@ console.log(JSON.stringify({ elapsed, keysAfterLaunch, reclaimed, version: info.
   } catch {
     child = null
   }
-  const detail = `status=${run.status} stdout=${output} stderr=${(run.stderr ?? '').trim()}`
+  // 失败时把子进程的异常行摘出来：Playwright 的调用日志会淹没真正的报错。
+  const stderrText = (run.stderr ?? '').trim()
+  const badLines = stderrText.split('\n')
+    .filter((line) => /Error|error|throw|Cannot|not supported|message/.test(line))
+    .slice(0, 4)
+  const detail = `status=${run.status} stdout=${output} err=${badLines.join(' | ') || stderrText.slice(0, 400)}`
   check('IDLE_MS=100 时 launch 正常返回（未被空闲回收打断）',
     run.status === 0 && Array.isArray(child?.keysAfterLaunch) && child.keysAfterLaunch.includes('test-key-tiny-idle'), detail)
   check('启动耗时超过空闲时限（竞态场景确实被覆盖）', typeof child?.elapsed === 'number' && child.elapsed >= 100, detail)
@@ -146,6 +191,7 @@ console.log(JSON.stringify({ elapsed, keysAfterLaunch, reclaimed, version: info.
 console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
 {
   const before = edgeRootCount()
+  const launchesBeforeConcurrent = poolStats().launchCount
   const first = launch('test-key-concurrent', { headless: true }, 'test-session-concurrent')
   const second = launch('test-key-concurrent', { headless: true }, 'test-session-concurrent')
   const [a, b] = await Promise.all([first, second])
@@ -168,14 +214,26 @@ console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
     session.touch()
     return count
   }
+  // 池化后「只建一个浏览器」由池保证（并发合流），进程数还受别的池槽影响，所以断言改为
+  // 「并发两次只拉起一次浏览器」这一池的契约 + 「会话确实可用」，不再比较绝对进程数。
   const single = await waitUntil(() => countWithTouch() <= before + 1, 10000)
-  check('只新增一个 Edge 主进程', single && countWithTouch() === before + 1, `before=${before} now=${countWithTouch()}`)
+  check('并发启动没有多起浏览器进程', single, `before=${before} now=${countWithTouch()}`)
+  // launchCount 是进程级累计值，只能看**前后差**：并发两次必须只拉起一次，这是合流的唯一硬证据。
+  // 同上：合计最多拉起一次（槽已存在则差 0），差 2 才是「并发各起一个」的缺陷。
+  check('并发两次最多拉起一次浏览器',
+    poolStats().launchCount - launchesBeforeConcurrent <= 1,
+    JSON.stringify({ launchesBeforeConcurrent, now: poolStats().launchCount }))
+  check('并发后池里只有一个槽且租约为 1',
+    poolStats().slots.length === 1 && poolStats().leases === 1, JSON.stringify(poolStats()))
   requireSession('test-key-concurrent').touch()
   const blank = await navigate(requireSession('test-key-concurrent'), 'about:blank', 'load')
   check('并发启动后浏览器可正常导航', blank.url === 'about:blank', JSON.stringify(blank))
-  await close('test-key-concurrent')
-  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
-  check('关闭后 Edge 主进程回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
+  const closedConcurrent = await close('test-key-concurrent')
+  check('关闭返回已关闭本会话上下文', closedConcurrent.closed === true
+    && closedConcurrent.summary === '已关闭本会话的浏览器上下文', JSON.stringify(closedConcurrent))
+  // close 只归还租约；租约归零后由池在空闲时限内关掉共享浏览器。
+  const gone = await waitUntil(() => edgeRootCount() <= before, 20000)
+  check('租约归零后共享浏览器回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
 }
 
 } finally {

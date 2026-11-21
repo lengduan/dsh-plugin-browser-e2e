@@ -432,13 +432,28 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 - **面板投屏初始参数**：插件加载时 `new PanelHub({ config: screencastConfigOf(config) })`，`PanelHub` 构造里用 `initialConfigOf` 按 `PANEL_CONFIG_LIMITS` 逐字段校验，缺失或越界回退 `DEFAULT_SCREENCAST_CONFIG`（70 / 1280 / 800 / 1），一处脏值不会把面板整个卡死。投屏四项在 Config schema 里不设默认值，区间与默认值只在 `lib/protocol.js` 一处定义，客户端构建时从同一份注入。
 - **运行中保存**：设置页保存触发 `loader/volatile-update` 后，`lib/index.js` 重读配置并调用 `hub.applyConfig`；与当前设置比较后，有变化先按新参数重开投屏再广播 `state`，无变化直接返回。
 
+### 浏览器实例池（多个会话共享一个浏览器）
+
+多个会话不是各起一个浏览器，而是**共享同一个无头浏览器进程**，每个会话持有一个自己的隔离 context
+（cookie / localStorage 互不可见）。实测 4 个实例 = 35 进程 / 1940 MB / 空闲 6.7% 单核，改为
+1 个实例 + 4 个 context 后 = 12 进程 / 748 MB / 空闲 0.5%。
+
+- `browser_e2e_close` 关的是**本会话的浏览器上下文**，不是浏览器进程；最后一个上下文关掉后，
+  浏览器由池级空闲回收关闭。
+- 池按**启动签名**分槽：`headless` / `proxy` / `carrier` 不同的会话各占一个浏览器进程
+  （一个可见一个无头时进程数是 2，这是保留逐次调用参数的代价，不是泄漏）。
+- **CDP 模式不池化**：接管的是你自己的浏览器，进程不归插件管。
+- 诊断（`browser_e2e_doctor`）报告里的 `pool` 一行给出共享浏览器数、租约数与累计拉起次数。
+
+细节见 [specs/功能规格/0041-browser-pool.md](specs/功能规格/0041-browser-pool.md)。
+
 ### 进程回收
 
 浏览器进程挂在 DSH 服务上，对话结束、会话切走、子代理结束都不会自动回收，因此本插件有三道回收：
 
-1. **空闲回收**：超过 10 分钟没有任何 `browser_e2e_*` 调用，自动关闭该会话的浏览器；`DSH_BROWSER_IDLE_MS` 可改（设 0 关闭该行为）。
-2. **会话回收**：`session/disposed` 时按 `session.id` 精确关闭对应浏览器。
-3. **卸载回收**：插件卸载或热替换时关闭全部浏览器。
+1. **空闲回收**：超过 10 分钟没有任何 `browser_e2e_*` 调用，自动关闭该会话的 context 并归还租约；`DSH_BROWSER_IDLE_MS` 可改（设 0 关闭该行为）。共享浏览器再闲置 `DSH_BROWSER_POOL_IDLE_MS`（默认 2 分钟）后关闭。
+2. **会话回收**：`session/disposed` 时按 `session.id` 精确关闭对应 context。
+3. **卸载回收**：插件卸载或热替换时关闭全部 context 并 shutdown 池。
 
 关闭本身也有兜底：Edge 偶发在 graceful close 阶段卡住（进程已退出但 Playwright 等不到退出事件），`DSH_BROWSER_CLOSE_TIMEOUT_MS`（默认 5000）到点后不再等待，关闭调用一定有返回。但 Playwright 的 `Browser` 不提供结束进程的接口（`process()` 只在 `BrowserServer` 上，`Browser` 没有），所以超时后**无法强制结束进程**：`browser_e2e_close` 会在摘要里明确提示「关闭超时，进程可能仍在运行，请手动结束」，不会谎称已关闭。空闲回收计时由 launch 接管（启动过程不装计时器），启动耗时长于 `DSH_BROWSER_IDLE_MS` 时不会被当成闲置在启动中回收。
 
@@ -448,7 +463,8 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 |---|---|---|
 | `DSH_BROWSER_PROXY` | 空 | `browser_e2e_start` 未传 `proxy` 时使用的 HTTP 代理地址 |
 | `DSH_BROWSER_CHROME_PATH` | 空 | `carrier=chrome` / `auto` 探测 Chrome 时的优先路径（非空且文件存在才生效）；不设则按 PATH 与平台惯例安装位置查找 |
-| `DSH_BROWSER_IDLE_MS` | `600000`（10 分钟） | 无调用多久后关闭该会话浏览器；`0` 关闭空闲回收 |
+| `DSH_BROWSER_IDLE_MS` | `600000`（10 分钟） | 无调用多久后关闭该会话的 context 并归还租约；`0` 关闭空闲回收 |
+| `DSH_BROWSER_POOL_IDLE_MS` | `120000`（2 分钟） | 共享浏览器租约归零后再闲置多久关闭该浏览器进程；`0` 关闭池级回收（进程会一直留着） |
 | `DSH_BROWSER_CLOSE_TIMEOUT_MS` | `5000` | 关闭浏览器时等待 graceful close 的毫秒上限 |
 | `DSH_BROWSER_DOWNLOAD_DIR` | 空 | `browser_e2e_download` 的下载目录（绝对路径）；空表示用 `<产物目录>/downloads/`，相对路径报错 |
 | `DSH_BROWSER_HISTORY` | 空 | 设 `0`（或 `false`）时不写动作历史，也不建目录；读回不受影响 |
@@ -675,6 +691,7 @@ npm run test:integration
 - **面板历史不持久** —— 历史抽屉只保留本面板连接内存里的最近 50 条动作，不落盘、不脱敏，重连保留但刷新面板或关闭 tab 后清空；打开面板之前的动作、其它面板连接收到的动作都不在抽屉里。宿主侧的持久副本（已脱敏）由 `browser_e2e_history` 读回，抽屉不读它；宿主侧动作环、跨连接回放属待决策项，面板直控判影响大 → 待决策，未实现。
 - **动作历史的边界** —— 落盘在 `~/.dsh/browser-e2e/history/actions.jsonl`（`DSH_BROWSER_HISTORY_FILE` 可覆盖），只记录工具名 / 时间 / 成功失败 / 已脱敏摘要 / 会话，不记录入参原文、返回值、页面访问轨迹、tab 归属与耗时。脱敏只覆盖 `browser_e2e_fill` 的 `value` 与 `browser_e2e_dialog` 的 `prompt_text`：新增工具若在摘要里回显输入，必须同步扩 `SENSITIVE_ARGS`；`navigate` / `wait` 摘要里的 URL 查询参数不脱敏，默认 `scope=self` 只限制可见范围。上限只按条数（默认 2000，`DSH_BROWSER_HISTORY_MAX` 可改），不做按天过期；同一台机器两个实例写同一文件时追加按行不互相撕裂，但裁剪重写可能互相覆盖、丢记录（单实例假设，按实例区分请设 `DSH_BROWSER_HISTORY_FILE`）。`scope=all` 会读到同一台机器上其它会话（含其它 profile）的记录；手工改坏的历史文件按行跳过坏行，不逐行修复。
 - **doctor 只体检不修复** —— `browser_e2e_doctor` 不启动浏览器、不安装 Edge、不清理残留进程，也不探测 profile 占用：`edge` 项按 Playwright 的同一条候选路径规则判断可执行文件是否存在，因此不能证明「Edge 一定起得来」；CDP 探测只做一次 TCP 连接与 `GET /json/version`，不建立 CDP 会话、不占用浏览器。代理只校验格式不探活；产物根目录不存在时用最近祖先的 `fs.access(W_OK)` 判可写，Windows 上该 API 对目录 ACL 判定不精确。环境变量在模块加载时求值，进程运行中改值不会反映到报告的生效值上。
+- **锁屏探针仅 Windows 且是独立进程** —— `native/lockscreen/` 下的 `lockprobe.exe` 用四路 Win32 探测判断当前会话是否锁屏（`probeLock()` / `isLocked()`），不进入 `lib/` 调用图，也不受工具门控管理。它只读系统状态、冷启动约 60~90ms；非 Windows 平台抛 `LockProbeUnavailableError`。判定可能返回 `UNKNOWN`（强信号冲突时宁可不下结论），调用方不得把 `UNKNOWN` 或"探针不可用"当成未锁屏。**进程枚举在 DSH 子进程里被 Job Object 裁剪**（`CreateToolhelp32Snapshot` 仅见 13 条 vs 真实 289 条，C# 同样如此），故探针不用进程快照。服务化场景（Session 0）未验证。原理与坑位见 `native/lockscreen/README.md`，规格见 `specs/功能规格/0041-lockscreen-probe.md`。
 
 <a id="dev-note"></a>
 ### Dev Note

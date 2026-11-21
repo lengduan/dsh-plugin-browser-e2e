@@ -175,13 +175,13 @@ console.log('== 用例 A：报告骨架 ==')
   const report = parseReport(await run())
   check(
     'doctor 报告首行是统计行',
-    report.first === `环境诊断：共 6 项，5 通过 / 0 警告 / 0 失败 / 1 跳过（模式 isolated，端点 ${DEFAULT_CDP_ENDPOINT}）`,
+    report.first === `环境诊断：共 7 项，6 通过 / 0 警告 / 0 失败 / 1 跳过（模式 isolated，端点 ${DEFAULT_CDP_ENDPOINT}）`,
     report.first,
   )
 
   const ids = report.items.map((item) => item.id)
   check(
-    'doctor 报告固定六项且每项一行',
+    'doctor 报告固定七项且每项一行',
     JSON.stringify(ids) === JSON.stringify(DOCTOR_CHECKS)
       && new Set(ids).size === DOCTOR_CHECKS.length
       && report.items.every((item) => item.detail.length > 0),
@@ -592,7 +592,7 @@ console.log('== 用例 G：入参与工具表 ==')
     'doctor 汇总摘要被 summaryOf 采用',
     typeof output === 'string'
       && summaryOf(output) === report.first
-      && summaryOf(output).startsWith('环境诊断：共 6 项，')
+      && summaryOf(output).startsWith('环境诊断：共 7 项，')
       && summaryOf(output).includes('模式 isolated'),
     JSON.stringify({ summary: summaryOf(output) }),
   )

@@ -41,13 +41,23 @@
 - `about:blank` 等无 `document.head` 的文档：脚本回落到 `document.documentElement` 挂样式，不会因缺 head 报错。
 - 不处理：需要复现动画本身（验证 spinner 行为、量动画时长、测 transition 效果）的场景必须传 false——冻结会让这些断言恒假。
 - 不影响事件环、ref 表、快照基线：只往 DOM 塞一个 style 并停动画，不触碰页面其它状态。
+- **已知局限（2026-11-21 实测确认）**：冻结只作用于 `domcontentloaded` 时**已存在**的动画。
+  在已冻结的页面上用 `element.animate()` **新造**的动画不受约束，仍是 `playState === 'running'`
+  （对照页实测同样 running=1，两者一致）。原因是注入的 `animation: none` 只影响新声明的 CSS 动画，
+  WAAPI 的 `Animation` 对象已在内存里、不是 DOM 声明。要连它一起停，需要在每次 `domcontentloaded`
+  重放时遍历 `document.getAnimations()` 逐个 `pause()`——当前实现**已经**这么做，但那只覆盖
+  重放那一刻的动画集合；重放后新造的仍拦住。
+  `tests/freeze.mjs` 已把这条行为写成显式断言（「已知局限：冻结页上新造的动画不受约束」），
+  避免 `running === 0` 被误读成「能拦住任何新动画」。
 
 ## 验收
 
 - `node tests/freeze.mjs`：exit 0、无 FAIL。覆盖
   1) 不传参数时 `getAnimations()` 与真实页一致（未注入 `#dsh-e2e-freeze`）；
   2) `freezeAnimations: true` 启动后，首个标签页存在 `#dsh-e2e-freeze`；
-  3) 页内自建无限 CSS 动画后触发 `domcontentloaded`（reload 同一页），动画被 pause 且样式已注入；
+  3) **阴性对照**：同一段造动画脚本在不冻结的对照页上必须留下 `running >= 1`（证明断言不是平凡真）；
+     换文档后样式已注入、页面无残留 running 动画；
+     且把「冻结页上新造的动画仍 running」这一已知局限固定为断言；
   4) 已启动会话再传 `freezeAnimations: false` 返回关闭文案，且后续导航不再注入新的冻结（既有注入保留）；
   5) 复用路径传 `freezeAnimations: true` 返回「已开启动画冻结」文案。
 - 进程口径按仓库惯例：断言回落到运行前基线，不看绝对值。

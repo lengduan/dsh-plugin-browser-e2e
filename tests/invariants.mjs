@@ -41,6 +41,7 @@ import {
   HISTORY_SUMMARY_LIMIT, MAX_HISTORY_LIMIT, SENSITIVE_ARGS, historyEnabled, listActions, redactActionSummary,
 } from '../lib/history.js'
 import { captureJpeg } from '../lib/capture.js'
+import { poolStats, resetPoolForTest, shutdown as poolShutdown } from '../lib/pool.js'
 import {
   DEFAULT_SCREENCAST_CONFIG, PANEL_COMMANDS, PANEL_CONFIG_LIMITS, PANEL_ERROR_CODES, PANEL_EVENTS,
   PANEL_PROTOCOL_VERSION, PANEL_SOCKET_PATH, PANEL_STATE_PATH, isPanelCommand, isPanelErrorCode,
@@ -55,7 +56,13 @@ import { viewportBounds } from '../lib/viewport.js'
 let pass = 0
 let fail = 0
 
-/** 跑一个用例：异常计 FAIL 并继续，保证一次跑完所有断言；用例可以是 async。 */
+/**
+ * 跑一个用例：异常计 FAIL 并继续，保证一次跑完所有断言；用例可以是 async。
+ *
+ * 收尾重置进程级池：本文件每个 launch 用例都注入自己的假 chromium，池化后若不复位，
+ * 后一个用例会复用前一个用例的假浏览器（假 newPage 会抛错之类），失败会互相连坐。
+ * 这里的池只是单元测试夹具，不涉及真实浏览器。
+ */
 async function check(name, fn) {
   try {
     await fn()
@@ -65,6 +72,18 @@ async function check(name, fn) {
     fail += 1
     console.log(`  FAIL  ${name}`)
     console.log(`        ${String((error && error.message) || error).split('\n').join('\n        ')}`)
+  } finally {
+    await shutdownPoolQuietly()
+    resetPoolForTest()
+  }
+}
+
+/** 静默 shutdown 池：夹具里的假 browser 可能没有真正可用的 close。 */
+async function shutdownPoolQuietly() {
+  try {
+    await poolShutdown('测试用例收尾')
+  } catch {
+    // 假 browser 的 close 可能抛错或卡住，清理失败不影响断言结果
   }
 }
 
@@ -419,6 +438,8 @@ function fakePage(overrides = {}) {
 function fakeBrowser(overrides = {}) {
   const browser = {
     closeCalls: 0,
+    // 池化后会话的关闭对象是 context 而不是 browser：记录 context.close 次数供断言。
+    contextCloseCalls: 0,
     version: () => '0.0.0-fake',
     close: async () => {
       browser.closeCalls += 1
@@ -426,7 +447,13 @@ function fakeBrowser(overrides = {}) {
     ...overrides,
   }
   browser.newContext = overrides.newContext
-    ?? (async (options) => ({ newPage: async () => browser.newPage(options) }))
+    ?? (async (options) => ({
+      newPage: async () => browser.newPage(options),
+      // 真实 Playwright context 一定有 close；池化的关闭路径调的就是它。
+      close: async () => {
+        browser.contextCloseCalls += 1
+      },
+    }))
   return browser
 }
 
@@ -529,9 +556,13 @@ await check('隔离模式正常启动：ready + 1 个标签页', async () => {
 // 关闭兜底只保证「关闭路径一定有返回」：Playwright 的 Browser 没有结束进程的接口，超时后
 // 只能如实报告残留，不能假装已经强杀（这正是 browser.process() 曾静默失效的地方）。
 await check('close 超时：返回 timedOut 并提示进程可能残留', async () => {
+  // 池化后 close 关的是本会话的 context（共享浏览器归池管），所以让 context.close 卡住。
   const browser = fakeBrowser({ newPage: async () => fakePage() })
   const stuck = stuckClose(browser)
-  browser.close = stuck.close
+  browser.newContext = async (options) => ({
+    newPage: async () => browser.newPage(options),
+    close: stuck.close,
+  })
   const chromium = fakeChromium({ launch: () => browser })
   await launch('g-close-timeout', {}, undefined, {}, { chromium })
   const info = await close('g-close-timeout')
@@ -541,7 +572,8 @@ await check('close 超时：返回 timedOut 并提示进程可能残留', async 
   assert.ok(info.summary.includes('超时'), info.summary)
   assert.ok(info.summary.includes('可能仍在运行'), info.summary)
   assert.ok(!activeSessionKeys().includes('g-close-timeout'), '超时也要从注册表摘除会话')
-  assert.equal(browser.closeCalls, 1)
+  // 池化：超时的对象是 context.close（卡住即不计完成）。
+  assert.equal(browser.contextCloseCalls, 0, '卡住的 context.close 不该被计成完成')
 })
 await check('启动失败清理超时：随后的 close 仍如实报告残留，不报干净的已关闭', async () => {
   const browser = fakeBrowser({
@@ -550,7 +582,12 @@ await check('启动失败清理超时：随后的 close 仍如实报告残留，
     },
   })
   const stuck = stuckClose(browser)
-  browser.close = stuck.close
+  // 池化后启动失败清的是 context；但这条用例的 context 是在 newPage 抛错前建立的，
+  // 所以同样让 context.close 卡住。
+  browser.newContext = async (options) => ({
+    newPage: async () => browser.newPage(options),
+    close: stuck.close,
+  })
   const chromium = fakeChromium({ launch: () => browser })
   await assert.rejects(
     () => launch('g-fail-clean-timeout', {}, undefined, {}, { chromium }),
@@ -608,7 +645,10 @@ await check('复用路径 0 标签页（isolated）补建失败：拒绝、收�
     () => launch('g-reuse-isolated-fail'),
     /补建页面失败（模拟）/,
   )
-  assert.equal(browser.closeCalls, 1, '补建失败必须收掉浏览器')
+  // 池化：补建失败走 close(key) —— 只关本会话的 context 并归还租约；
+  // 共享浏览器由池级空闲计时收掉（本文件把计时关掉，所以这里只断言租约已归还）。
+  assert.equal(poolStats().leases, 0, '补建失败必须归还租约')
+  assert.equal(poolStats().slots.every((slot) => slot.state !== 'closed'), true)
   assert.equal(session.state, 'closed')
   assert.ok(!activeSessionKeys().includes('g-reuse-isolated-fail'), '会话注册表不应残留该 key')
 })

@@ -52,6 +52,7 @@
 | `lib/download.js` | 下载落盘与完整性校验：URL 直接取回 / 点击触发 download 事件、下载目录与文件名、大小上限、SHA-256 | 会话生命周期、面板连接、页面交互实现 |
 | `lib/fetch.js` | 临时页抓取与正文提取：临时页开 / 关（经 `createTransientPage`）、导航与稳定等待、标题与正文提取、字符预算与截断（`fetchText`） | 会话生命周期、标签页登记、ref 表、事件环、截图、面板 |
 | `lib/raw.js` | 原始 HTTP 逃生口（仅 `mode=context`）：用当前标签页所属浏览器上下文的请求客户端发任意方法 / 头 / 正文，文本与二进制正文分支、重定向与字符截断（rawHttp）；敏感响应头脱敏不在此定义，`redactHeaders` 复用 `observation.js` 的 `SENSITIVE_HEADERS` / `REDACTED_HEADER_VALUE`（`page.js` 的 `networkDetail` 用同一份）；原始 CDP 与服务端直连模式未实现（见 `0003-决策记录.md` #9） | 会话生命周期、标签页登记、事件环、ref 表、快照、投屏、面板、落盘 |
+| `lib/pool.js` | 浏览器实例池：多会话共享同一浏览器进程、各自一个隔离 context。按**启动签名**分槽（headless / proxy / channel / executablePath / userDataDir），同签名共享、异签名各起一个；`acquire` / `release` / `abandon` / `shutdown` / `poolStats` / `onBrowserGone` / `signatureOf` / `resetPoolForTest`；池级空闲回收（`DSH_BROWSER_POOL_IDLE_MS`，默认 120000）与「共享浏览器意外断开」广播。见功能规格 0041 | 会话状态机、标签页、页面能力、面板、协议；不认识会话 key |
 | `lib/doctor.js` | 环境诊断（只读）：运行时与依赖版本、系统 Edge 候选路径、CDP 端点可达性与 `/json/version` 识别、当前会话只读视图、产物 / 下载目录可写性、环境变量合法性；报告为固定六项文本，不启动浏览器、不改会话与进程 | 生命周期、页面能力、截图落盘、面板协议 |
 | `lib/auth.js` | 登录挑战识别与 loopback 补票（可整体删除而不影响其它能力） | 会话状态 |
 | `lib/history.js` | 动作历史的落盘与脱敏：路径解析、脱敏纯函数、JSONL 追加与有界裁剪、读回；导出 `DEFAULT_HISTORY_LIMIT` / `MAX_HISTORY_LIMIT` / `HISTORY_MAX_ENTRIES` / `HISTORY_PRUNE_SLACK` / `HISTORY_SUMMARY_LIMIT` / `SENSITIVE_ARGS` / `actionHistoryPath` / `historyEnabled` / `redactActionSummary` / `appendAction` / `listActions` | 面板广播、协议、会话状态、页面能力、工具定义 |
@@ -71,7 +72,7 @@
 tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js / carrier.js
 index.js → tools.js / panel.js / session.js / auth.js / history.js / gate.js / defaults.js / protocol.js / carrier.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
-session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js / auth-state.js
+session.js → page.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js / auth-state.js / pool.js
 page.js → auth.js / invariants.js / viewport.js / frame.js
 snapshot.js → page.js（只借 currentTab / withTimeout；当前未使用 invariants.js）/ frame.js
 observation.js → page.js（只借 currentTab、级别归一、展示格式化与环常量）/ hash.js
@@ -85,9 +86,10 @@ auth.js → fence.js
 screencast.js → protocol.js
 capture.js → protocol.js / viewport.js
 history.js → page.js（只借 timeOf / oneLine 两个展示纯函数；不回调会话层，不 import 页面能力）
-doctor.js → session.js / capture.js / defaults.js
+doctor.js → session.js / capture.js / defaults.js / pool.js
 invariants.js → carrier.js（只借 `carrierLabel` 拼错误文案；断言本身仍不读全局 Map、不做 I/O）
-protocol.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js / frame.js / carrier.js / auth-state.js → （无内部依赖）
+protocol.js / fence.js / defaults.js / errors.js / hash.js / viewport.js / gate.js / frame.js / carrier.js / auth-state.js / pool.js → （无内部依赖）
+
 ```
 
 `tools.js` 直接 import 13 个能力模块（session / page / recipe / read / capture / download / fetch / raw / human / history / defaults / doctor / carrier），另加拆分出来的 snapshot / observation 两个能力模块（共 15 个），新增能力时同步本图。
@@ -298,7 +300,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 
 | 函数 | 判据 | 错误信息（保持原口径） |
 |---|---|---|
-| `assertBrowserRunning(session)` | 会话存在且至少一个标签页（0 页按「尚未启动」处理） | 浏览器尚未启动，请先调用 browser_e2e_start |
+| `assertBrowserRunning(session)` | 会话存在、至少一个标签页（0 页按「尚未启动」处理），且 isolated + ready 时仍持有自己的 context（池化后新增，见功能规格 0041） | 浏览器尚未启动，请先调用 browser_e2e_start |
 | `assertCurrentTabAvailable(session)` | 会话存在、`activeTabId` 非 null/undefined，且该 id 在 `pages` 里 | 浏览器尚未启动或没有可用标签页，请先 browser_e2e_start |
 | `assertTabExists(session, tabId)` | `tabId` 在该会话 `pages` 里 | tab {id} 不存在，请先 browser_e2e_tabs 获取最新 tab_id |
 | `assertCanCloseLastTab(session)` | 会话标签页数 > 1 | 这是最后一个标签页，不能关闭；如需结束整个浏览器请用 browser_e2e_close |
@@ -310,7 +312,8 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | `assertCdpConnected(session, isConnected)` | 会话仍持有 CDP context，且 `isConnected`（调用方传入的 `browser.isConnected()` 结果）不为 `false`；未探测（undefined）时只按 context | CDP 浏览器连接已失效，请重新 browser_e2e_start |
 | `assertCdpContext(context)` | 接管前置：至少一个 context | CDP 浏览器没有可用的 context |
 | `assertCdpHasPages(pages)` | 接管前置：至少一个已打开标签页 | CDP 浏览器没有已打开的标签页，无法接管 |
-| `assertSessionContext(session)` | isolated 且 `state=ready` 的会话持有显式 context（方案 A 的每会话一个 context） | 隔离模式浏览器上下文缺失，请重新 browser_e2e_close 再 browser_e2e_start |
+| `assertSessionContext(session)` | isolated 且 `state=ready` 的会话持有显式 context（每会话一个隔离 context；池化后多个会话共享浏览器进程，context 仍各归各） | 隔离模式浏览器上下文缺失，请重新 browser_e2e_close 再 browser_e2e_start |
+| `lib/pool.js` 的分签名分槽 | 同启动签名共享一个浏览器进程，异签名各起一个 | 见功能规格 0041「边界」；不变量层不重复实现 |
 | `assertRefBelongsToTab(refs, ref)` | ref 在该 tab 的 ref 表（首参是该标签页条目的 `refs` Map，不是标签页条目） | ref {ref} 不存在，请先 browser_e2e_snapshot 获取最新 ref |
 | `assertRefRevalidated(ref, check)` | 元素仍命中且宽高 > 0 | ref {ref} 已失效…（两条原文案） |
 | `assertSingleScreencast(activeCdp)` | `activeCdp` 为 null/undefined（当前没有持有 CDP 会话） | 同一时刻只能有一个投屏会话（违反后果：画面串台） |

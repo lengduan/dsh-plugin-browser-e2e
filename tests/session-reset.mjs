@@ -19,6 +19,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 
 const { activeSessionKeys, close, closeAll, launch, requireSession, tabs } = await import('../lib/session.js')
 const { evaluate, navigate } = await import('../lib/page.js')
+// 池化后必须盯租约：close 若漏了 poolRelease，租约会从 1 一路累积而所有旧断言照绿（复核员点名）。
+const { poolStats } = await import('../lib/pool.js')
 
 const KEY_A = 'test-session-reset-a'
 const KEY_B = 'test-session-reset-b'
@@ -115,9 +117,17 @@ try {
   {
     oldSession = requireSession(KEY_A)
     check('重置前旧会话的空闲计时空在跑', oldSession.idleTimer !== null, String(oldSession.idleTimer))
+    // 前值：两个会话各持一份租约。
+    const leasesBeforeReset = poolStats().leases
+    check('重置前两个会话各持一份租约', leasesBeforeReset === 2,
+      JSON.stringify({ leasesBeforeReset, stats: poolStats() }))
     const closed = await close(KEY_A)
+    // 池化后 close 只关本会话的隔离 context，共享浏览器由池统一回收（计划风险 R2 的文案改动）。
     check('close 返回隔离模式已关闭', closed.closed === true && closed.mode === 'isolated'
-      && closed.summary === '浏览器已关闭', JSON.stringify(closed))
+      && closed.summary === '已关闭本会话的浏览器上下文', JSON.stringify(closed))
+    // close 必须归还租约：漏 release 时这条会红（旧断言抓不到）。
+    check('close 后租约归还到 1（不是累积）', poolStats().leases === 1,
+      JSON.stringify({ leases: poolStats().leases, stats: poolStats() }))
     oldIdleAfterClose = oldSession.idleTimer
     const between = await expectThrow(() => requireSession(KEY_A))
     check('两步之间页面工具报未启动',
@@ -125,6 +135,9 @@ try {
     // 不传 mode：close 不保留上一会话的运行参数，缺省回到 isolated。
     startInfo = await launch(KEY_A, { headless: true, viewportWidth: 800, viewportHeight: 600 }, KEY_A)
     sessionA2 = requireSession(KEY_A)
+    // close + start 一轮下来租约必须回到 2，不能是 3（那说明 close 没还、start 又借了）。
+    check('close 再 start 后租约回到 2（无泄漏）', poolStats().leases === 2,
+      JSON.stringify({ leases: poolStats().leases, stats: poolStats() }))
     tabsAfterStart = await tabs(KEY_A)
   }
 

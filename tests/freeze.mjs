@@ -107,14 +107,21 @@ try {
     const session = liveSession()
     // 先在页内造无限动画，再 reload：domcontentloaded 钩子应重新冻结。
     const entry = session.pages.get(session.activeTabId)
-    const made = await entry.page.evaluate(LOAD_SCRIPT)
-    // 冻结生效时这个动画要么直接 pause、要么被下一次 domcontentloaded 停掉，所以不比绝对值，
-    // 只要求「造得出来」；「导航后没有 running」由下一条断言负责。
-    check('页内造出无限动画（WAAPI 路径）', made.created === true, JSON.stringify(made))
+    // 阴性对照：先证明这个脚本在不冻结的页面上**确实**会留下 running 动画。
+    // 否则「导航后 running === 0」可能只是页面本来就没有动画，成了恒真断言。
+    await navigate(session, 'data:text/html,<h1>control</h1>')
+    const control = await entry.page.evaluate(LOAD_SCRIPT)
+    check('对照页（不冻结）能造出 running 动画', control.running >= 1, JSON.stringify(control))
     await navigate(session, 'data:text/html,<h1>freeze-replay</h1>')
     const afterNav = await freezeState(session)
     check('导航后样式已注入', afterNav.stylePresent === true, JSON.stringify(afterNav))
-    check('导航后没有 running 动画', afterNav.running === 0, JSON.stringify(afterNav))
+    // 导航后立即读：此时页面上只有冻结注入的那份状态，没有本测试造的动画。
+    check('导航后页面没有残留 running 动画', afterNav.running === 0, JSON.stringify(afterNav))
+    // 已知局限（实测确认，非本测试可修复）：冻结只作用于 domcontentloaded 时已存在的动画，
+    // 在冻结页上**新造**的动画仍是 running。这条断言把这个行为固定下来，
+    // 避免「running === 0」被误读成「冻结能拦住任何新动画」。
+    const late = await entry.page.evaluate(LOAD_SCRIPT)
+    check('已知局限：冻结页上新造的动画不受约束（仍 running）', late.running >= 1, JSON.stringify(late))
 
     // 再换一次文档，验证是「每次都重放」而不是只有第一次。
     await navigate(session, 'data:text/html,<h1>freeze-replay-2</h1>')

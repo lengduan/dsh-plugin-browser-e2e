@@ -18,6 +18,8 @@ process.env.DSH_BROWSER_IDLE_MS = '600000'
 const { close, closeAll, closeTab, launch, requireSession, tabs } = await import('../lib/session.js')
 const { click, evaluate, MIN_EVALUATE_TIMEOUT_MS, navigate, press } = await import('../lib/page.js')
 const { snapshot } = await import('../lib/snapshot.js')
+// 池化后必须盯租约：单会话只该有 1 份，漏 release 或重复 acquire 都会露出来（复核员点名）。
+const { poolStats } = await import('../lib/pool.js')
 
 const KEY = 'test-multitab-key'
 let session = null
@@ -84,7 +86,10 @@ try {
   {
     const info = await launch(KEY, { headless: true, viewportWidth: 800, viewportHeight: 600 }, SID)
     session = requireSession(KEY)
-    check('启动成功', info.reused === false && typeof info.summary === 'string', JSON.stringify(info))
+    // 原来只断言 typeof summary === 'string'（恒真），改断言真正有价值的两条：首次不复用 + 只持一份租约。
+    check('启动成功且只持一份租约',
+      info.reused === false && poolStats().leases === 1 && poolStats().slots.length === 1,
+      JSON.stringify({ reused: info.reused, leases: poolStats().leases, slots: poolStats().slots.length }))
     const first = await navigate(session, `${base}/a`, 'load')
     check('首个导航在 t1', first.tabId === 't1' && !first.newTab, JSON.stringify(first))
     const list = await tabs(KEY)
