@@ -1,9 +1,10 @@
 /**
  * 账户锁定防护第一层验收（功能规格 0042）：profile 目录、Local State 预置、哨兵值法自检。
  *
- * 主验收用**哨兵值法**（无需管理员）：启动前把 `password_manager.os_password_last_changed`
- * 写成 `9223372036854775807`，真起一次浏览器后读回；值被改写说明 Chromium 读过并消费了这个标记，
- * 从而不再做空密码探测（4625 的来源）。值仍是原样 = 防护未生效，报红。
+ * 用**哨兵值法**（无需管理员）：启动前把 `password_manager.os_password_last_changed`
+ * 写成 `9223372036854775807`，真起一次浏览器、close() 之后读回。它只能证明
+ * 「Chromium 读过并改写了这个字段」，**不能**证明「跳过了空密码探测」——后者已在 4625 实测中被证伪
+ * （功能规格 0041「profile 目录」一节）。本文件因此不再把它当「防护生效」的验收，只锁字段级契约。
  *
  * 前半部分是纯逻辑（临时目录，不启浏览器），后半部分真起一次无头 Edge。
  *
@@ -160,18 +161,69 @@ try {
     try {
       const got = await acquire({ headless: true, carrier: 'edge', userDataDir: dir })
       check('真起浏览器成功（launchPersistentContext 可用）', Boolean(got.browser), JSON.stringify({ reused: got.reused }))
-      check('池记录了「Local State 已被消费」', got.browser !== null)
-      await shutdown('哨兵值主验收收尾')
-      const after = readOsPasswordLastChanged(dir)
-      // 这是本步的主验收：值被改写 → Chromium 读过并处理了这个标记 → 不再重新做空密码探测。
-      check('启动后哨兵值已被 Chromium 改写（防护生效）', after !== before && after !== null,
-        `before=${before} after=${after}`)
+      const stats = await import('../lib/pool.js').then((m) => m.poolStats())
+      // 这条断言原来断的是「启动后立刻回读，标记已被消费」，而那个字段恒为 false：
+      // 回读发生在 close() 之前，此时 Chromium 还没落盘（实测 3.1 秒内始终是原值）。
+      // 现在断的是如实语义：本例**先自己 seed 过**（第 157 行），所以池内的 ensureLocalStateSeed
+      // 必然幂等跳过、记账必须是 'skipped'。这正好把「判据 after !== SENTINEL 恒真」这个坑钉死：
+      // 只要有人把这里改成无条件断言 'written'，就说明他没意识到幂等。
+      check('池如实记录本轮是幂等跳过（此前已写入过标记）',
+        stats.slots.some((s) => s.localStateConsumed === 'skipped'),
+        JSON.stringify(stats.slots.map((s) => ({ consumed: s.localStateConsumed }))))
+      check('记账取值只可能是三态之一',
+        stats.slots.every((s) => ['written', 'unchanged', 'skipped'].includes(s.localStateConsumed)),
+        JSON.stringify(stats.slots.map((s) => ({ consumed: s.localStateConsumed }))))
       const raw = JSON.parse(readFileSync(join(dir, 'Local State'), 'utf8'))
       check('Local State 仍保留大量既有字段（未被整体覆盖）', Object.keys(raw).length >= 5,
         `keys=${Object.keys(raw).length}`)
       check('password_manager 段仍在', Boolean(raw.password_manager && typeof raw.password_manager === 'object'))
     } finally {
       await shutdown('收尾').catch(() => {})
+    }
+    // 哨兵值法唯一可靠的观测点在 close() 之后：实测启动后 3.1 秒内读到的始终是原值。
+    // 它证明「Chromium 读过并改写了这个字段」，但**不**证明「跳过了空密码探测」——
+    // 该等价关系已被 4625 A/B 实测证伪（功能规格 0041「profile 目录」一节）。
+    const after = readOsPasswordLastChanged(dir)
+    check('close() 之后哨兵值被 Chromium 改写（仅证明字段被消费，不证明跳过探测）',
+      after !== before && after !== null, `before=${before} after=${after}`)
+    const statsAfterClose = await import('../lib/pool.js').then((m) => m.poolStats())
+    check('池记录了关闭后回读结果（与真实文件一致）',
+      statsAfterClose.slots.every((s) => s.localStateFlushedAfterClose === (after !== before)),
+      JSON.stringify({ slots: statsAfterClose.slots.map((s) => s.localStateFlushedAfterClose), after, before }))
+  }
+
+  console.log('== 用例 10：default context 不参与池的关闭判断（只看租约）==')
+  {
+    // launchPersistentContext 会带一个 profile 宿主的 default context，它无法单独关闭。
+    // 这条锁住「池的关闭判断只看 slot.leases、不清点 browser.contexts()」这一性质：
+    // 若以后有人改成数 context，default context 会让回收永远不触发，这里立刻报红。
+    const { acquire, release, poolStats, shutdown, resetPoolForTest } = await import('../lib/pool.js')
+    try {
+      const got = await acquire({ headless: true, carrier: 'edge' })
+      const b = got.browser
+      const beforeClose = b.contexts().length
+      check('启动后浏览器上至少有 default context + 我们的（≥1）', beforeClose >= 1, `contexts=${beforeClose}`)
+      // 自建一个隔离 context，模拟会话的用法
+      const own = await b.newContext({ viewport: { width: 640, height: 480 } })
+      await own.newPage()
+      const withOwn = b.contexts().length
+      check('自建 context 后数量增加', withOwn === beforeClose + 1, `before=${beforeClose} after=${withOwn}`)
+      await own.close()
+      // 归还租约：池级空闲到点（或 0 立即）应关浏览器，与残留的 default context 无关
+      const res = release(got.signature)
+      check('归还后租约归零', res.leases === 0, JSON.stringify(res))
+      const gone = await (async () => {
+        const deadline = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (poolStats().hasBrowser === false) return true
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        return false
+      })()
+      check('即使 default context 仍存活，租约归零后浏览器照样被回收', gone, JSON.stringify(poolStats()))
+    } finally {
+      await shutdown('default context 用例收尾').catch(() => {})
+      resetPoolForTest?.()
     }
   }
 } finally {

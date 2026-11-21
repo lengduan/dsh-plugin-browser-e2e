@@ -216,6 +216,27 @@ context 级下限 1 分钟的理由：`touchSession()` 在**操作开始时**就
   这是保留逐次调用参数自由的代价，不是泄漏。
 - **未实测**：池在真实多会话高并发（>2 会话同时 start / close）下的行为只做了 2 会话与并发合流用例，
   没有压测。
+- **账户锁定防护：已实测（两轮、含锁屏），结论是「实验无效」**（2026-11-21，见上文「4625 实测结论」）。
+  第二轮专在锁屏（`LOCKED`）下跑，A 臂 2 次 + B 臂 3 次，**按 PID 归属全部 0 条 4625**；第一轮未锁屏也是 0 条。
+  阳性对照在两种条件下都没起来，因此**无法判定防护有效或无效**。这条取代了原先的
+  「未实测：账户锁定防护是否真的不再产生 4625」。
+- **4625 观测本身依赖提权**：本机默认账户不在管理员组，`Get-WinEvent -LogName Security` 报
+  「Attempted to perform an unauthorized operation」；而 `-FilterHashtable` 在无权限时返回的
+  「找不到与指定的选择条件匹配的事件」与「窗口内确实 0 条」**在消息层面无法区分**。
+  `.scratch/read-4625.ps1` 因此把非管理员下的空结果一律判为 `PERMISSION_DENIED`，不猜成 0 条。
+- **防护是否有效仍未证实，且判据本身存疑**：两轮共 8 次启动（第二轮锁屏下 5 次）都没有 4625，
+  连阳性对照都起不来。这意味着「本插件的启动路径会稳定产生 4625」这个**隐含前提本身可能不成立**，
+  而不是「防护生效」。真正被证伪的是这个前提；防护的必要性取决于机器上实际打出的那些 4625
+  （来自其它 DSH 会话 / 其它 Edge 实例）是否与本插件同源——这点仍未测明。
+- **当前定位（2026-11-21 决定）：保留实现，但不声称有效。** 三个选项是「保留但降级 / 去掉改用
+  chromium.launch / 先查清既有 4625 来源」；选第一条的理由是成本极低（一个常驻 profile 目录 +
+  一层启动逻辑，风险为零），而删掉要重跑进程类测试、且若那些 4625 确与浏览器有关风险会回来。
+  代价是这份防护的真实价值仍是**未知**而非「已验证」。要转向「验证」，唯一的路是查清本机既有
+  msedge 4625 的来源（那需要按 `authPackage` / `logonProcess` 深挖，本轮未做）。
+- **4625 归属必须按 PID，不能按时间窗**：本机同时有其它 DSH 会话在调 `browser_e2e_start`，
+  实测按时间窗判断会把别人的 4625 算到自己头上（第二轮就发生了：3 条 4625 的 PID 24580 / 11284 / 27384
+  都不属于本实验）。`.scratch/ab-locked.mjs` 因此记录启动前后的 Edge 主进程 PID 集合，
+  用差集定出本次启动的 PID，再与 4625 的 `ProcessId` 字段逐条比对。
 ## profile 目录：账户锁定防护的第一层（步骤 6）
 
 `pool` 改用 `launchPersistentContext`，把每个槽的 profile 落在磁盘上，目的是让 Chromium 跳过「空密码探测
@@ -226,8 +247,97 @@ Windows 登录接口」这一步——那里每轮都会记一笔 4625 登录失
 | 目录根 | `~/.dsh/browser-e2e/browser-profile/`，`DSH_BROWSER_E2E_HOME` 可改 |
 | 槽目录 | 按启动签名分：`<headless|visible>-<edge|chrome>-<hash8>`。**Chromium 独占 user-data-dir**：实测第二个实例用同一目录直接报 `Target page, context or browser has been closed` |
 | 常驻 | 不随池 shutdown / 空闲回收删除（决策 D13）。收益公式因此是「每次槽生命周期最多一次 4625」 |
-| 哨兵值 | 启动前把 `password_manager.os_password_last_changed` 写成 `9223372036854775807`（字符串），启动后由 Chromium 改写成真实值。这是验收判据，无需管理员 |
+| 哨兵值 | 启动前把 `password_manager.os_password_last_changed` 写成 `9223372036854775807`（字符串）。**它只是一个字段级契约，不是「防护生效」的验收判据**（三条局限见下） |
 | 合并写入 | 只动 `password_manager` 段，其余 30+ 个 Chromium 状态字段原样保留；损坏的 JSON 备份为 `.corrupt` 后重建 |
+
+### 哨兵值法的三条局限（已实测确认，不要把「字段被写回」当成「跳过探测」）
+
+哨兵值原来被当成「账户锁定防护已生效」的验收判据，现确认**不成立**，三条原因叠加：
+
+1. **只在关闭时落盘**——启动后 3.1 秒内读到的始终是哨兵原值，只有 `close()` 之后才变真实值。
+   因此在 `acquire()` 里启动后立刻回读只能读到原值，判据恒为「未消费」
+   （证据：`.scratch/probe-sentinel-timing.mjs`、`.scratch/probe-sentinel-flush.mjs`）。
+2. **幂等导致根本不写入**——`ensureLocalStateSeed()`（`lib/browser-profile.js:137`）发现已有合法字符串就跳过，
+   profile 跑过一次之后再也不写哨兵值；此时判据 `after !== SENTINEL` 因为我们什么都没改而恒真。
+3. **「字段被写回」与「跳过探测」之间没有等价关系**——这是逻辑缺口，哨兵法无论如何都补不上：
+   Chromium 改写这个字段只说明它读到了值，不说明它据此放弃了空密码探测。
+
+因此实现上改为如实记账：`poolStats().slots[].localStateConsumed` 只在**本轮真的写入过**标记时才有意义
+（`'written'` / `'unchanged'`，幂等跳过时为 `'skipped'`），另提供 `localStateFlushedAfterClose`
+（`close()` 之后的回读，`null` 表示还没关闭过）。二者都只描述字段，**不得**用作防护功效的判据。
+
+### 4625 实测结论（2026-11-21，两轮 A/B 双臂对照）
+
+两轮都做了 A/B 对照，第二轮专门在**已锁屏**状态下做（锁探针 `LOCKED`，启动前后各验一次）。
+判据是「4625 事件的 `ProcessId` 是否等于本次浏览器主进程 PID」——**按 PID 归属，不按时间窗**：
+本机同时有其它 DSH 会话在调 `browser_e2e_start`，按时间窗会把别人的 4625 算到自己头上（实测发生过）。
+
+| 轮次 | 臂 | profile | 启动 | 锁状态 | 4625（按 PID 归属） |
+|---|---|---|---|---|---|
+| 1 | A（写哨兵） | `ab-profiles/A-1795263890981-e47779` | 1 | 未锁 | **0** |
+| 1 | B（空 profile 阳性对照） | `B-1795263948527-a8fa49`、`B-1795264832883-3730ea` | 2 | 未锁 | **0**、**0** |
+| 2 | B（空 profile 阳性对照） | `B-locked-1795266686293-bd36ca`、`B-locked-1795267071286-6b06a8`、`B-locked-1795267486734-304153` | 3 | **LOCKED** | **0**、**0**、**0** |
+| 2 | A（写哨兵） | `A-locked-1795266939205-42ef74`、`A-locked-1795267403447-a57924` | 2 | **LOCKED** | **0**、**0** |
+
+第二轮 5 次启动的实测 PID 为 `26016`（A）、`26648`（B）等；同一时段 Security 日志里的 3 条 4625 分别来自
+PID `24580` / `11284` / `27384`，**都不属于本实验的任何一次启动**（`27384` 在 A 臂启动前就在运行）。
+公网对照：基线（实验前 200 条上限）按进程归集为 msedge=149 / 空=45 / chrome=5 / svchost=1，
+最新一条在 `20:14:33`——也就是说这台机器**确实会**产生 msedge 的 4625，只是不是本插件的启动路径产生的。
+
+**判定：实验无效（阳性对照在两种条件下都没起来）。** 无论是否锁屏，全新空 profile 启动的浏览器
+都没有产生一条 4625。A 臂的 0 条因此**不能**归因于「哨兵值生效」，只能说明在这条启动路径上
+观测不到 4625。「防护有效」与「防护无效」都**未被证实**。
+
+结论的边界要说清：本实验证伪的是「**本插件的启动路径**会稳定产生 4625」这一隐含前提；
+它**不能**证明整个机器上不存在空密码探测，因为别的进程（另一 DSH 会话、其它 Edge 实例）确实打出了 4625。
+第一层防护是否必要，取决于那些 4625 的来源是否与我们的启动路径同源——这点本轮**仍未测明**。
+
+另外，A 臂关闭后哨兵值仍是原值（`sentinelUnchangedAfterClose: true`，两轮都如此），
+比「只在关闭时落盘」更差：即便 `close()` 之后 Chromium 也没有改写这个字段。这进一步说明该字段不适合当判据。
+
+### default context 的定位（`launchPersistentContext` 的固有副产物）
+
+`launchPersistentContext(dir)` 返回的**是 `BrowserContext` 而不是 `Browser`**，且这个 context 是 profile 宿主：
+它随浏览器创建、承载磁盘 profile、**不能单独关闭**——关它等于关掉整个浏览器进程（实测见下）。因此每个槽内有两层 context：
+
+| 层 | 数量 | 归属 | 能否单独关闭 | 参与池的关闭判断 |
+|---|---|---|---|---|
+| default（profile 宿主） | **恒为 1** | `slot.persistent` | **否**，关它即杀浏览器 | **否** |
+| 会话隔离 context | 每会话 1 个 | `session.context`（`browser.newContext()`） | 是 | **否** |
+
+实测（本机无头 Edge，2026-11-21）：
+
+| 场景 | `browser.contexts()` |
+|---|---|
+| 1 个会话 | 2（default + 该会话） |
+| 2 个会话（同一共享 Browser） | 3（default + 2 个会话） |
+| 会话全部关闭、浏览器仍在（池级空闲未到点） | **1**（只剩 default） |
+
+**池的关闭判断只看 `slot.leases`，从不清点 `browser.contexts()`。** 这是关键性质：
+
+- `release()`（`lib/pool.js`）把租约减一，归零时装池级空闲计时（`0` 则立即 `shutdownSlot`）；
+- `abandon()` 同口径，归零时立刻 `shutdownSlot`；
+- `contexts()` 在 `lib/` 里只有两处调用，**都属于 CDP 路径**（`session.js` 的 `assertCdpProfileIsolated`
+  与 CDP 接管取用户 context），与池的关闭判断无关。
+
+因此 default context 不会阻塞回收：它存在与否都不影响「租约归零 → 关浏览器」这条链路。
+`shutdownSlot()` 关的是 `slot.persistent`（profile 宿主），会连带收掉浏览器与那个 default context；
+若只关 `browser` 而不关 `persistent`，某些 Playwright 版本会留下 persistent context 未关闭的告警。
+
+**实测确认（池级 `DSH_BROWSER_POOL_IDLE_MS=0`）**：启动后 `contexts=2`、`leases=1`；
+关掉唯一会话后 `hasBrowser=false`、`slots=0`——尽管那时 default context 仍然活着，浏览器照样被回收。
+
+#### 为什么不能「启动后就关掉 default context」
+
+实测两条路径都失败（`launchPersistentContext` 的返回值语义是「整个持久化 profile 会话」，不持有独立浏览器生命周期）：
+
+| 路径 | 结果 |
+|---|---|
+| `persistent.close()` | `browser.isConnected()` 变 `false`，`contexts()` 归 0，后续 `newContext()` 报 `Target page, context or browser has been closed` |
+| 只对 default context 调 `ctx.close()`（先另建一个自己的 context 形成 2 个并存） | 同样 `isConnected()=false`；连**已存在的另一个 context** 也一并失效，`browserContext.newPage` 报同样的错 |
+
+结论：想让「后续路径完全等同于共享 Browser + 每会话隔离 context」，**无法通过关掉 default context 达成**。
+它必须一直存活到 `shutdownSlot()`，代价是一个空 `about:blank` 页的内存；收益是保住 4625 防护（本章开头）。
 
 ### 锁屏闸门
 
@@ -265,7 +375,11 @@ Playwright 先放默认 15 项、再追加用户 args，是两个独立开关；
 
 **仍未消除的已知局限**：
 
-- `tests/browser-profile.mjs` 的「池记录了 Local State 已被消费」一条判据仍是「浏览器非空」，`slot.localStateConsumed` 无读取方；真正的判据在下一行「哨兵值被改写」，那条有效。
+- ~~`tests/browser-profile.mjs` 的「池记录了 Local State 已被消费」一条判据仍是「浏览器非空」~~：
+  已修正。`slot.localStateConsumed` 改为 `'written' / 'unchanged' / 'skipped'` 三态，
+  另加 `localStateFlushedAfterClose`（`close()` 之后回读）；断言改成检查三态记账与关闭后回读，
+  并把「哨兵值被改写」的措辞降级为「仅证明字段被消费，不证明跳过探测」
+  （原措辞暗示了已被 4625 实测证伪的等价关系）。
 - `freezeAnimations` 拦不住导航后**新造**的动画（见功能规格 0040 的「已知局限」，已实测确认并写成断言）。
 - 进程计数类测试互相争抢 profile，`reclaim` 与 `pool-sessions` 并发跑会同时崩溃，必须串行。
 - `page.js` 的 `createTransientPage` 没有直接测试文件（全库 grep 无命中），其跨会话隔离只经 `tests/pool-sessions.mjs` 间接覆盖。
