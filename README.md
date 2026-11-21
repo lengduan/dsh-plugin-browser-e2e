@@ -62,7 +62,7 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 工具参数只接受上面三个枚举，不接受可执行路径（路径只由环境变量与平台惯例位置决定）。未显式传 `carrier` 时取插件配置的 `defaultCarrier`，再缺省 `edge`。隔离模式拉起的 Chrome 同样是 Playwright 管理的一次性 profile：不复用你正在运行的 Chrome、不读取你的登录态（要复用登录态请用 cdp，或见「重置会话」）。
 
-### 冻结动画（`freezeAnimations`）
+### 冻结并持续守护动画（`freezeAnimations`）
 
 无限 CSS 动画会让整页每帧重绘。节点多、内联样式大、带整屏 canvas 的页面上（实测 DSH GUI 1557 个节点 + 约 1MB 内联 CSS + 1320×860 canvas），
 会话行一个小小的「进行中」旋转点就能把空闲占用拉高一个量级；Playwright 又默认带 `--disable-renderer-backgrounding` / `--disable-backgrounding-occluded-windows`，headless 下动画永不节流。
@@ -71,14 +71,21 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ```
 browser_e2e_start { headless: true, freezeAnimations: true }
-browser_e2e_navigate  http://127.0.0.1:<port>/     # 每次换文档后自动重放
+browser_e2e_navigate  http://127.0.0.1:<port>/     # 每次换文档后自动重装守护
 browser_e2e_close
 ```
 
-- 每次换文档（navigate、reload、CDP 接管页、recipe 内的 goto）后自动注入 `#dsh-e2e-freeze` 样式（`animation / transition: none !important`）并 pause 现存动画。
-- 已启动的会话再传该参数**就地切换**，不必重开浏览器；关闭只改开关，已注入的页面保持现状。
+开关开着时，页面上的动画**任何时刻**都持续被收掉，不只是 `domcontentloaded` 那一刻。页内四件套（`lib/animation-guard.js`）：
+
+- **样式守卫**：幂等注入 `#dsh-e2e-freeze`（`animation / transition: none !important`），覆盖声明式动画，含后挂既有 class 的新元素；被页面删掉后下一轮复查补回。
+- **拦截 `Element.prototype.animate`**：返回**同一个** Animation 对象（不包装、不复制，`name` / `length` 保持原样），只对 `running` / `pending` 的在返回前 `pause()`。
+- **每 250ms 全量复查**（`GUARD_SWEEP_INTERVAL_MS`）：遍历 `document.getAnimations()` 把仍在跑的 `pause()`，兜住页面自插更高优先级的 `!important` 样式与直接 `new Animation(...)` 构造。
+- **可撤销**：关闭开关时真正撤守——撤掉 `addInitScript`（否则下次导航会复活）、清定时器、按 id 移除样式、恒等比较后还原原型、删哨兵。
+
+- 每次换文档（navigate、reload、CDP 接管页、recipe 内的 goto）后守护自动重装：`addInitScript` 保证无空窗，`domcontentloaded` 钩子兜底自愈，CDP 接管页由 `installAdoptedGuards` 补装。
+- 已启动的会话再传该参数**就地切换**，不必重开浏览器；关闭是**真正撤守**，不只是改标志位。已暂停的动画保持暂停、新造的动画恢复运行。
 - DSH GUI 实测（4 个与 `_dsh-state-dot-spin` 同构的 CSS 无限动画，20 秒采样）：不开 14.9% 单核，开启 1.3% 单核，动画数 4 → 0。
-- 边界：`animation:none` 对导航后用 `element.animate()` 新建的 WAAPI 动画无效，这类动画要等下一次 `domcontentloaded` 才会被 pause。**要验证动画本身时不要开这个开关**，否则相关断言恒假。
+- 边界：只覆盖主文档（子 frame 与跨源 iframe 不覆盖）；严格 CSP 下样式守卫可能不生效，但拦截 + 复查仍生效；patch 可被页面的 `toString()` 检测出来；页面持续 `play()` 与 250ms 复查会拉锯。**要验证动画本身时不要开这个开关**，否则相关断言恒假。
 
 同一会话复用同一实例，`browser_e2e_start` 可重复调用。未显式传 `mode` / `cdpEndpoint` / `carrier` 时，首次启动使用插件配置里的默认值，工具参数优先。已启动后要切换 `mode`（isolated ↔ cdp）、改 `cdpEndpoint` 或换载体，必须先 `browser_e2e_close` 再重新启动；已启动时传入与当前不一致的值会直接报错，不会静默复用。同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例。
 
@@ -103,7 +110,7 @@ browser_e2e_close
 
 | 工具 | 作用 |
 |---|---|
-| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`cdpCopyProfile` / `cdpProfileSource` / `cdpProfileDir` 复制用户 Edge profile（登录态 + 扩展）后接管副本，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸；`freezeAnimations`（默认 false）冻结页面动画，见下节 |
+| `browser_e2e_start` | 启动或复用浏览器；`mode` 选择 isolated / cdp，`carrier` 选择隔离模式的载体（`edge` 默认 / `chrome` / `auto`），`cdpEndpoint` 指定接管端点，`cdpCopyProfile` / `cdpProfileSource` / `cdpProfileDir` 复制用户 Edge profile（登录态 + 扩展）后接管副本，`storageState` / `storageDomains` 在 isolated 新启动时导入登录态，支持 `headless`、`proxy`、视口尺寸；`freezeAnimations`（默认 false）冻结并持续守护页面动画（样式守卫 + 拦截 element.animate + 250ms 复查），关闭时真正撤守，见下节 |
 | `browser_e2e_auth_export` | 把当前 isolated 会话的登录态（cookie + localStorage）导出成 Playwright storageState JSON：`path` 必填且必须位于 `~/.dsh/browser-e2e/auth/` 下（`.json`），`domains` 可选按域名后缀过滤，`overwrite` 默认 false；返回路径 / 字节数 / 条目数与域名，不含任何 cookie 名或值；文件是明文凭据，勿提交仓库；CDP 模式拒绝导出 |
 | `browser_e2e_navigate` | 导航到 URL；`waitUntil` 支持 load / domcontentloaded / networkidle（长连接页面不要用 networkidle），`new_tab: true` 新建页并设为当前页，`tab_id` 指定目标页 |
 | `browser_e2e_tabs` | 标签页操作，`action` 三选一：`list`（缺省）列出本会话标签页（`tab_id` / url / title / active / `loading` / `origin`，`created` 本会话新建 / `adopted` CDP 接管）；`close` 关闭 `tab_id` 指定的标签页（最后一个不允许关，结束整个浏览器用 `browser_e2e_close`）；`follow` 把后续页面工具的默认标签页绑定到 `tab_id`，不给时自动判定用户当前正在看的页（窗口焦点页优先，其次唯一可见页，无法唯一判定时保持当前），`activate: true` 把该页带到前台，绑定后不传 `tab_id` 的工具都默认作用到该页 |
@@ -669,6 +676,7 @@ npm run test:integration
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **动画守护的边界** —— `freezeAnimations: true` 只覆盖**主文档**：同源与跨源子 frame 都不 patch、不注入样式（守护脚本首行带 frame 判定），不要声称能覆盖全部 frame。`Element.prototype.animate` 的 patch 可被页面的 `toString()` 检测出来（无法伪装成 native 代码），不承诺隐蔽。严格 CSP（`style-src` 不含 `unsafe-inline`）下样式守卫可能不生效，此时拦截 + 250ms 复查仍然生效，属降级不属失败。已 `pause()` 的 WAAPI 在撤守时**不主动 resume**（主动恢复等于替页面做决定、且立刻重新耗 CPU）；撤守后新造的动画恢复 running。页面持续 `play()` 会与 250ms 复查拉锯，每轮之间仍可能有至多一个间隔的运行时间片。守护失败（页面已关闭、正在换文档、求值失败、`dispose` 失败）一律吞掉并返回 `{ ok: false, error }`，不阻断导航与页登记。
 - **iframe 操作只覆盖 click / fill / scroll** —— `click` / `fill` / `scroll` 支持 `frame`（同源与跨源均可，跨源能力已在 isolated 与 cdp 两种模式下实测）；`hover` / `drag` / `upload` 仍只作用主 frame，子 frame 不分配 ref（需先用 `snapshot { frame }` + `query` 取 selector）。`scroll { frame }` 只保证把滚轮发到 frame 元素中心，实际滚动量由页面决定，摘要只报告已发送量。
 - **工具门控是软护栏，不是安全边界** —— `accessMode=readonly` 挡的是模型误点，不是恶意模型：`navigate` 仍会发出真实导航请求（GET 可能带副作用，如退出登录），页面自身脚本照常执行，`allowScript=true` 时脚本也能绕过交互限制。门控配置是插件级、进程级，所有会话共享一份。要模型改不掉的限制只能靠 profile 配置文件，而配置文件在宿主侧，本插件不校验其完整性。
 - **同一会话的并发启动** —— 同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例，不会并行拉起第二个浏览器；若等待期间会话被 close，后到者收到「浏览器已关闭（启动与关闭并发）」并提示重新启动。
@@ -699,7 +707,7 @@ npm run test:integration
 - **面板历史不持久** —— 历史抽屉只保留本面板连接内存里的最近 50 条动作，不落盘、不脱敏，重连保留但刷新面板或关闭 tab 后清空；打开面板之前的动作、其它面板连接收到的动作都不在抽屉里。宿主侧的持久副本（已脱敏）由 `browser_e2e_history` 读回，抽屉不读它；宿主侧动作环、跨连接回放属待决策项，面板直控判影响大 → 待决策，未实现。
 - **动作历史的边界** —— 落盘在 `~/.dsh/browser-e2e/history/actions.jsonl`（`DSH_BROWSER_HISTORY_FILE` 可覆盖），只记录工具名 / 时间 / 成功失败 / 已脱敏摘要 / 会话，不记录入参原文、返回值、页面访问轨迹、tab 归属与耗时。脱敏只覆盖 `browser_e2e_fill` 的 `value` 与 `browser_e2e_dialog` 的 `prompt_text`：新增工具若在摘要里回显输入，必须同步扩 `SENSITIVE_ARGS`；`navigate` / `wait` 摘要里的 URL 查询参数不脱敏，默认 `scope=self` 只限制可见范围。上限只按条数（默认 2000，`DSH_BROWSER_HISTORY_MAX` 可改），不做按天过期；同一台机器两个实例写同一文件时追加按行不互相撕裂，但裁剪重写可能互相覆盖、丢记录（单实例假设，按实例区分请设 `DSH_BROWSER_HISTORY_FILE`）。`scope=all` 会读到同一台机器上其它会话（含其它 profile）的记录；手工改坏的历史文件按行跳过坏行，不逐行修复。
 - **doctor 只体检不修复** —— `browser_e2e_doctor` 不启动浏览器、不安装 Edge、不清理残留进程，也不探测 profile 占用：`edge` 项按 Playwright 的同一条候选路径规则判断可执行文件是否存在，因此不能证明「Edge 一定起得来」；CDP 探测只做一次 TCP 连接与 `GET /json/version`，不建立 CDP 会话、不占用浏览器。代理只校验格式不探活；产物根目录不存在时用最近祖先的 `fs.access(W_OK)` 判可写，Windows 上该 API 对目录 ACL 判定不精确。环境变量在模块加载时求值，进程运行中改值不会反映到报告的生效值上。
-- **锁屏探针仅 Windows 且是独立进程** —— `native/lockscreen/` 下的 `lockprobe.exe` 用四路 Win32 探测判断当前会话是否锁屏（`probeLock()` / `isLocked()`），不进入 `lib/` 调用图，也不受工具门控管理。它只读系统状态、冷启动约 60~90ms；非 Windows 平台抛 `LockProbeUnavailableError`。判定可能返回 `UNKNOWN`（强信号冲突时宁可不下结论），调用方不得把 `UNKNOWN` 或"探针不可用"当成未锁屏。**进程枚举在 DSH 子进程里被 Job Object 裁剪**（`CreateToolhelp32Snapshot` 仅见 13 条 vs 真实 289 条，C# 同样如此），故探针不用进程快照。服务化场景（Session 0）未验证。原理与坑位见 `native/lockscreen/README.md`，规格见 `specs/功能规格/0041-lockscreen-probe.md`。
+- **锁屏探针仅 Windows 且是独立进程** —— `native/lockscreen/` 下的 `lockprobe.exe` 用四路 Win32 探测判断当前会话是否锁屏（`probeLock()` / `isLocked()`），不进入 `lib/` 调用图，也不受工具门控管理。它只读系统状态、冷启动约 60~90ms；非 Windows 平台抛 `LockProbeUnavailableError`。判定可能返回 `UNKNOWN`（强信号冲突时宁可不下结论），调用方不得把 `UNKNOWN` 或"探针不可用"当成未锁屏。**进程枚举在 DSH 子进程里被 Job Object 裁剪**（`CreateToolhelp32Snapshot` 仅见 13 条 vs 真实 289 条，C# 同样如此），故探针不用进程快照。服务化场景（Session 0）未验证。原理与坑位见 `native/lockscreen/README.md`，规格见 `specs/功能规格/0042-lockscreen-probe.md`（原编号 0041，与 `0041-browser-pool.md` 撞号后改名为 0042）。
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -28,3 +28,5 @@
   LockScreenBackstopFrame（实测铺满全屏，11 个采样点全中），它是覆盖 fg=NULL 阶段的第二条只读判据；该类在
   EnumWindows 的 300 个窗口里命中 0 次，属锁屏安全桌面，故不会在未锁屏时误伤。此路两判据都保留：能命名时看桌面归属，
   不能命名时看光标类名。
+- 现象：`page.addInitScript({ content })` 里的脚本在文档创建后、页面脚本前执行，那时 `document.documentElement` 与 `document.head` **都是 null**（实测 readyState=loading，三者皆 false），任何 `(document.head || document.documentElement).appendChild(style)` 都会抛 `Cannot read properties of null`，整段脚本中断——既不注入也不留哨兵，表现为「init script 静默无效」而 `evaluate` 同一份脚本却正常。解法：`ensureStyle` 里 `const root = document.head || document.documentElement; if (!root) return false`，并挂 `DOMContentLoaded` 一次性补挂 + 交给周期 sweep 自愈；不要假设 init 阶段 DOM 就绪。
+- 现象：给会话层某个同步写字段的路径改成 `await applyFreezeSwitch(...)`（为了让函数变 async），`tests/reclaim.mjs` 用例 G 立刻报「非法会话状态转移：launching --launch-->」。原因：该 await 位于 `session.state = nextSessionState(state, 'launch')` **之前**，并发 launch 在那次让出事件循环的窗口里看到状态仍是 idle，抢先走转移表。解法：状态转移必须先于**任何** await；此处没有页面操作，改成同步写字段即可，不要为了统一风格给同步路径套 async。

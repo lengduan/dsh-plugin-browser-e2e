@@ -2,7 +2,7 @@
 
 判断当前 Windows 会话是否锁屏。供 DSH 宿主侧在工具调用前做前置判断。
 
-**功能规格**：`specs/功能规格/0041-lockscreen-probe.md`
+**功能规格**：`specs/功能规格/0042-lockscreen-probe.md`
 
 ## 用法
 

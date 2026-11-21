@@ -1,5 +1,5 @@
 /**
- * 账户锁定防护第一层验收（功能规格 0042）：profile 目录、Local State 预置、哨兵值法自检。
+ * 账户锁定防护第一层验收（功能规格 0041「profile 目录」）：profile 目录、Local State 预置、哨兵值法自检。
  *
  * 用**哨兵值法**（无需管理员）：启动前把 `password_manager.os_password_last_changed`
  * 写成 `9223372036854775807`，真起一次浏览器、close() 之后读回。它只能证明

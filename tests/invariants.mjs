@@ -19,8 +19,8 @@ process.env.DSH_BROWSER_CLOSE_TIMEOUT_MS = '20'
 import {
   assertBrowserRunning, assertCanCloseLastTab, assertCarrierNotHotSwitched, assertCdpConnected, assertCdpContext,
   assertCdpHasPages, assertCurrentTabAvailable, assertEndpointNotHotSwitched, assertLaunchSettled,
-  assertModeNotHotSwitched, assertNotClosedDuringLaunch, assertRefBelongsToTab, assertRefRevalidated,
-  assertSessionContext, assertSingleScreencast, assertTabExists,
+  assertModeNotHotSwitched, assertNotClosedDuringLaunch, assertPoolSlotTransition, assertRefBelongsToTab,
+  assertRefRevalidated, assertSessionContext, assertSingleScreencast, assertTabExists, POOL_SLOT_STATES,
 } from '../lib/invariants.js'
 import {
   nextSessionState, SESSION_STATES, activeSessionKeys, close, closeAll, closeTab, launch, sessionOf, subscribePanelEvents,
@@ -214,6 +214,31 @@ await check('assertRefRevalidated：未命中与零尺寸是两种文案', () =>
 await check('assertSingleScreencast：已有 CDP 会话时报串台', () => {
   assert.doesNotThrow(() => assertSingleScreencast(null))
   assert.throws(() => assertSingleScreencast({}), /只能有一个投屏会话/)
+})
+
+console.log('== 用例 C2：池槽状态不变量（assertPoolSlotTransition）==')
+await check('POOL_SLOT_STATES 是槽状态唯一来源，四个状态齐备', () => {
+  assert.deepEqual(POOL_SLOT_STATES, ['empty', 'launching', 'ready', 'closing'])
+})
+await check('assertPoolSlotTransition：四个合法状态逐个通过', () => {
+  for (const state of POOL_SLOT_STATES) {
+    assert.doesNotThrow(() => assertPoolSlotTransition(state), `${state} 应合法`)
+  }
+})
+await check('assertPoolSlotTransition：非法值抛错且文案逐字含「池状态非法」', () => {
+  for (const bad of ['closed', 'readyy', '', undefined, null, 123, {}]) {
+    assert.throws(
+      () => assertPoolSlotTransition(bad),
+      (error) => error.message === `池状态非法：${JSON.stringify(bad)}`,
+      `${JSON.stringify(bad)} 应被拒绝`,
+    )
+  }
+})
+await check('pool.js 不再自带一份状态表与内联 throw', () => {
+  const source = readFileSync(new URL('../lib/pool.js', import.meta.url), 'utf8')
+  assert.ok(!source.includes('SLOT_STATES'), 'pool.js 不应再定义本地槽状态表（单一来源在 invariants.js）')
+  assert.ok(!source.includes('池状态非法'), 'pool.js 不应再内联槽状态错误文案')
+  assert.ok(source.includes('assertPoolSlotTransition'), 'pool.js 应从 invariants.js 取断言')
 })
 
 console.log('== 用例 D：会话状态机（纯转移函数）==')
