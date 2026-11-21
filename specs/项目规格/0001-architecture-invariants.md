@@ -65,7 +65,7 @@
 | `lib/tools.js` | 30 个 `browser_e2e_*` 工具的表（name / description / parameters / run / output） | 生命周期、面板挂载 |
 | `lib/panel.js` | 面板状态、命令分发、投屏目标同步、设置合并 | 工具定义 |
 | `lib/index.js` | 插件 Config、`apply` 注册与生命周期（工具注册、session/disposed、卸载、面板路由挂载） | 工具实现细节 |
-| `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | — |
+| `client/index.js` | 客户端 bundle（单文件，不拆）；协议常量、命令 / 事件表与默认 CDP 端点由 `scripts/build-client.mjs`（经 `scripts/protocol-inject.mjs`）从 `lib/protocol.js` / `lib/defaults.js` 注入 | 宿主半区逻辑；对 `lib/` 任何模块的运行期 import（只 `require('react')`，协议值一律经构建注入，不手写）；协议与默认值的定义（单一来源是 `lib/protocol.js` / `lib/defaults.js`）；构建脚本自身 |
 | `lib/client.js` | `client/index.js` 的构建产物（头注释 + 协议常量注入块 + 源码），包内实际被宿主加载的客户端 bundle；由 `scripts/build-client.mjs` 生成，手改会被下一次构建覆盖 | 手写逻辑（客户端逻辑只改 `client/index.js`） |
 
 依赖方向（实现层单向，禁止回指）：
@@ -74,7 +74,7 @@
 tools.js → session.js / page.js / snapshot.js / observation.js / recipe.js / read.js / capture.js / download.js / fetch.js / raw.js / human.js / history.js / defaults.js / doctor.js / carrier.js
 index.js → tools.js / panel.js / session.js / auth.js / history.js / gate.js / defaults.js / protocol.js / carrier.js
 panel.js → protocol.js / session.js / screencast.js / capture.js / fence.js
-session.js → page.js / animation-guard.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js / auth-state.js / pool.js
+session.js → page.js / animation-guard.js / capture.js / invariants.js / protocol.js / fence.js / defaults.js / carrier.js / auth-state.js / pool.js / profile-copy.js
 page.js → animation-guard.js / auth.js / invariants.js / viewport.js / frame.js
 pool.js → browser-profile.js / invariants.js / native/lockscreen/probe.js（动态 import，仅启动前置）
 snapshot.js → page.js（只借 currentTab / withTimeout；当前未使用 invariants.js）/ frame.js
@@ -224,7 +224,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | 行 | 类别 | 违反后果 | 目标归属 |
 |---|---|---|---|
 | 294 | 跨调用 | 对不存在的 tab 取页对象会抛 TypeError 或操作错页 | `invariants.assertTabExists` |
-| 300 | 跨调用 | 没有 active tab 时页面工具作用在 `undefined` 上 | `invariants.assertBrowserRunning` |
+| 300 | 跨调用 | 没有 active tab 时页面工具作用在 `undefined` 上 | `invariants.assertBrowserRunning`（零页恢复路径用 `assertBrowserAlive`，只查浏览器在、不查页数） |
 | 308 | 跨调用 | CDP 连接已失效仍 `newPage`，报 Target closed | `invariants.assertCdpConnected` |
 | 480 | 单次 | 端点字符串不是 URL，连接必然失败 | `session.launch`（入参） |
 | 483 | 单次 | 只支持 http 端点 | `session.launch` |
@@ -314,6 +314,7 @@ CDP 投屏（`screencast.js`）与单次截图（`capture.js` 的 `captureJpeg`�
 | 函数 | 判据 | 错误信息（保持原口径） |
 |---|---|---|
 | `assertBrowserRunning(session)` | 会话存在、至少一个标签页（0 页按「尚未启动」处理），且 isolated + ready 时仍持有自己的 context（池化后新增，见功能规格 0041） | 浏览器尚未启动，请先调用 browser_e2e_start |
+| `assertBrowserAlive(session)` | 会话存在且持有 `browser`（**不要求页数**）：零页恢复路径专用（唯一页被关掉后 `navigate {new_tab:true}`，此时 `pages` 已归零但浏览器仍活着）；`page.js` 的 `createPage` 走这条判据 | 浏览器尚未启动，请先调用 browser_e2e_start |
 | `assertCurrentTabAvailable(session)` | 会话存在、`activeTabId` 非 null/undefined，且该 id 在 `pages` 里 | 浏览器尚未启动或没有可用标签页，请先 browser_e2e_start |
 | `assertTabExists(session, tabId)` | `tabId` 在该会话 `pages` 里 | tab {id} 不存在，请先 browser_e2e_tabs 获取最新 tab_id |
 | `assertCanCloseLastTab(session)` | 会话标签页数 > 1 | 这是最后一个标签页，不能关闭；如需结束整个浏览器请用 browser_e2e_close |

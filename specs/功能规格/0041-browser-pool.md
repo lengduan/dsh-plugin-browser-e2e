@@ -1,7 +1,7 @@
 # 浏览器实例池与每会话隔离 context
 
 状态: 已实现
-关联: 项目规格 0001-architecture-invariants.md（模块边界与依赖方向）；0021-session-reset.md（会话重置）；0040-freeze-animations.md（动画冻结，与本文正交）
+关联: 项目规格 0001-architecture-invariants.md（模块边界与依赖方向）；0020-session-reset.md（会话重置）；0040-animation-freeze.md（动画冻结，与本文正交）
 代码: lib/pool.js / lib/session.js / lib/page.js / lib/invariants.js / lib/doctor.js / tests/pool.mjs / tests/pool-sessions.mjs / tests/pool-idle-zero.mjs / tests/idle-bounds.mjs
 
 ## 需求
