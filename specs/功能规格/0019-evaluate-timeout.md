@@ -6,7 +6,8 @@
 
 ## 需求
 
-页面内死循环、或表达式返回一个永不 resolve 的 Promise 时，`browser_e2e_evaluate` 现在会一直挂住：Playwright 的 `page.evaluate` 没有 timeout 选项，`lib/page.js` 的 `evaluate` 只能等页面自己结束。默认空闲回收（`DSH_BROWSER_IDLE_MS`，600000ms）到点才会因回收关掉浏览器而让调用失败，设 0 时永久挂起。给 evaluate 一个执行上限，到点中断页内脚本并报错，页面与会话保持可用。
+页面内死循环、或表达式返回一个永不 resolve 的 Promise 时，`browser_e2e_evaluate` 现在会一直挂住：Playwright 的 `page.evaluate` 没有 timeout 选项，`lib/page.js` 的 `evaluate` 只能等页面自己结束。默认空闲回收（`DSH_BROWSER_IDLE_MS`，600000ms）到点才会因回收关掉浏览器而让调用失败。
+给 evaluate 一个执行上限，到点中断页内脚本并报错，页面与会话保持可用。
 
 ## 行为
 
@@ -42,7 +43,15 @@
 - 「中断成功」只表示 CDP 命令已成功下发并中断了当前执行，不表示页面里所有脚本都已停止；文案已按这个口径写。
 - 中断命令依赖求值前先行建立的 CDP 会话：发起 `page.evaluate` 之前用 `page.context().newCDPSession(page)` 建好会话，超时后下发 `Runtime.terminateExecution` 再 detach；不能在超时到点后再新建会话（页面主线程死循环时新建与下发都会排队不返回，实测已证）。页面已崩溃或已关闭时会失败，此时仍返回超时错误并带「未能中断」。
 - 中断可能打断页面自己的事件处理或框架渲染，留下半完成的 DOM；本项不自动重新 snapshot、不回滚 DOM，需要时由调用方重新 `browser_e2e_snapshot`。
-- 空闲回收竞态：若 `DSH_BROWSER_IDLE_MS` 小于 `timeoutMs`，浏览器可能在超时前被回收，该次调用随后报「浏览器尚未启动或没有可用标签页」。与 `0001` 已记录的 `browser_e2e_wait` 同类边界，规避方式相同（设 0 或大于单次调用时长）。
+- 空闲回收竞态：若 `DSH_BROWSER_IDLE_MS` 小于 `timeoutMs`，浏览器可能在超时前被回收，该次调用随后报「浏览器尚未启动或没有可用标签页」。与 `0001` 已记录的 `browser_e2e_wait` 同类边界。
+
+> **[已过时 2026-11-21]** 「规避方式相同（设 `0` 或大于单次调用时长）」
+>
+> 现在：**设 `0` 已不能规避**。`DSH_BROWSER_IDLE_MS` 有 60000ms 下限，配 `0` 会被抬到 1 分钟，
+> 仍然可能小于单次调用时长。唯一有效的规避是**把该值调大到大于单次调用时长**（上限 600000ms）。
+> 变更原因：`0` 原语义为「关闭空闲回收」（即永不回收），加了上下限后该语义取消；
+> 详见 [0041-browser-pool.md](0041-browser-pool.md)「决策变更的原因」。
+
 - CDP 接管模式下中断会打断用户浏览器里该页正在执行的脚本；这是接管既有语义的延伸，不新增确认步骤。
 - 不处理：`expression` 长度上限（保持现状无上限）、返回值体积上限（保持现有 `JSON.stringify` 兜底）、超时后自动重试、给 `snapshot` 的内部页面脚本加终止（`0012` 的「页面脚本无法被终止」保持不变）。
 

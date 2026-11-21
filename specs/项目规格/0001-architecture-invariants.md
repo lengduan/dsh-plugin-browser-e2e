@@ -387,6 +387,16 @@ closed：终态，任何事件非法
    已知边界（已记录，未修）：计时从「本次工具调用开始」算，一次 `browser_e2e_wait` 等调用若本身
    耗时超过 `DSH_BROWSER_IDLE_MS`，浏览器可能在等待期间被回收，该次调用随后报「浏览器尚未启动」。
    规避：把 `DSH_BROWSER_IDLE_MS` 设为大于单次调用时长（下限固定 60000ms，配更小值会被抬高）。
+
+> **[已过时 2026-11-21]** 第 1 条原先只提「关闭该会话浏览器」，且把 `DSH_BROWSER_IDLE_MS=0` 当作可用的关闭开关。
+>
+> 现在：池化后第 1 条**只关该会话自己的隔离 context**，浏览器进程由池级空闲回收
+> （`DSH_BROWSER_POOL_IDLE_MS`，默认 120000ms，上限 600000ms，`0` = 租约归零时立即关）。
+> `DSH_BROWSER_IDLE_MS` 夹到 `[60000, 600000]`，`0` 会被抬到 1 分钟，「设为 0 关闭回收」的旧说法作废。
+> 变更原因：浏览器池化（功能规格 0041）把浏览器进程与会话解耦；ctx 级空闲若可设极小值，
+> 会在工具调用中途把 context 关掉（`touchSession` 在操作开始时续期）。
+> 详见 [0041-browser-pool.md](../功能规格/0041-browser-pool.md)「决策变更的原因」。
+
 2. **会话回收**：`session/disposed` 按 `session.id` 经 `keyBySessionId` 精确关闭。
 3. **卸载回收**：插件卸载 / 热替换时 `closeAll()`。
 
@@ -449,7 +459,7 @@ closed：终态，任何事件非法
 | 展示格式化四处 | `page.js` 的 `timeOf`/`oneLine`、`session.js` 的 `tabs` 文本拼装、`tools.js` 的标题拼串、`client/index.js` 的 `formatClock`；其中 `timeOf` 取 ISO 的 UTC 段、`formatClock` 用本地时区，同一瞬间显示不同。 | 上移格式化会改动 `tools.js` 全部 `run` 的返回契约，属较大重构，留待单独一轮。 |
 | client 文案 / 样式孤儿键 | `client/index.js` 现有 17 个无引用 EN 文案键（`EN` 共 45 键）与 9 个无引用 `st` 样式键（`st` 共 44 键，含 `st.url`）；2026-11-07 解析两个对象并统计引用实测。 | 属整洁度，不影响行为；清理需与 `tests/client-bundle.mjs` 的文案断言一起核对，留待单独一轮。 |
 | 工具描述里的 limit / timeoutMs 默认值 | 已处置（M1）：`wait` 的默认超时（`DEFAULT_WAIT_TIMEOUT_MS`）与 status 区间（`WAIT_STATUS_MIN` / `WAIT_STATUS_MAX`）、`console` / `network` 的默认 limit（`DEFAULT_RING_QUERY_LIMIT`）、`download` 的默认总预算（`DEFAULT_DOWNLOAD_TIMEOUT_MS`）、`assert` 条数（`ASSERT_MAX_CHECKS`）、`recipe` 的逐键延迟 / hover 等待（`KEYSTROKE_MAX_DELAY_MS` / `MAX_SETTLE_MS` / `DEFAULT_SETTLE_MS`）、`upload` 的 MiB 上限（`sizeText` 从字节常量派生）都改由能力模块导出的常量插值；`evaluate` 仍为 `DEFAULT_EVALUATE_TIMEOUT_MS` / `MIN_EVALUATE_TIMEOUT_MS` / `MAX_EVALUATE_TIMEOUT_MS`。 | 已处置；保留行以便追溯。 |
-| 进程回收环境变量的校验规则与默认值两套 | `session.js` 用 `Number(process.env.… ?? 默认值)` 直取（不校验，`DSH_BROWSER_CLOSE_TIMEOUT_MS=0` 直接生效、负数 / NaN 也照用）；`doctor.js` 另有一套校验（`integerTextOf` 后 `IDLE_CLOSE_MS` 要求非负整数、`CLOSE_TIMEOUT_MS` 要求正整数），修复文案仍写死「默认 600000 / 5000」。同一输入两者结论相反：`DSH_BROWSER_CLOSE_TIMEOUT_MS=0` 时 `session.js` 用 0（`setTimeout(…, 0)` 与 `browser.close()` 竞争），`doctor.js` 报 WARN「不是正整数」。 | 需要先定规格：0 / 负数是否合法、校验归 `session.js` 还是 `doctor.js`；收紧运行时校验会碰回收口径，留待单独一轮。 |
+| 进程回收环境变量的校验规则与默认值两套 | `session.js` 的 `DSH_BROWSER_CLOSE_TIMEOUT_MS` 用 `Number(process.env.… ?? 默认值)` 直取（不校验，`=0` 直接生效、负数 / NaN 也照用）；`DSH_BROWSER_IDLE_MS` 已改为经 `resolveIdleMs()` 夹到 `[60000, 600000]`；`doctor.js` 另有一套校验（`integerTextOf` 后 `IDLE_CLOSE_MS` 要求非负整数、`CLOSE_TIMEOUT_MS` 要求正整数），修复文案仍写死「默认 600000 / 5000」。同一输入两者结论相反：`DSH_BROWSER_CLOSE_TIMEOUT_MS=0` 时 `session.js` 用 0（`setTimeout(…, 0)` 与 `browser.close()` 竞争），`doctor.js` 报 WARN「不是正整数」。 | **部分已定（2026-11-21）**：`DSH_BROWSER_IDLE_MS` 的 0 / 负数合法性已定——夹到 `[60000, 600000]`，`0` 与负数、NaN 全部收敛（见功能规格 0041「决策变更的原因」）。**仍待处理**：`doctor.js` 的 `checkEnv()` 还按「非负整数」判，负数会报 FAIL，与新语义只部分对齐；`DSH_BROWSER_CLOSE_TIMEOUT_MS` 的 0 语义未定，校验归属未定，留待单独一轮。 |
 | `recipe.js` 的 `STEP_FIELDS` 与 `tools.js` 的步骤 schema 两份手工同步 | `recipe.js` 的 `STEP_FIELDS` 是按步骤类型的运行期白名单（`normalizeStep` 用它拒绝未声明字段）；`tools.js` 的 `steps.items` 是扁平 `properties` + `additionalProperties: false`，不按步骤类型分组。两侧字段集合当前一致，靠注释互相提醒。 | 收敛成单一来源要改 `tools.js` 的 schema 生成方式（`oneOf` + `additionalProperties: false`），会改模型看到的参数形状，风险大于收益，留待单独一轮。 |
 | 页内脚本三套注入口径 | 函数序列化 + 参数（`read.js` / `snapshot.js` / clipboard）、字符串 IIFE（`human.js` 的 `humanProbeScript`）、字符串拼接表达式（`page.js` 的 `assertExpressionCheck`）；字符串脚本无法在模块解析期做语法检查。 | 属代码风格；页内脚本不能直接 import 普通函数，统一口径要逐个改页内脚本并跑真起 Edge 的回归，收益不抵风险。 |
 | 临时页机制在 `page.js`，业务消费者只有 `fetch.js` | `page.js` 持 `transientPages` / `pendingTransient` 与 `createTransientPage` / `isTransientPage` / `hasPendingTransientPage`；`fetch.js` 是唯一业务消费者，`session.js` 的 CDP `context.on('page')` 又依赖两个判定。 | 移动会造 `fetch → session` 或反向依赖（依赖图里没有 `session.js → fetch.js`）；`page.js` 不 import 会话层，故机制留在页面生命周期模块。 |

@@ -17,6 +17,15 @@
 3. **CDP 接管语义**：接管复用的是用户自己的浏览器与登录态（0008），导入等于往用户浏览器写 cookie，导出等于把用户 cookie 复制到磁盘；两者都需要单独决策，并与 0008「只断连、不关标签页」、0020「CDP 不清用户数据」保持一致。
 4. **敏感数据落盘**：`storageState` 是明文凭据（cookie 值 + localStorage 值）。写不写、写到哪、权限、返回值是否回显、是否进日志，都要先定。
 
+> **[已过时 2026-11-21]** 「isolated 模式当前没有会话级 cookie 罐……`createPage` 在非 CDP 分支调 `session.browser.newPage({ viewport })`；Playwright 的 `browser.newPage` 是『新建一个 browser context 再建页，关页即关该 context』。因此现有每个标签页各是一个 context，标签页之间不共享 cookie / localStorage。」
+> 
+> 现在：**每个会话有一个显式隔离 context**，该会话的所有标签页都建在它上面（`createPage` 一律 `session.context.newPage()`）。
+> 所以同一会话内**标签页之间共享 cookie / localStorage**，会话级登录态确实存在，导入 `storageState` 才因此能对全会话生效。
+> 变更原因：这是本功能采纳方案 A「每会话一个显式 context」时**有意做的语义修改**——不改就没有「整个会话的登录态」可导入。
+> 此后浏览器池化（功能规格 0041）又把 browser 进程改为多会话共享，但 context 仍是每会话一个，本条结论不变。
+> 详见 [0041-browser-pool.md](0041-browser-pool.md)。
+
+
 候选方案（细节与影响面见 `.scratch/browser-plugin-survey/plans/13-auth-state-import.md` §1、§6）：
 
 - **A（已采纳）**：isolated 改为每会话一个显式 context；`browser_e2e_start` 新增 `storageState`（绝对路径，仅新启动时生效）与 `storageDomains`（可选域过滤）；新增 `browser_e2e_auth_export`（显式导出到 `~/.dsh/browser-e2e/auth/` 下的 `.json`）；**不自动持久化**，close 行为不变。导入/导出本身是新增参数与新工具，但前提的 context 统一属影响大，因此整项仍需先决策。

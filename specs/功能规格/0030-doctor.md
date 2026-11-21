@@ -33,7 +33,7 @@
 | `cdp` | 端点归一 + TCP 连得上 + `GET /json/version` 是 CDP 端点 | `<endpoint> 可接管（<Browser>）` | 端点非法或连不上：`FAIL`；端口通但不是 CDP：`WARN`；`mode` 为 `isolated`：`SKIP` |
 | `session` | 本会话在注册表里的只读视图（`peekSession`） | 未启动：`本会话未启动浏览器（工具调用时按需启动）`；运行中：`<mode> 模式运行中，<n> 个标签页，连接正常` | `launching` / `closing`：`WARN`；`ready` 但 `browser.isConnected()` 为 false：`FAIL` |
 | `paths` | 产物根目录可写；下载目录（`DSH_BROWSER_DOWNLOAD_DIR`）合法 | 根目录可写 + 下载目录 | 根目录不可写、下载目录不是绝对路径：`FAIL` |
-| `env` | `DSH_BROWSER_IDLE_MS`、`DSH_BROWSER_CLOSE_TIMEOUT_MS`、`DSH_BROWSER_PROXY` 的合法性 | 三项合法（含「未设置」） | 空闲回收非法：`FAIL`；关闭兜底或代理非法：`WARN` |
+| `env` | `DSH_BROWSER_IDLE_MS`、`DSH_BROWSER_CLOSE_TIMEOUT_MS`、`DSH_BROWSER_PROXY` 的合法性 | 三项合法（含「未设置」） | 空闲回收非法：`FAIL`（见下方标记，新语义下运行时已收敛）；关闭兜底或代理非法：`WARN` |
 
 细节判据：
 
@@ -42,6 +42,16 @@
 - `session`：`peekSession(key)` 是注册表的只读视图（`state` / `mode` / `endpoint` / `pages` / `activeTabId` / `connected` / `artifactsDir`），**不创建会话、不刷新空闲计时**。报告末尾在本进程还有别的会话持有浏览器时追加 `；本进程另有 <n> 个会话持有浏览器`。
 - `paths`：产物根目录是 `~/.dsh/browser-e2e/artifacts`（`lib/capture.js` 的 `artifactsRoot()`，与 `ensureArtifactsDir` 同一份定义）。根目录已存在时写入并立即删除一个探针文件 `<root>/.doctor-probe`，这是本工具唯一的写操作；不存在时沿祖先链找最近存在的目录，判其可写并在报告里写 `尚未创建；父目录 <ancestor> 可写（首次启动时创建）`。下载目录取 `DSH_BROWSER_DOWNLOAD_DIR`（必须绝对路径，判据与 `lib/download.js` 的 `downloadDirFor` 一致）；未设置时写 `默认（<会话产物目录或产物根目录>/downloads/，启动后派生）`。
 - `env`：`DSH_BROWSER_IDLE_MS` 必须是「未设置」或非负整数；`DSH_BROWSER_CLOSE_TIMEOUT_MS` 必须是「未设置」或正整数；`DSH_BROWSER_PROXY` 必须是「未设置」或能解析出 http(s) 协议与主机。报告里的生效值取自 `lib/session.js` 导出的 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS`（模块加载时按同一表达式算出的值），并标明是默认值还是环境变量给的。
+
+> **[已过时 2026-11-21]** 「`DSH_BROWSER_IDLE_MS` 必须是『未设置』或非负整数」
+>
+> 现在：`0` **合法**（会被 `resolveIdleMs()` 抬到下限 60000ms），负数与 NaN 也**不再报 FAIL**——它们回落默认值 600000ms。
+> 因此 doctor 的 `env` 项对 `DSH_BROWSER_IDLE_MS` 实际只会给出 OK（非法值也已被运行时收敛）。
+> 变更原因：加了上下限后「非法值」在运行时就被兜住了，doctor 不再需要把它当 FAIL 报出来。
+> 已知残留：`lib/doctor.js` 的 `checkEnv()` 仍按「非负整数」判定 `0` 合法、负数报 FAIL，与新语义只部分对齐，
+> 该项校验待统一（见项目规格 0001「进程回收环境变量的校验规则与默认值两套」）。
+> 详见 [0041-browser-pool.md](0041-browser-pool.md)「决策变更的原因」。
+
 
 ### 输出
 

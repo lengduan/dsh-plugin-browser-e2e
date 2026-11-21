@@ -18,6 +18,12 @@
 4. **接口不匹配（硬冲突）**：宿主 `WebFetchProvider.fetch(request, signal)` 的请求体只有 `{ url }`（宿主类型声明 `WebFetchRequest` 只有 `readonly url: string`），**没有会话标识**；而本插件的浏览器是**按会话隔离**的（`lib/tools.js` 的 `sessionKey(exec)` 取 `agent.id`，`lib/session.js` 的 `sessions` 按 key 各一份，README「重置会话」：「`browser_e2e_close` 只关闭本 agent 会话的浏览器」）。provider 拿不到 calling agent，就无法知道该用哪个会话的浏览器；可选的变通（全局单浏览器 / 用 `tools/pre-execute` 记录当前 agent 再经异步上下文传递 / 取「最近一个 ready 会话」）分别是改载体定位、依赖未验证的异步上下文、跨会话泄漏登录态。
 5. **权限面与门控前置未落地**：经浏览器抓任意 URL 会带上真实 cookie（cdp 模式尤甚），需要 SSRF / 内网闸才谈得上「安全接管」；本仓门控（P1-14）本身仍未决策（`specs/项目规格/0003-决策记录.md` #3），本项不能先把抓取通道打开再补门。
 
+> **[已过时 2026-11-21]** 「`createPage` 在非 CDP 分支走 `session.browser.newPage({ viewport })`，Playwright 的 `browser.newPage` 每次新建一个 browser context——隔离模式的每个标签页各自一个 context」
+> 
+> 现在：`createPage` 一律走 `session.context.newPage()`，**同一会话的所有标签页共享一个隔离 context**；浏览器池化后 `session.browser` 是跨会话共享的实例。
+> 「isolated 没有登录态」这句结论仍然成立（context 随会话关闭即丢弃、不落盘），但**理由不是**『每页一个 context』。
+> 变更原因：导入登录态（0021）要求每会话一个显式 context；池化（0041）又共享了浏览器进程。两者叠加后旧描述失效。
+> 详见 [0041-browser-pool.md](0041-browser-pool.md)。
 另有一点产品语义要先说清：**isolated 模式没有登录态**。`lib/page.js` 的 `createPage` 在非 CDP 分支走 `session.browser.newPage({ viewport })`，Playwright 的 `browser.newPage` 每次新建一个 browser context（`node_modules/playwright-core/types/types.d.ts:11232`）——隔离模式的每个标签页各自一个 context，一次性 profile 关闭即丢弃。因此「带登录态的浏览器抓取」只在 `mode: 'cdp'`（接管用户浏览器）下成立；默认 isolated 下本项买到的是「真实 Edge 的 JS 渲染与请求指纹」，不是登录态。
 
 候选方案（细节与影响面见 `.scratch/browser-plugin-survey/plans/28-web-fetch-browser.md` §1、§4、§6）：
@@ -95,7 +101,7 @@
 - **B 不返回 HTML**：需要 `outerHTML` 用 `browser_e2e_evaluate`（体积风险自担）。
 - **B 的非文本响应**：PDF / 图片 / 二进制按 `innerText` 取到空串，返回 `empty: true` 与 `statusCode`；不解析、不落盘（要落盘用 `browser_e2e_download`）。
 - **超时与取消**：B 的 `timeoutMs` 只约束 `goto`；`settleMs` 固定等待；`evaluate` 无超时（与快照 / 结构化读取一致），整次调用不接 `AbortSignal`，取消靠 `timeoutMs` 与页面自身响应。A 的 `signal` 中止只保证关页，`goto` 的中断由 Playwright 负责。
-- **空闲回收**：单次抓取超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能在抓取期间被回收（与 README「等待 URL 与网络响应」记录的同类边界），长抓取前把该值调 0 或调大。
+- **空闲回收**：单次抓取超过 `DSH_BROWSER_IDLE_MS` 时浏览器可能在抓取期间被回收（与 README「等待 URL 与网络响应」记录的同类边界），长抓取前把该值调大（`0` 已不再是「关闭回收」，见下方标记）。
 - **明确不做**：Markdown 转换、按 URL 缓存或去重、代理选择参数（跟随浏览器启动参数）、抓取结果写入网络环形缓冲、并发限流、`web_fetch` 与 `browser_e2e_fetch` 的结果归一。
 
 ## 验收

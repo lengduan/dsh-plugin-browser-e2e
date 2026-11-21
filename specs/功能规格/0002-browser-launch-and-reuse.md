@@ -30,9 +30,23 @@
 - `headless` / `proxy` / `viewportWidth` / `viewportHeight` / `carrier` 只对隔离模式生效；`mode: 'cdp'` 下即使传视口或 `carrier` 也不作用于被接管的浏览器（`carrier` 被忽略，工具文本追加一行说明）。
 - 热切换拒绝只由显式参数触发：已启动会话传了与当前不一致的 `mode` / `cdpEndpoint` / `carrier` 就由 `assertModeNotHotSwitched` / `assertEndpointNotHotSwitched` / `assertCarrierNotHotSwitched` 报错（文案见项目规格「不变量清单」），未传则复用原实例；`carrier` 只对隔离会话校验。
 - 登录态只在启动时导入：已启动后再传 `storageState` 报 `浏览器已启动（isolated / CDP 接管）；storageState 只在启动时生效，如需更换登录态请先 browser_e2e_close 再 browser_e2e_start`，不重建 context；并发 start 带同一份 `storageState` 与 `storageDomains` 时按复用返回。`mode: 'cdp'` 与 `storageState` 同时给时在 `connectOverCDP` 之前报 `CDP 模式不导入登录态：接管的是用户自己的浏览器，其 cookie 由用户维护；请在 isolated 模式使用 storageState`。导入细节见 `0021-auth-state-import.md`。
-- 空闲计时：`lib/session.js` 的 `touchSession` 在 `launching` / `closing` / `closed` 或 `IDLE_CLOSE_MS` 为 0 时不装计时器；`launch` 开头清旧计时器，`finally` 落定后重新计时，因此启动耗时超过 `DSH_BROWSER_IDLE_MS` 不会被中途回收（回收口径见项目规格「进程回收三道兜底」）。
+- 空闲计时：`lib/session.js` 的 `touchSession` 在 `launching` / `closing` / `closed` 时不装计时器；`launch` 开头清旧计时器，`finally` 落定后重新计时，因此启动耗时超过 `DSH_BROWSER_IDLE_MS` 不会被中途回收（回收口径见项目规格「进程回收三道兜底」）。
+
+> **[已过时 2026-11-21]** 「或 `IDLE_CLOSE_MS` 为 0 时不装计时器」
+> 
+> 现在：`IDLE_CLOSE_MS` **不可能为 0**。`DSH_BROWSER_IDLE_MS` 由 `resolveIdleMs()` 夹到 `[60000, 600000]`，
+> 配 `0` 会被抬到 60000ms，非法值回落 600000ms。上述「为 0 时不装计时器」的守卫已无触发路径。
+> 变更原因：`touchSession` 是在**操作开始时**装计时器，而操作本身会 await；时限过小会在工具调用中途把 context 关掉。
+> 用 1 分钟下限兜底，比改计时器时机简单可靠。详见 [0041-browser-pool.md](0041-browser-pool.md)「决策变更的原因」。
 - 复用分支补建页失败：先落定信号再 `close(key)` 收掉浏览器、摘除会话，然后把原始错误抛出，不留 `ready + 0 页`；复用成功返回前再用 `assertReuseAlive` 复查会话仍在注册表里，若与 close 并发则报 `浏览器已关闭（复用与关闭并发），请重新调用 browser_e2e_start`，不返回假的 `reused: true`。
 - 隔离模式的载体可显式选择：`carrier` 只接受 `edge` / `chrome` / `auto`（`0034-multi-carrier.md`），默认仍是系统 Edge（`channel: 'msedge'`，不触发 360 进程防护弹窗）。工具参数不接受可执行路径：Chrome 路径只由 `DSH_BROWSER_CHROME_PATH` 与平台惯例安装位置决定。`mode` 只有 `isolated` / `cdp` 两个取值，其他值按上一条报错。
+
+> **[已过时 2026-11-21]** 「调 `chromiumImpl.launch`……再创建每会话一个显式 context（`browser.newContext({ viewport, storageState? })`）」
+>
+> 现在：启动走 **`chromiumImpl.launchPersistentContext(userDataDir, config)`**（`launchImpl`，`lib/session.js`），
+> 返回一个 `BrowserContext`；池取它的 `.browser()` 作为共享 Browser，会话的隔离 context 仍由 `browser.newContext()` 分出。
+> 变更原因：账户锁定防护要求使用**持久 user-data-dir**，而 Playwright 的 `chromium.launch` 显式拒绝 `userDataDir`，
+> 只能用 `launchPersistentContext`。详见 [0041-browser-pool.md](0041-browser-pool.md)。
 
 ## 验收
 

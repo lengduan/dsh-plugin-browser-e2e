@@ -113,7 +113,14 @@
 - `ref` 只在「recipe 开始前最后一次 `browser_e2e_snapshot`」之后有效；含 `navigate` 步骤的 recipe 里，其后的 `ref` 步必然报 `ref @N 不存在`（`navigate` 清空 ref 表），此时只能用 `selector` / `x + y`。recipe 自己不产生 ref。
 - 一个 recipe 只作用于一个标签页：没有 `new_tab`、没有 `tab_id` 切换、没有关闭标签页（`browser_e2e_tabs` 的 `close`）/ `start` / `close` 步骤，也没有嵌套 recipe。
 - 预算只在**步骤之间**检查；正在执行的 Playwright 动作无法中断，单步可超出总预算，末步之后补一次检查并如实报 `budget_exceeded`。`wait` 步的实际超时取 `min(步 timeoutMs, 剩余预算)`，因此预算将尽时通常表现为该步等待超时（错误文案里的「上限」是被截断后的值）。
-- 空闲回收：`DSH_BROWSER_IDLE_MS` 小于单步最长耗时（如 `wait` 的 60000ms）时，浏览器可能在步骤执行期间被回收，随后调用报「浏览器尚未启动或没有可用标签页」——与 `0001` 已记录的 `browser_e2e_wait` 同类边界，规避方式相同。
+- 空闲回收：`DSH_BROWSER_IDLE_MS` 小于单步最长耗时（如 `wait` 的 60000ms）时，浏览器可能在步骤执行期间被回收，随后调用报「浏览器尚未启动或没有可用标签页」——与 `0001` 已记录的 `browser_e2e_wait` 同类边界。
+
+> **[已过时 2026-11-21]** 旧口径把 `DSH_BROWSER_IDLE_MS=0` 当作「关闭空闲回收」的规避开关。
+>
+> 现在：`0` **不再是**规避开关——`resolveIdleMs()` 会把它抬到下限 60000ms（上限 600000ms）。
+> 想避免等待期间被回收，只能把该值设成**大于单次调用时长**。
+> 变更原因：`0` 原语义为「永不回收」，加了 1 分钟下限后该语义取消。详见 [0041-browser-pool.md](0041-browser-pool.md)「决策变更的原因」。
+
 - `extract` 只读主文档：`document.querySelector` 不穿透 shadow DOM、不进入 iframe（iframe 待 P1-9）；`links` 模式只取 `a[href]` 的前 `limit` 条；`text` 取 `innerText`（渲染后可见文本），不做可读性清洗（`article-clean` / JSON-LD 不属本项，见 `0017`）。
 - 与其它工具的分工：要一次判定多条断言用 `browser_e2e_assert`（`0027`）；要一次拿结构化 controls / links / tables / forms 用 `browser_e2e_read`（`0017`）；要执行页面脚本用 `browser_e2e_evaluate`（超时上限见 `0019`）。recipe 不复制这三者的语义。
 - 不提供：分支 / 循环 / 变量 / 步骤间取值传递；失败重试；并行步骤；步骤级截图；`drag` / `upload` / `download` / `dialog` 步骤；跨 tab 步骤。
