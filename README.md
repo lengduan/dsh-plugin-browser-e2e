@@ -40,6 +40,13 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 
 ### 浏览器启动与模式
 
+**必须先启动**：会话里第一次页面操作前必须先调 `browser_e2e_start`。未启动时所有作用页面的工具
+（`navigate` / `snapshot` / `read` / `click` / `fill` / `wait` / `evaluate` / `screenshot` 等）一律抛
+`浏览器尚未启动，请先调用 browser_e2e_start` 或 `浏览器尚未启动或没有可用标签页，请先 browser_e2e_start`，
+不会自动帮你拉起浏览器。反过来 `browser_e2e_start` 可重复调用：已启动时按复用返回同一实例，无需先 `close`。
+不需要先启动的只有三个：`browser_e2e_doctor`（只读体检）、`browser_e2e_history`（读动作历史）与
+`browser_e2e_close`（未启动时返回「浏览器未启动，无需关闭」）。
+
 `browser_e2e_start` 统一管理启动，两种模式：
 
 - **isolated（默认）**：自己拉起浏览器，一次性 profile，用完关闭。默认载体是系统 Edge（Playwright `channel: 'msedge'`，不触发 360 进程防护弹窗）；可传 `carrier` 选择 `edge` / `chrome` / `auto`（见下），`chrome` 用本机安装的 Google Chrome。每会话一个显式 context，全部标签页共享 cookie / localStorage；可用 `storageState` 导入登录态（见「登录态导入与导出」）。可传 `headless`（默认 true）、`proxy`、`viewportWidth` / `viewportHeight`（默认 1600×900）。
@@ -287,6 +294,7 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 `browser_e2e_recipe` 把「登录 → 填表 → 提交」这类固定动作串成一次调用：`steps` 是 1-20 个声明式步骤，按数组顺序执行；首个失败即停，**已执行步骤不回滚**，返回值给出逐步 PASS / FAIL、失败步号与 `extract` 输出。整次调用只产生一条面板 `action` 事件，摘要取报告首行。
 
 - **步骤类型**：`navigate`（`url` / `waitUntil`）、`wait`（`selector` / `url` / `response` 三选一及其专属参数）、`click` / `fill` / `hover`（`ref` / `selector` / `x`+`y` 三选一）、`press`（`key`）、`scroll`（`delta_x` / `delta_y`）、`extract`（`selector` / `mode` / `attribute` / `limit`）。字段名与对应工具的顶层参数同名，参数语义与错误文案沿用该工具，不另立一套。
+- **与单个工具的能力对齐**：`click` / `fill` / `scroll` 支持 `frame`（iframe 索引，只能与 `selector` 组合，口径同 `browser_e2e_click`）；`click` 另支持 `clickCount`（1-3）、`button`（left / right / middle）与 `modifiers`。`hover` / `press` 明确不接受 `frame`，给该字段直接报错而不是静默忽略。
 - **不执行调用方脚本**：没有 `evaluate` 步骤，`wait` 步不接受 `expression` 条件；步骤是数据不是代码。需要页面内脚本请单独调用 `browser_e2e_evaluate`。
 - **校验先行**：条数、步骤对象、`type`、每类可用字段白名单、必填与枚举 / 区间、三选一、`wait` 条件与专属参数、`extract` 的 `mode` / `attribute` / `limit` 都在任何页面动作之前完成；不合法直接抛错，一个动作都不执行。`fill` 的 `mode` ↔ `delayMs` 耦合、坐标越界、selector 语法与 ref 失效等仍由被复用的能力函数在步骤执行时判定，表现为该步失败。
 - **总预算**：`timeoutMs` 默认 60000，允许 1000-120000，只在步骤之间检查；正在执行的 Playwright 动作无法中断，末步之后补一次检查并如实报超预算。`wait` 步的实际等待上限取「步 `timeoutMs`（1000-60000，默认 10000）」与剩余预算的较小值。

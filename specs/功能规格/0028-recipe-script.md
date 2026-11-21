@@ -30,11 +30,11 @@
 |---|---|---|---|
 | `navigate` | `url` | `waitUntil`（load / domcontentloaded / networkidle，默认 load） | `page.js` 的 `navigate` |
 | `wait` | `selector` / `url` / `response` 三选一 | `state`（仅 selector）、`urlMatch`（url / response）、`responseMethod` / `statusMin` / `statusMax` / `includeBuffered` / `failOnRequestFailed`（仅 response）、`timeoutMs`（1000-60000，默认 10000） | `page.js` 的 `waitFor` |
-| `click` | `ref` / `selector` / `x` + `y` 三选一 | — | `page.js` 的 `click` |
-| `fill` | 三选一 + `value`（字符串，可空串表示清空） | `mode`（insert / keystrokes，默认 insert）、`delayMs`（仅 keystrokes，0-1000） | `page.js` 的 `fill` |
+| `click` | `ref` / `selector` / `x` + `y` 三选一 | `frame`（非负整数，仅与 `selector` 组合）、`clickCount`（1-3，默认 1）、`button`（left / right / middle）、`modifiers`（Alt / Control / Meta / Shift 数组） | `page.js` 的 `click` |
+| `fill` | 三选一 + `value`（字符串，可空串表示清空） | `mode`（insert / keystrokes，默认 insert）、`delayMs`（仅 keystrokes，0-1000）、`frame`（非负整数，仅与 `selector` 组合） | `page.js` 的 `fill` |
 | `press` | `key` | — | `page.js` 的 `press` |
 | `hover` | 三选一 | `settleMs`（0-5000，默认 300） | `page.js` 的 `hover` |
-| `scroll` | `delta_x` / `delta_y` 至少一个非 0 | `x` + `y`（视口坐标，须同时给） | `page.js` 的 `scroll` |
+| `scroll` | `delta_x` / `delta_y` 至少一个非 0 | `x` + `y`（视口坐标，须同时给）、`frame`（非负整数，与 `x` + `y` 互斥） | `page.js` 的 `scroll` |
 | `extract` | — | `selector`（缺省 `body`）、`mode`（text / html / links / attribute，默认 text）、`attribute`（`mode=attribute` 时必填）、`limit`（1-200，默认 100，仅 links） | `lib/recipe.js` 内固定页内脚本，代码不来自调用方 |
 
 字段名与对应工具的顶层参数同名（`click` 的 `ref/selector/x/y`、`wait` 的 `selector/state/urlMatch` 等），不另立一套命名。
@@ -111,6 +111,7 @@
 - **首个失败即停**，不重试、不跳过、不回滚；已产生的页面副作用（导航、填值、提交）保留。
 - **步骤失败不抛错**，由 `ok: false` 与 `failedStep` 表达；只有一级校验、浏览器未启动、`tab_id` 不存在、入口时页面已关闭才抛错。理由与 `0027` 相同：已执行前缀是事实，抛错会把结构化报告丢掉。
 - `ref` 只在「recipe 开始前最后一次 `browser_e2e_snapshot`」之后有效；含 `navigate` 步骤的 recipe 里，其后的 `ref` 步必然报 `ref @N 不存在`（`navigate` 清空 ref 表），此时只能用 `selector` / `x + y`。recipe 自己不产生 ref。
+- `frame` 的覆盖范围与单个工具一致但不扩张：`click` / `fill` / `scroll` 支持 `frame`（只能与 `selector` 组合，子 frame 不分配 ref；`scroll` 的 `frame` 与 `x` + `y` 互斥），`hover` / `press` / `extract` 不接受该字段——给了直接报错，不静默忽略。`extract` 仍只读主文档（见下条）。
 - 一个 recipe 只作用于一个标签页：没有 `new_tab`、没有 `tab_id` 切换、没有关闭标签页（`browser_e2e_tabs` 的 `close`）/ `start` / `close` 步骤，也没有嵌套 recipe。
 - 预算只在**步骤之间**检查；正在执行的 Playwright 动作无法中断，单步可超出总预算，末步之后补一次检查并如实报 `budget_exceeded`。`wait` 步的实际超时取 `min(步 timeoutMs, 剩余预算)`，因此预算将尽时通常表现为该步等待超时（错误文案里的「上限」是被截断后的值）。
 - 空闲回收：`DSH_BROWSER_IDLE_MS` 小于单步最长耗时（如 `wait` 的 60000ms）时，浏览器可能在步骤执行期间被回收，随后调用报「浏览器尚未启动或没有可用标签页」——与 `0001` 已记录的 `browser_e2e_wait` 同类边界。
@@ -133,6 +134,7 @@
    - `steps 非数组报错`、`steps 为空或超过 20 步报错`、`单步不是对象报错`、`type 缺失或非法报错`、`步骤带未知字段报错并列出可用字段`。
    - `wait 步不接受 expression 条件`、`wait 步三选一必须且只能给一个`、`wait 步 timeoutMs 越界报错`。
    - `click 步三选一报错（0 个）`、`click 步三选一报错（2 个）`、`fill 步缺 value 报错`、`hover 步 settleMs 越界报错`、`scroll 步两个方向都为 0 报错`、`extract 步 attribute 模式缺 attribute 报错`、`extract 步 limit 越界报错`。
+   - `步骤 frame 必须是非负整数，且只对 click / fill / scroll 开放`、`click 步 clickCount / button / modifiers 越界报错`、`frame 与点击选项归一后原样保留`。
    - `timeoutMs 越界与非整数报错`、`合法 recipe 归一化后保留步序与字段`、`校验失败不产生任何页面调用`（假 session）。
    - `renderRecipeReport 四种摘要文案`、`renderRecipeReport 逐步 PASS / FAIL 行`、`renderRecipeReport 截断输出到 20000 字符`、`summaryOf 取 recipe 报告首行`。
 2. 同文件执行组（真起无头 Edge，本地 `node:http` 夹具页面）exit 0、`FAIL 0`：
@@ -141,6 +143,7 @@
    - `recipe 步骤失败返回结构化报告且不抛错`（`ok: false` 且 `failedStep.index` 正确）。
    - `recipe 含 navigate 时后续 ref 步报 ref 不存在`。
    - `recipe wait 步命中 selector`、`recipe wait 步超时按步骤失败返回`。
+   - `recipe 步骤可作用于 iframe（frame 与单个工具同口径）`（真起无头 Edge，`/frame-outer` 夹具：`fill` 与 `click` 带 `frame: 1` 落在子文档，子 frame 内按钮的点击产物为「已点击」）、`recipe 不带 frame 时不会误入 iframe`（同样选择器在无 `frame` 时落到主文档，该步失败）。
    - `recipe 总预算耗尽在下一步前停止`（`status: 'budget_exceeded'`，`completed < total`）。
    - `recipe extract 取文本 / 链接 / 属性三种模式`、`recipe extract 未命中元素报步骤失败`。
    - `recipe 只作用于指定 tab_id`、`recipe 不写 ref 表与快照基线`。

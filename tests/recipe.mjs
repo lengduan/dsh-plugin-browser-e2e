@@ -216,7 +216,7 @@ const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
   const unknownClick = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'click', value: 'x' }] }))
   const unknownExtract = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'extract', tag: 'x' }] }))
   check('步骤带未知字段报错并列出可用字段',
-    unknownClick === '第 1 步（click）不接受字段 value；该步骤可用字段：type、ref、selector、x、y'
+    unknownClick === '第 1 步（click）不接受字段 value；该步骤可用字段：type、ref、selector、x、y、frame、clickCount、button、modifiers'
       && unknownExtract === '第 1 步（extract）不接受字段 tag；该步骤可用字段：type、selector、mode、attribute、limit',
     JSON.stringify({ unknownClick, unknownExtract }))
 
@@ -271,6 +271,36 @@ const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
     missingValue === '第 1 步（fill）的 value 必须是字符串（空串表示清空），收到 undefined'
       && nonStringValue === '第 1 步（fill）的 value 必须是字符串（空串表示清空），收到 number',
     JSON.stringify({ missingValue, nonStringValue }))
+
+  const frameNegative = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'click', selector: '#a', frame: -1 }] }))
+  const frameFraction = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'fill', selector: '#a', value: 'x', frame: 1.5 }] }))
+  const frameOnHover = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'hover', selector: '#a', frame: 1 }] }))
+  check('步骤 frame 必须是非负整数，且只对 click / fill / scroll 开放',
+    frameNegative === '第 1 步（click）的 frame 必须是非负整数（0 主文档，n≥1 按 frames 顺序），收到 -1'
+      && frameFraction === '第 1 步（fill）的 frame 必须是非负整数（0 主文档，n≥1 按 frames 顺序），收到 1.5'
+      && frameOnHover === '第 1 步（hover）不接受字段 frame；该步骤可用字段：type、ref、selector、x、y、settleMs',
+    JSON.stringify({ frameNegative, frameFraction, frameOnHover }))
+
+  const badClickCount = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'click', selector: '#a', clickCount: 5 }] }))
+  const badButton = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'click', selector: '#a', button: 'back' }] }))
+  const badModifiers = await expectThrow(() => normalizeRecipe({ steps: [{ type: 'click', selector: '#a', modifiers: ['Ctrl'] }] }))
+  check('click 步 clickCount / button / modifiers 越界报错',
+    badClickCount === '第 1 步（click）的 clickCount 必须是 1-3 的整数，收到 5'
+      && badButton === '第 1 步（click）的 button 只支持 left / right / middle，收到 "back"'
+      && badModifiers === '第 1 步（click）的 modifiers 必须是数组且元素只能是 Alt / Control / Meta / Shift，收到 ["Ctrl"]',
+    JSON.stringify({ badClickCount, badButton, badModifiers }))
+
+  const withFrameAndOptions = normalizeRecipe({ steps: [
+    { type: 'click', selector: '#a', frame: 1, clickCount: 2, button: 'right', modifiers: ['Control'] },
+    { type: 'fill', selector: '#b', value: 'x', frame: 2 },
+    { type: 'scroll', delta_y: 100, frame: 1 },
+  ] })
+  check('frame 与点击选项归一后原样保留',
+    withFrameAndOptions.steps[0].frame === 1 && withFrameAndOptions.steps[0].clickCount === 2
+      && withFrameAndOptions.steps[0].button === 'right'
+      && JSON.stringify(withFrameAndOptions.steps[0].modifiers) === JSON.stringify(['Control'])
+      && withFrameAndOptions.steps[1].frame === 2 && withFrameAndOptions.steps[2].frame === 1,
+    JSON.stringify(withFrameAndOptions.steps))
 
   const settleTooBig = await expectThrow(() => normalizeRecipe({
     steps: [{ type: 'hover', selector: '#a', settleMs: 5001 }],
@@ -482,8 +512,27 @@ const SLOW_HTML = '<!doctype html><html><head><title>recipe-slow</title></head><
 const BIG_HTML = '<!doctype html><html><head><title>recipe-big</title></head><body>'
   + `<div id="big">${'x'.repeat(30000)}</div></body></html>`
 
+// iframe 夹具：主文档放一个同源 iframe，子文档内是 recipe 要操作的元素。
+const FRAME_INNER_HTML = '<!doctype html><html><head><title>recipe-frame-inner</title></head><body>'
+  + '<input id="inner-input"><button id="inner-btn" '
+  + 'onclick="document.getElementById(\'inner-out\').textContent=\'已点击\'">内层按钮</button>'
+  + '<div id="inner-out">未点击</div></body></html>'
+const FRAME_OUTER_HTML = '<!doctype html><html><head><title>recipe-frame-outer</title></head><body>'
+  + '<iframe name="inner" src="/frame-inner" style="position:absolute;left:0;top:0;width:600px;height:400px"></iframe>'
+  + '</body></html>'
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1')
+  if (url.pathname === '/frame-outer') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(FRAME_OUTER_HTML)
+    return
+  }
+  if (url.pathname === '/frame-inner') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(FRAME_INNER_HTML)
+    return
+  }
   if (url.pathname === '/login') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end(LOGIN_HTML)
@@ -675,6 +724,28 @@ try {
       miss.status === 'step_failed' && miss.completed === 0
         && miss.failedStep?.message === 'extract 未命中元素：selector "#missing"',
       JSON.stringify(miss))
+  }
+
+  console.log('== 执行用例 6B：frame 步在 iframe 内操作 ==')
+  {
+    await navigate(session, `${base}/frame-outer`, 'load')
+    const framed = await runRecipe(session, { steps: [
+      { type: 'fill', selector: '#inner-input', value: '内层填写', frame: 1 },
+      { type: 'click', selector: '#inner-btn', frame: 1 },
+    ] })
+    // extract 只读主文档（与 browser_e2e_read 同口径），因此直接读子 frame 的文本验证点击生效。
+    const innerState = await currentTab(session).page.frames()[1]?.locator('#inner-out').textContent()
+    check('recipe 步骤可作用于 iframe（frame 与单个工具同口径）',
+      framed.status === 'completed' && framed.completed === 2 && innerState === '已点击',
+      JSON.stringify({ framed, innerState }))
+
+    // 不带 frame 时必须落在主文档：主文档没有这些选择器，因此该步失败。
+    const withoutFrame = await runRecipe(session, { steps: [
+      { type: 'fill', selector: '#inner-input', value: 'x' },
+    ] })
+    check('recipe 不带 frame 时不会误入 iframe',
+      withoutFrame.status === 'step_failed' && withoutFrame.failedStep?.index === 1,
+      JSON.stringify(withoutFrame))
   }
 
   console.log('== 执行用例 7：tab_id 隔离与不写状态 ==')

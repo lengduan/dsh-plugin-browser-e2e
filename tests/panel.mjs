@@ -318,6 +318,12 @@ let upgradeHandler = null
     === JSON.stringify(['isolated', 'cdp']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.mode))
   check('browser_e2e_start 的 carrier 参数声明枚举', JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier?.enum)
     === JSON.stringify(['edge', 'chrome', 'auto']), JSON.stringify(tools.get('browser_e2e_start').parameters.properties.carrier))
+  check('browser_e2e_start 描述声明「必须先启动」这条前置，并写全未启动的两条报错文案', (() => {
+    const description = tools.get('browser_e2e_start')?.description ?? ''
+    return description.includes('前置：本会话首次使用前必须先调用本工具')
+      && description.includes('浏览器尚未启动，请先调用 browser_e2e_start')
+      && description.includes('浏览器尚未启动或没有可用标签页，请先 browser_e2e_start')
+  })(), String(tools.get('browser_e2e_start')?.description).slice(0, 200))
   check('工具总数不因本项变化', tools.size === TOOL_TABLE.length && tools.size === 30, String(tools.size))
   check('面板 socket 路由已注册', typeof upgradeHandler === 'function')
   check('面板状态路由已注册', routes.has(PANEL_STATE_PATH))
