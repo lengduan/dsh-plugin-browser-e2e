@@ -451,7 +451,7 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 
 浏览器进程挂在 DSH 服务上，对话结束、会话切走、子代理结束都不会自动回收，因此本插件有三道回收：
 
-1. **空闲回收**：超过 10 分钟没有任何 `browser_e2e_*` 调用，自动关闭该会话的 context 并归还租约；`DSH_BROWSER_IDLE_MS` 可改（设 0 关闭该行为）。共享浏览器再闲置 `DSH_BROWSER_POOL_IDLE_MS`（默认 2 分钟）后关闭。
+1. **空闲回收**：超过 10 分钟没有任何 `browser_e2e_*` 调用，自动关闭该会话的 context 并归还租约；`DSH_BROWSER_IDLE_MS` 可改（设 0 关闭该行为）。共享浏览器再闲置 `DSH_BROWSER_POOL_IDLE_MS`（默认 2 分钟）后关闭，设 `0` 则租约一归零立即关闭。
 2. **会话回收**：`session/disposed` 时按 `session.id` 精确关闭对应 context。
 3. **卸载回收**：插件卸载或热替换时关闭全部 context 并 shutdown 池。
 
@@ -464,7 +464,7 @@ isolated 模式是每次启动的一次性 profile，登录态默认随关闭丢
 | `DSH_BROWSER_PROXY` | 空 | `browser_e2e_start` 未传 `proxy` 时使用的 HTTP 代理地址 |
 | `DSH_BROWSER_CHROME_PATH` | 空 | `carrier=chrome` / `auto` 探测 Chrome 时的优先路径（非空且文件存在才生效）；不设则按 PATH 与平台惯例安装位置查找 |
 | `DSH_BROWSER_IDLE_MS` | `600000`（10 分钟） | 无调用多久后关闭该会话的 context 并归还租约；`0` 关闭空闲回收 |
-| `DSH_BROWSER_POOL_IDLE_MS` | `120000`（2 分钟） | 共享浏览器租约归零后再闲置多久关闭该浏览器进程；`0` 关闭池级回收（进程会一直留着） |
+| `DSH_BROWSER_POOL_IDLE_MS` | `120000`（2 分钟） | 共享浏览器租约归零后再闲置多久关闭该浏览器进程；`0` 表示**立即回收**（租约一归零就关，不等计时器）；非法值（非数字 / 负数 / 空白串）一律按 `0` 处理 |
 | `DSH_BROWSER_CLOSE_TIMEOUT_MS` | `5000` | 关闭浏览器时等待 graceful close 的毫秒上限 |
 | `DSH_BROWSER_DOWNLOAD_DIR` | 空 | `browser_e2e_download` 的下载目录（绝对路径）；空表示用 `<产物目录>/downloads/`，相对路径报错 |
 | `DSH_BROWSER_HISTORY` | 空 | 设 `0`（或 `false`）时不写动作历史，也不建目录；读回不受影响 |

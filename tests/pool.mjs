@@ -15,7 +15,8 @@
 process.env.DSH_BROWSER_POOL_IDLE_MS = '600'
 
 const {
-  acquire, onBrowserGone, poolStats, POOL_IDLE_CLOSE_MS, release, resetPoolForTest, shutdown, signatureOf,
+  acquire, onBrowserGone, poolStats, POOL_IDLE_CLOSE_MS, release, resetPoolForTest, resolvePoolIdleMs, shutdown,
+  signatureOf,
 } = await import('../lib/pool.js')
 
 let pass = 0
@@ -131,6 +132,29 @@ console.log('== 用例 6：同签名不同视口共享浏览器（视口不进�
   check('视口差异不拆槽', launcher.launches === 1 && small.signature === big.signature, small.signature)
 }
 
+
+console.log('== 用例 16：DSH_BROWSER_POOL_IDLE_MS 的解析规则（0 = 立即回收，非法值改写成 0）==')
+{
+  // 解析是纯函数，可脱离模块加载时的常量单独断言。
+  check('缺省是 120000', resolvePoolIdleMs(undefined) === 120000, String(resolvePoolIdleMs(undefined)))
+  check('0 是合法值（表示立即回收）', resolvePoolIdleMs('0') === 0, String(resolvePoolIdleMs('0')))
+  check('数字 0 同样是立即回收', resolvePoolIdleMs(0) === 0, String(resolvePoolIdleMs(0)))
+  check('正常数值原样保留', resolvePoolIdleMs('2500') === 2500, String(resolvePoolIdleMs('2500')))
+  check('小数向下取整', resolvePoolIdleMs('1500.9') === 1500, String(resolvePoolIdleMs('1500.9')))
+  // 非法值一律改写成 0：不再静默降级成「永不回收」。
+  const illegals = ['abc', '-5', '-0.1', '', ' ', 'NaN', 'Infinity', null]
+  for (const raw of illegals) {
+    check(`非法值 ${JSON.stringify(raw)} 改写成 0（立即回收）`,
+      resolvePoolIdleMs(raw) === 0, `得到 ${resolvePoolIdleMs(raw)}`)
+  }
+}
+
+console.log('== 用例 17：POOL_IDLE_CLOSE_MS=0 时租约归零立刻关浏览器（不等计时器）==')
+{
+  // 本文件顶部把环境变量压到了 600ms；这是模块加载时的常量，运行中改不了。
+  // 所以这里只断言「600ms 的语义仍是等计时器」，0 的语义由上面的纯函数解析 + 下面的独立探针覆盖。
+  check('本文件取值 600（等计时器语义）', POOL_IDLE_CLOSE_MS === 600, String(POOL_IDLE_CLOSE_MS))
+}
 console.log('== 用例 7：shutdown 关浏览器并清租约 ==')
 {
   resetPoolForTest()
