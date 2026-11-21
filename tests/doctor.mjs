@@ -491,16 +491,52 @@ console.log('== 用例 F：env ==')
     JSON.stringify({ item: defaults, IDLE_CLOSE_MS, CLOSE_TIMEOUT_MS }),
   )
 
+  // 与 resolveIdleMs() 同口径：非法值回落默认值（WARN，不是 FAIL），越界值夹到边界（WARN）。
   const badIdle = itemOf(parseReport(await withEnv(
     { DSH_BROWSER_IDLE_MS: 'abc' },
     () => run(),
   )), 'env')
   check(
-    'doctor env 空闲回收非法时失败',
-    badIdle?.status === 'FAIL'
-      && badIdle.detail.includes('DSH_BROWSER_IDLE_MS 不是非负整数')
-      && badIdle.detail.includes('"abc"'),
+    'doctor env 空闲回收非法值回落默认并告警',
+    badIdle?.status === 'WARN'
+      && badIdle.detail.includes('已回落默认值')
+      && badIdle.detail.includes('"abc"')
+      && badIdle.detail.includes(`${IDLE_CLOSE_MS}ms`),
     JSON.stringify(badIdle),
+  )
+
+  const zeroIdle = itemOf(parseReport(await withEnv(
+    { DSH_BROWSER_IDLE_MS: '0' },
+    () => run(),
+  )), 'env')
+  check(
+    'doctor env 空闲回收 0 被夹到下限并告警',
+    zeroIdle?.status === 'WARN'
+      && zeroIdle.detail.includes('已夹到边界')
+      && zeroIdle.detail.includes(`${IDLE_CLOSE_MS}ms`),
+    JSON.stringify(zeroIdle),
+  )
+
+  const overIdle = itemOf(parseReport(await withEnv(
+    { DSH_BROWSER_IDLE_MS: '9999999' },
+    () => run(),
+  )), 'env')
+  check(
+    'doctor env 空闲回收超上限被夹到上限并告警',
+    overIdle?.status === 'WARN'
+      && overIdle.detail.includes('已夹到边界')
+      && IDLE_CLOSE_MS === 600000,
+    JSON.stringify(overIdle),
+  )
+
+  const midIdle = itemOf(parseReport(await withEnv(
+    { DSH_BROWSER_IDLE_MS: '300000' },
+    () => run(),
+  )), 'env')
+  check(
+    'doctor env 空闲回收合法区间内不告警',
+    midIdle?.status === 'OK' && midIdle.detail.includes('"300000"'),
+    JSON.stringify(midIdle),
   )
 
   const badClose = itemOf(parseReport(await withEnv(

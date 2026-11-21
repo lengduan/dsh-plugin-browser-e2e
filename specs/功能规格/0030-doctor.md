@@ -33,7 +33,7 @@
 | `cdp` | 端点归一 + TCP 连得上 + `GET /json/version` 是 CDP 端点 | `<endpoint> 可接管（<Browser>）` | 端点非法或连不上：`FAIL`；端口通但不是 CDP：`WARN`；`mode` 为 `isolated`：`SKIP` |
 | `session` | 本会话在注册表里的只读视图（`peekSession`） | 未启动：`本会话未启动浏览器（工具调用时按需启动）`；运行中：`<mode> 模式运行中，<n> 个标签页，连接正常` | `launching` / `closing`：`WARN`；`ready` 但 `browser.isConnected()` 为 false：`FAIL` |
 | `paths` | 产物根目录可写；下载目录（`DSH_BROWSER_DOWNLOAD_DIR`）合法 | 根目录可写 + 下载目录 | 根目录不可写、下载目录不是绝对路径：`FAIL` |
-| `env` | `DSH_BROWSER_IDLE_MS`、`DSH_BROWSER_CLOSE_TIMEOUT_MS`、`DSH_BROWSER_PROXY` 的合法性 | 三项合法（含「未设置」） | 空闲回收非法：`FAIL`（见下方标记，新语义下运行时已收敛）；关闭兜底或代理非法：`WARN` |
+| `env` | `DSH_BROWSER_IDLE_MS`、`DSH_BROWSER_CLOSE_TIMEOUT_MS`、`DSH_BROWSER_PROXY` 的合法性 | 三项合法（含「未设置」） | 空闲回收回落 / 越界夹取：`WARN`；关闭兜底或代理非法：`WARN` |
 
 细节判据：
 
@@ -41,15 +41,15 @@
 - `cdp`：只有 `mode` 为 `cdp` 才探测。先按 `normalizeCdpEndpoint` 归一（非法直接 `FAIL`，文案沿用启动路径原文），再对 `<host>:<port>` 建 TCP 连接（上限 `probeTimeoutMs`），连上后 `GET /json/version`（同一上限），要求响应为 JSON 且含字符串 `webSocketDebuggerUrl`。`Browser` 字段存在时展示它。探测只读，不建立 CDP 会话、不占用浏览器、不关页面。
 - `session`：`peekSession(key)` 是注册表的只读视图（`state` / `mode` / `endpoint` / `pages` / `activeTabId` / `connected` / `artifactsDir`），**不创建会话、不刷新空闲计时**。报告末尾在本进程还有别的会话持有浏览器时追加 `；本进程另有 <n> 个会话持有浏览器`。
 - `paths`：产物根目录是 `~/.dsh/browser-e2e/artifacts`（`lib/capture.js` 的 `artifactsRoot()`，与 `ensureArtifactsDir` 同一份定义）。根目录已存在时写入并立即删除一个探针文件 `<root>/.doctor-probe`，这是本工具唯一的写操作；不存在时沿祖先链找最近存在的目录，判其可写并在报告里写 `尚未创建；父目录 <ancestor> 可写（首次启动时创建）`。下载目录取 `DSH_BROWSER_DOWNLOAD_DIR`（必须绝对路径，判据与 `lib/download.js` 的 `downloadDirFor` 一致）；未设置时写 `默认（<会话产物目录或产物根目录>/downloads/，启动后派生）`。
-- `env`：`DSH_BROWSER_IDLE_MS` 必须是「未设置」或非负整数；`DSH_BROWSER_CLOSE_TIMEOUT_MS` 必须是「未设置」或正整数；`DSH_BROWSER_PROXY` 必须是「未设置」或能解析出 http(s) 协议与主机。报告里的生效值取自 `lib/session.js` 导出的 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS`（模块加载时按同一表达式算出的值），并标明是默认值还是环境变量给的。
+- `env`：`DSH_BROWSER_IDLE_MS` 按 `resolveIdleMs()` 同一口径判定（未设置 / 非法回落 / 越界夹取 / 区间内，见下方标记）；`DSH_BROWSER_CLOSE_TIMEOUT_MS` 必须是「未设置」或正整数；`DSH_BROWSER_PROXY` 必须是「未设置」或能解析出 http(s) 协议与主机。报告里的生效值取自 `lib/session.js` 导出的 `IDLE_CLOSE_MS` / `CLOSE_TIMEOUT_MS`（模块加载时按同一表达式算出的值），并标明是默认值还是环境变量给的。
 
-> **[已过时 2026-11-21]** 「`DSH_BROWSER_IDLE_MS` 必须是『未设置』或非负整数」
+> **[已过时 2026-11-21]** 「`DSH_BROWSER_IDLE_MS` 必须是『未设置』或非负整数……非法：`FAIL`」
 >
-> 现在：`0` **合法**（会被 `resolveIdleMs()` 抬到下限 60000ms），负数与 NaN 也**不再报 FAIL**——它们回落默认值 600000ms。
-> 因此 doctor 的 `env` 项对 `DSH_BROWSER_IDLE_MS` 实际只会给出 OK（非法值也已被运行时收敛）。
-> 变更原因：加了上下限后「非法值」在运行时就被兜住了，doctor 不再需要把它当 FAIL 报出来。
-> 已知残留：`lib/doctor.js` 的 `checkEnv()` 仍按「非负整数」判定 `0` 合法、负数报 FAIL，与新语义只部分对齐，
-> 该项校验待统一（见项目规格 0001「进程回收环境变量的校验规则与默认值两套」）。
+> 现在：与 `resolveIdleMs()` 同一口径，三档判定，**全部不报 FAIL**：
+> 未设置 → `OK`；非整数或负数 → `WARN` 并说明已回落默认值；
+> 整数但超出 `[IDLE_MIN_MS, IDLE_MAX_MS]` → `WARN` 并说明已夹到边界；区间内 → `OK`。
+> 变更原因：加了上下限后非法值在运行时就被兜住了（不会让浏览器永不回收，也不会在操作中途误关），
+> 不再构成需要 `FAIL` 的故障；但静默夹取会让使用者困惑「我配的值为什么不生效」，所以保留 `WARN` 并把夹取行为写进文案。
 > 详见 [0041-browser-pool.md](0041-browser-pool.md)「决策变更的原因」。
 
 
@@ -108,7 +108,7 @@
    - `cdp`：`doctor cdp 在 isolated 模式跳过并提示传 mode=cdp`、`doctor cdp 端点可达且 /json/version 合法时通过`、`doctor cdp 端口可通但不是 CDP 时警告`、`doctor cdp 端口连不上时失败`、`doctor cdp 请求超时在 probeTimeoutMs 内返回`、`doctor cdp 非 loopback 端点失败并复用启动错误原文`、`doctor cdp 非 http 端点失败`。
    - `session`：`doctor session 未启动时报未启动`、`doctor session 已启动时报模式与标签页数`、`doctor session 连接失效时报失败`、`doctor session 处于 launching 时报警告`、`doctor 不创建会话也不刷新空闲计时`。
    - `paths`：`doctor paths 报告产物根目录与下载目录`、`doctor paths 根目录不存在时沿祖先链判定`、`doctor paths 下载目录非绝对路径时失败`。
-   - `env`：`doctor env 默认值正常`、`doctor env 空闲回收非法时失败`、`doctor env 关闭兜底非法时警告`、`doctor env 代理缺协议时警告`、`doctor env 代理合法时不报警`。
+   - `env`：`doctor env 默认值正常`、`doctor env 空闲回收非法值回落默认并告警`、`doctor env 空闲回收 0 被夹到下限并告警`、`doctor env 空闲回收超上限被夹到上限并告警`、`doctor env 空闲回收合法区间内不告警`、`doctor env 关闭兜底非法时警告`、`doctor env 代理缺协议时警告`、`doctor env 代理合法时不报警`。
    - 入参与工具表：`doctor 工具定义在工具表里且参数 schema 正确`、`doctor 非法 mode 报错`、`doctor probeTimeoutMs 越界报错`、`doctor 汇总摘要被 summaryOf 采用`。
 2. `node tests/panel.mjs` 退出码 0：`工具表共 <N> 个`（N 取本次合并后的实际工具数）与「注册的工具与工具表逐项一致」通过；`作用于页面的工具都接受 tab_id` 不含 `doctor`（doctor 无 `tab_id`）。判定：exit 0、输出无 `FAIL`。
 3. `node tests/tools.mjs` 退出码 0：`注册的工具与工具表逐项一致`、`工具表共 <N> 个（含 read）`、`工具名唯一且统一带 browser_e2e_ 前缀` 与参数契约用例通过，既有用例不回退。判定：exit 0、输出无 `FAIL`。
