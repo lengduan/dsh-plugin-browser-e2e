@@ -2,7 +2,7 @@
 
 状态: 已实现
 关联: 项目规格 0001-architecture-invariants.md（模块边界与依赖方向）；0021-session-reset.md（会话重置）；0040-freeze-animations.md（动画冻结，与本文正交）
-代码: lib/pool.js / lib/session.js / lib/page.js / lib/invariants.js / lib/doctor.js / tests/pool.mjs / tests/pool-sessions.mjs
+代码: lib/pool.js / lib/session.js / lib/page.js / lib/invariants.js / lib/doctor.js / tests/pool.mjs / tests/pool-sessions.mjs / tests/pool-idle-zero.mjs / tests/idle-bounds.mjs
 
 ## 需求
 
@@ -69,6 +69,47 @@ context 级下限 1 分钟的理由：`touchSession()` 在**操作开始时**就
 `browser_e2e_start` / `browser_e2e_close` 的参数与文案除 `close` 的摘要外全部不变（决策 D2）；
 **不引入浏览器 ID / 句柄的对外契约**（决策 D3）：`sessionKey(exec)` 已能定位调用方，隔离 context 内部按会话记即可。
 
+
+## 决策记录（空闲回收语义）
+
+本规格最初只写了两个空闲时限的默认值，没规定 `0`、非法值与边界。以下条目是实施后由用户逐条确认的补充决策，
+正文「两个空闲时限的对照」表与 `resolveIdleMs()` / `resolvePoolIdleMs()` 的实现都以本节为准。
+
+| # | 决策 | 来源 |
+|---|---|---|
+| D4 | 每个 context 单独空闲监听，沿用 `IDLE_CLOSE_MS`（默认 10 分钟） | 计划 D4，用户 m2492 |
+| **D4-a** | `DSH_BROWSER_IDLE_MS` 加**下限 60000ms**：避免计时器在操作中途把 context 关掉 | 用户 m4819 |
+| **D4-b** | `DSH_BROWSER_IDLE_MS` 加**上限 600000ms**，默认 600000 | 用户 m4819 |
+| **D4-c** | `DSH_BROWSER_IDLE_MS` 非法值回落默认值（不再出现 NaN → 计时器立刻触发） | 加边界时的推论，与 D5-b 对齐 |
+| D5 | 池级空闲 `DSH_BROWSER_POOL_IDLE_MS`，默认 120000ms | 计划 D5，用户 m2552 |
+| **D5-a** | 池级 `0` 表示**立即回收**（原实现为「关闭池级回收」→ 进程永不释放） | 用户 m3138 |
+| **D5-b** | 池级非法值一律**改写成 0**（同样立即回收），不再静默降级成「永不回收」 | 用户 m3138 |
+| **D5-c** | 池级加**上限 600000ms**（10 分钟），默认 120000（2 分钟） | 用户 m4819 |
+| **D4-d / D5-d** | 两个时限取 `0` 都是「立即关闭」，**区别在触发点**：context 级按「该会话无调用满时限」，池级按「该浏览器最后一个 context 关闭（租约归零）」 | 用户 m4678 |
+
+### 为什么 context 级必须有下限
+
+`touchSession()`（`lib/session.js`）在**操作开始时**就装计时器，而操作本身会 await——
+例如 `tabs()` 刷新计时后还要逐页查 `url()` / `title`。`DSH_BROWSER_IDLE_MS` 若设成几十毫秒，
+计时器会在工具调用进行到一半时关掉 context，对外表现为「工具调用中途报浏览器未启动」。
+下限 60000ms 是这条问题的兜底；上限 600000ms 则是防止误配一个巨大值让进程永不回收。
+
+### 两个时限的取值语义速查
+
+| 输入 | `DSH_BROWSER_IDLE_MS`（context） | `DSH_BROWSER_POOL_IDLE_MS`（浏览器） |
+|---|---|---|
+| 不设 | 600000 | 120000 |
+| `0` | 60000（抬到下限） | 0（立即回收） |
+| `1` / `59999` | 60000 | 原值 |
+| `300000` | 300000 | 300000 |
+| `9999999` | 600000（压到上限） | 600000（压到上限） |
+| `abc` / `-5` / 空白串 | 600000（回落默认） | 0（立即回收） |
+
+### 测试专用开关
+
+`DSH_BROWSER_IDLE_MS_MIN_OVERRIDE` 只给测试用：把 context 级下限临时放宽，好让「空闲到点会回收」的用例
+在几秒内跑完而不是真等 60 秒（`tests/reclaim.mjs` 用例 A / F 依赖它）。**生产环境不设此变量，下限仍是 60 秒。**
+
 ## 边界
 
 - **`session.browser` 字段不能删**：`invariants.js` / `page.js` / `session.js` / `snapshot.js` / `tools.js` 都读它，
@@ -87,13 +128,18 @@ context 级下限 1 分钟的理由：`touchSession()` 在**操作开始时**就
 
 ## 验收
 
-- `node tests/pool.mjs` —— 39 项纯逻辑用例（假 launch 注入，不启真浏览器）：首次拉起 / 复用 / 并发合流 /
-  租约与空闲计时 / 分签名分槽 / **两会话共享浏览器且关一个不影响另一个** / 意外断开广播 / 主动关闭不广播。
+- `node tests/pool.mjs` —— 58 项纯逻辑用例（假 launch 注入，不启真浏览器）：首次拉起 / 复用 / 并发合流 /
+  租约与空闲计时 / 分签名分槽 / **两会话共享浏览器且关一个不影响另一个** / 意外断开广播 / 主动关闭不广播 /
+  启动中被 shutdown 不留孤儿浏览器 / 关闭失败如实报告 / `resolvePoolIdleMs()` 解析规则。
+- `node tests/pool-idle-zero.mjs` —— 23 项：池级 `0` 与各类非法值的端到端语义（每种子进程加载一次池，
+  含阴性对照「30ms 到点确实关」）。
+- `node tests/idle-bounds.mjs` —— 23 项：两个空闲时限的边界与非法值处理（14 种取值 × 子进程）。
 - `node tests/pool-sessions.mjs` —— 28 项真机用例：两会话共享同一浏览器实例、各自 context 不同、
   登录态互不可见、close A 后 B 仍可导航与求值、重新 start 得到干净 context、
   全部 close 后租约归零且池级空闲到点才关浏览器、context 级空闲到期只关自己。
 - `node tests/reclaim.mjs` —— 27 项：空闲回收与 `session/disposed` 两条路径都断言「会话不再持有 context」
-  与「池关掉了共享浏览器」。
+  与「池关掉了共享浏览器」；用例 A 用子进程 + `DSH_BROWSER_IDLE_MS_MIN_OVERRIDE` 跑等效 300ms 空闲
+  （真等 60 秒不现实），用例 F 覆盖「空闲时限小于启动耗时」的竞态。
 - `node tests/invariants.mjs` —— 90 项：状态机、启动失败清理、关闭兜底。
 - `node tests/doctor.mjs` —— 32 项：报告固定七项，含池状态一行。
 - 回归：`assert` / `clipboard` / `dialog` / `download` / `fetch` / `follow` / `frames` / `human` /
