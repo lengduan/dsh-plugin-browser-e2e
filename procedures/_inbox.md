@@ -13,3 +13,18 @@
 - 现象：`shutdownSlot` 在 `browser.close()` 期间仍留在 `slots` Map 里，并发 `acquire` 借到正在关闭的浏览器，实测 `launches=3 same=false`。解法：先把槽从 Map 摘掉再去 close；关闭期间用 `closingSlots` Set 抑制 `disconnected` 广播。
 - 现象：测试里紧接着跑第二个同签名浏览器会起不来（status=1，stderr 只有 `run_main:107` 没有错误文本）。原因：前一个浏览器刚关闭，Chromium 释放 `user-data-dir` 有延迟，立即复用同一 profile 目录必然失败。解法：给子进程独立的 `DSH_BROWSER_E2E_HOME`（`tests/reclaim.mjs` 用例 F 即此法）。
 - 现象：测试注入的假 context 没有 `close` 方法，`context.close()` 直接 `TypeError`（`tests/carrier.mjs` 曾因此 exit=1）。解法：统一用 `Promise.resolve(context.close?.())`。
+- 现象：Win+L 真实锁屏 6.6 分钟、每 2s 采样一次共 245 次，锁屏探针几乎全程返回 UNKNOWN（185/245）或 UNLOCKED（49/245），
+  只有解锁前约 2.5s 出现过 1 次 LOCKED。原因：probe_input_desktop（native/lockscreen/src/main.rs:80）靠 OpenInputDesktop
+  拿到的桌面名判锁，真锁屏时它仍返回 Default（权重 3 的强信号全程判 unlocked），与 wts_flags 的 locked 全程冲突，
+  聚合器按「强信号冲突 -> UNKNOWN」规则压掉了结论；probe_foreground 又主动把所有 lockapp.exe 映射成 None，
+  而锁屏期前台窗口实测是别的残留窗口，于是这一路也帮不上。后果：assertSafeToLaunch 的「已锁屏」分支在真实锁屏下
+  根本不会命中，账户锁定防护第一层等于没生效（仍靠 profile 预置标记兜底）。
+  已修（2026-11-21 二次锁屏实测）：任务书给的两条候选思路在本机都不成立——锁屏期 GetThreadDesktop(自身) 仍是 Default
+  （线程桌面没被切走），OpenDesktop("Winlogon") 恒返回 5、"LogonUI" 返回 2，EnumDesktops 也只列出 Default 与
+  DummyDesktopForInstantResume，安全桌面不可枚举也不可打开。**有效判据**：前台窗口所在桌面能否命名——锁屏期前台是
+  LockApp 的 Windows.UI.Core.CoreWindow（PID 18652），GetThreadDesktop 对它返回 NULL 且 GetLastError()==5，
+  同一时刻本线程桌面上 5 个普通窗口全部正常返回 Default，有区分力。坑：锁屏持续一段时间后 GetForegroundWindow 变成
+  NULL（前台锁屏窗口不再可见），此时 GetCursorPos + WindowFromPoint 拿到的窗口类是 LockApp 的
+  LockScreenBackstopFrame（实测铺满全屏，11 个采样点全中），它是覆盖 fg=NULL 阶段的第二条只读判据；该类在
+  EnumWindows 的 300 个窗口里命中 0 次，属锁屏安全桌面，故不会在未锁屏时误伤。此路两判据都保留：能命名时看桌面归属，
+  不能命名时看光标类名。

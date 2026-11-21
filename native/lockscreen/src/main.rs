@@ -10,10 +10,17 @@ struct LastInputInfo {
     dw_time: u32,
 }
 
+#[repr(C)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
 #[link(name = "user32")]
 extern "system" {
-    fn OpenInputDesktop(flags: u32, inherit: i32, access: u32) -> *mut c_void;
-    fn CloseDesktop(h: *mut c_void) -> i32;
+    fn GetThreadDesktop(tid: u32) -> *mut c_void;
+    fn GetCursorPos(p: *mut Point) -> i32;
+    fn WindowFromPoint(p: Point) -> *mut c_void;
     fn GetUserObjectInformationW(h: *mut c_void, index: i32, info: *mut u16, len: u32, needed: *mut u32) -> i32;
     fn GetForegroundWindow() -> *mut c_void;
     fn GetWindowThreadProcessId(h: *mut c_void, pid: *mut u32) -> u32;
@@ -24,6 +31,7 @@ extern "system" {
 
 #[link(name = "kernel32")]
 extern "system" {
+    fn GetCurrentThreadId() -> u32;
     fn GetTickCount() -> u32;
     fn GetLastError() -> u32;
     fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
@@ -37,10 +45,8 @@ extern "system" {
     fn WTSFreeMemory(p: *mut c_void);
 }
 
-const DF_ALLOWOTHERACCOUNTHOOK: u32 = 0x0001;
-const DF_SWITCHDESKTOP: u32 = 0x0100;
-const DESKTOP_READOBJECTS: u32 = 0x0001;
 const UOI_NAME: i32 = 2;
+const ERROR_ACCESS_DENIED: u32 = 5;
 const WTSSESSIONINFOEX: i32 = 25;
 const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
 
@@ -75,24 +81,120 @@ fn window_process_name(hwnd: *mut c_void) -> Option<String> {
     }
 }
 
-/// 路线 1：输入桌面（强信号）。
-/// 关键：桌面被锁时，普通进程拿不到 Default 桌面；拿到 Default = 已解锁。
-fn probe_input_desktop() -> (Option<bool>, String) {
+/// 读取桌面 / 窗口站对象的名字；失败返回 None。
+fn user_object_name(h: *mut c_void) -> Option<String> {
+    if h.is_null() { return None; }
     unsafe {
-        let h = OpenInputDesktop(DF_ALLOWOTHERACCOUNTHOOK | DF_SWITCHDESKTOP, 0, DESKTOP_READOBJECTS);
-        if h.is_null() {
-            return (Some(true), format!("open denied err={}", GetLastError()));
-        }
         let mut buf = [0u16; 256];
         let mut need = 0u32;
         let ok = GetUserObjectInformationW(h, UOI_NAME, buf.as_mut_ptr(), (buf.len() * 2) as u32, &mut need);
-        CloseDesktop(h);
-        if ok == 0 {
-            return (None, format!("name failed err={}", GetLastError()));
+        if ok == 0 { None } else { Some(wide_to_string(&buf)) }
+    }
+}
+
+/// 路线 1 的判定核心：前台窗口所在桌面还能不能被我命名。
+///
+/// 换掉旧判据的原因（实测 2026-11-21）：锁屏期间 `OpenInputDesktop` 依然成功且桌面名仍是
+/// `Default`，于是「桌面名 == Default 即未锁」全程误判；真正随锁屏改变的，是前台窗口
+/// （LogonUI / LockApp）那张桌面的可及性——锁屏时它是我无权访问的安全桌面，
+/// `GetThreadDesktop` 返回 NULL 且 `GetLastError() == ERROR_ACCESS_DENIED`。
+fn judge_desktop_access(
+    own: &str,
+    has_foreground: bool,
+    tid: u32,
+    fg_desktop: Option<&str>,
+    err: u32,
+) -> (Option<bool>, String) {
+    if !has_foreground {
+        return (None, "no foreground window".into());
+    }
+    if tid == 0 {
+        return (None, "foreground window has no thread".into());
+    }
+    match fg_desktop {
+        Some(name) if name.eq_ignore_ascii_case(own) => (
+            Some(false),
+            format!("fg_desktop=\"{}\" 与自己所在桌面一致", name),
+        ),
+        Some(name) if name.eq_ignore_ascii_case("winlogon") => (
+            Some(true),
+            format!("fg_desktop=\"{}\" 是安全桌面", name),
+        ),
+        Some(name) => (
+            None,
+            format!("fg_desktop=\"{}\" 与自身桌面 \"{}\" 不同，不据此定论", name, own),
+        ),
+        None if err == ERROR_ACCESS_DENIED => (
+            Some(true),
+            format!("fg_desktop 不可访问 err={}（安全桌面）", err),
+        ),
+        None => (None, format!("fg_desktop 查询失败 err={}", err)),
+    }
+}
+
+/// 光标所在窗口的类名。
+/// 锁屏时该窗口由锁屏界面（`LockApp` 的 `LockScreenBackstopFrame`）占住；
+/// 未锁屏时是普通应用窗口。这条判据不依赖前台窗口，覆盖 `GetForegroundWindow()` 返回 NULL 的锁屏阶段。
+fn class_at_cursor() -> Option<String> {
+    unsafe {
+        let mut pt = Point { x: 0, y: 0 };
+        if GetCursorPos(&mut pt) == 0 { return None; }
+        let h = WindowFromPoint(pt);
+        if h.is_null() { return None; }
+        let mut buf = [0u16; 256];
+        let n = GetClassNameW(h, buf.as_mut_ptr(), buf.len() as i32);
+        if n <= 0 { return None; }
+        Some(String::from_utf16_lossy(&buf[..n as usize]))
+    }
+}
+
+/// 锁屏背板窗口类名（`LockApp` / `LogonUI` 的锁屏层）。
+fn is_lock_screen_class(class: &str) -> bool {
+    class.eq_ignore_ascii_case("LockScreenBackstopFrame")
+}
+
+/// 路线 1：前台窗口的桌面归属（强信号）。
+///
+/// 两条互补的判据，都不依赖「输入桌面名是否为 Default」：
+/// 1. 前台窗口所在桌面能否被我命名——锁屏时前台在安全桌面上，`GetThreadDesktop` 被拒；
+/// 2. 前台窗口不可得时（锁屏后期 `GetForegroundWindow` 返回 NULL），看光标位置命中哪个窗口：
+///    锁屏界面由 `LockApp` 的 `LockScreenBackstopFrame` 铺满全屏，该窗口类只在锁屏时出现。
+fn probe_input_desktop() -> (Option<bool>, String) {
+    unsafe {
+        let own = match user_object_name(GetThreadDesktop(GetCurrentThreadId())) {
+            Some(name) => name,
+            None => return (None, format!("own desktop name failed err={}", GetLastError())),
+        };
+        let fg = GetForegroundWindow();
+        if fg.is_null() {
+            // 锁屏后期前台窗口不再可见，改用光标处的窗口类。
+            return match class_at_cursor() {
+                Some(class) if is_lock_screen_class(&class) => {
+                    (Some(true), format!("no foreground; cursor on class=\"{}\"", class))
+                }
+                Some(class) => (
+                    None,
+                    format!("no foreground; cursor on class=\"{}\"，不据此定论", class),
+                ),
+                None => (None, "no foreground window; cursor class unavailable".into()),
+            };
         }
-        let name = wide_to_string(&buf);
-        let unlocked = name.eq_ignore_ascii_case("default");
-        (Some(!unlocked), format!("desktop=\"{}\"", name))
+        let mut pid = 0u32;
+        let tid = GetWindowThreadProcessId(fg, &mut pid);
+        let dh = GetThreadDesktop(tid);
+        let err = GetLastError();
+        let name = user_object_name(dh);
+        let (verdict, detail) = judge_desktop_access(&own, true, tid, name.as_deref(), err);
+        // 前台窗口能命名且与本线程桌面一致时仍可能漏判（历史锁屏出现过残留窗口当前台），
+        // 用光标处的窗口类做一次只读复核：命中锁屏背板即改判已锁。
+        if verdict == Some(false) {
+            if let Some(class) = class_at_cursor() {
+                if is_lock_screen_class(&class) {
+                    return (Some(true), format!("{}; 但 cursor class=\"{}\" 为锁屏背板", detail, class));
+                }
+            }
+        }
+        (verdict, detail)
     }
 }
 
@@ -142,10 +244,13 @@ fn probe_foreground() -> (Option<bool>, String) {
         let n = GetClassNameW(h, cls.as_mut_ptr(), cls.len() as i32);
         let class = String::from_utf16_lossy(&cls[..n.max(0) as usize]);
         let proc = window_process_name(h).unwrap_or_else(|| "?".into());
-        // LogonUI 承载锁屏/登录界面；LockApp 常驻，单独出现不代表锁屏
+        // LogonUI 承载锁屏/登录界面；LockApp 常驻，单独出现不代表锁屏。
+        // 进程名解析不出（"?"）时一律记 None：既可能是锁屏期 OpenProcess 被拒，也可能是
+        // 未锁屏时受保护进程当前台，两种方向都不敢断言，交给别的信号。
         let locked = match proc.as_str() {
             "logonui.exe" => Some(true),
             "lockapp.exe" => None,
+            "?" => None,
             _ => Some(false),
         };
         (locked, format!("pid={} proc={} class={}", pid, proc, class))
@@ -233,6 +338,38 @@ fn selftest() -> bool {
         let f = |o: Option<bool>| o.map(|b| if b { "LOCKED" } else { "UNLOCKED" });
         println!("  [{}] {:<22} -> {:?} (期望 {:?}, conf={})",
             if ok { "PASS" } else { "FAIL" }, name, f(got), f(expect), conf);
+    }
+
+    // input_desktop 新判据的分支覆盖：own 固定为普通用户桌面 "Default"
+    let desk_cases: Vec<(&str, &str, bool, u32, Option<&str>, u32, Option<bool>)> = vec![
+        ("桌面:前台在自己桌面=未锁", "Default", true, 100, Some("Default"), 0, Some(false)),
+        ("桌面:前台在 Winlogon=已锁", "Default", true, 100, Some("Winlogon"), 0, Some(true)),
+        ("桌面:前台桌面不可访问=已锁", "Default", true, 100, None, 5, Some(true)),
+        ("桌面:查询失败非拒绝=不猜", "Default", true, 100, None, 6, None),
+        ("桌面:无前台窗口=不猜", "Default", false, 0, None, 0, None),
+        ("桌面:前台无线程=不猜", "Default", true, 0, Some("Default"), 0, None),
+        ("桌面:前台在别的用户桌面=不猜", "Default", true, 100, Some("Other"), 0, None),
+    ];
+    for (name, own, has_fg, tid, fg_desk, err, expect) in desk_cases {
+        let (got, _) = judge_desktop_access(own, has_fg, tid, fg_desk, err);
+        let ok = got == expect;
+        if !ok { pass = false; }
+        let f = |o: Option<bool>| o.map(|b| if b { "LOCKED" } else { "UNLOCKED" });
+        println!("  [{}] {:<22} -> {:?} (期望 {:?})",
+            if ok { "PASS" } else { "FAIL" }, name, f(got), f(expect));
+    }
+
+    // 光标窗口类判据：锁屏背板只在锁屏时铺满全屏
+    let class_cases: Vec<(&str, &str, bool)> = vec![
+        ("光标:锁屏背板=已锁", "LockScreenBackstopFrame", true),
+        ("光标:普通窗口=不判锁", "Chrome_WidgetWin_1", false),
+        ("光标:空类名=不判锁", "", false),
+    ];
+    for (name, class, expect) in class_cases {
+        let got = is_lock_screen_class(class);
+        let ok = got == expect;
+        if !ok { pass = false; }
+        println!("  [{}] {:<22} -> {}", if ok { "PASS" } else { "FAIL" }, name, got);
     }
     pass
 }

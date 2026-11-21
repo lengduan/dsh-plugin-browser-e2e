@@ -34,21 +34,54 @@ pwsh build.ps1                  # 重新编译
 Windows 没有直接查询「是否锁屏」的 API，锁屏是**多个系统状态的组合结果**。本探针并行采集四路
 独立信号，交叉验证后才给结论。
 
-### 1. 输入桌面可访问性（权重 3）
+### 1. 前台窗口的桌面归属（权重 3）
 
 ```
-OpenInputDesktop(DF_ALLOWOTHERACCOUNTHOOK | DF_SWITCHDESKTOP, false, DESKTOP_READOBJECTS)
+own  = GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()), UOI_NAME)   // 本线程桌面
+fg   = GetForegroundWindow()
+tid  = GetWindowThreadProcessId(fg)
+dh   = GetThreadDesktop(tid)                                                        // 前台窗口所在桌面
+name = GetUserObjectInformationW(dh, UOI_NAME)                                      // 失败时看 GetLastError
 ```
 
-登录后会话运行在名为 `Default` 的输入桌面上。锁屏时 Winlogon 切走了输入桌面，
-普通权限进程再调用 `OpenInputDesktop` 会拿到 `ACCESS_DENIED`。
+**判据**：前台窗口所在桌面能命名且等于本线程桌面 → 未锁；能命名但叫 `Winlogon` →
+已锁；**无法命名且 `GetLastError()==ERROR_ACCESS_DENIED` → 已锁**（前台窗口在我无权访问的
+安全桌面上，这正是锁屏界面）。
 
-**判据**：能打开且桌面名为 `Default` → 未锁；打不开 → 倾向已锁，但**不单独定论**
-（服务进程、无桌面进程同样会失败）。
+**第二条判据（补锁屏后期）**：锁屏持续一段时间后 `GetForegroundWindow()` 会返回 NULL
+（前台锁屏窗口不再可见），此时改用光标处的窗口类：
 
-用 `GetUserObjectInformationW(UOI_NAME)` 读桌面名来排除「能打开但不是 Default」的情况。
+```
+GetCursorPos(&pt); WindowFromPoint(pt) → GetClassNameW
+```
+
+锁屏时该位置是 `LockApp` 的 `LockScreenBackstopFrame`（实测铺满全屏，11 个采样点全中，
+含四个角与对角线）；未锁屏时是普通应用窗口。这一路**只读**，且在该阶段仍与 `wts_flags`
+一致。若光标处既非锁屏背板也非可辨认类名，仍返回 `None`，交给聚合器退到别的信号。
+
+**为什么不用「`OpenInputDesktop` 拿到的桌面名是否为 `Default`」**（旧实现，已废）：
+
+- 实测 2026-11-21 真实锁屏 6.6 分钟，每 2s 采样 245 次，锁屏期 186 个样本里该路
+  **185 次判未锁**：锁屏时 `OpenInputDesktop` 依然成功，返回的桌面名仍是 `Default`。
+  它与 `wts_flags` 全程冲突，聚合器按「强信号冲突 → UNKNOWN」把正确结论压掉了。
+- 实测同一次锁屏：前台窗口是 `LockApp.exe`（PID 18652，`Windows.UI.Core.CoreWindow`），
+  它的 `GetThreadDesktop` 返回 NULL 且 `GetLastError()==5`；而同一时刻枚举本线程桌面上的
+  5 个普通窗口，`GetThreadDesktop` 全部正常返回 `Default`。**这是有区分力的。**
+- 本线程桌面**始终**是 `Default`（锁屏时也没被切走），所以「检测线程桌面是否被切走」这条
+  思路在本机不成立；`OpenDesktop("Winlogon")` 在锁屏期返回 5、`"LogonUI"` 返回 2，
+  `EnumDesktops` 也只列出 `Default` 与 `DummyDesktopForInstantResume`，安全桌面根本不可枚举。
+- 锁屏持续一段时间后 `GetForegroundWindow` 会返回 NULL（前台锁屏窗口不再归我们可见）。
+  实测这次锁屏 25 分钟全程都是该状态，故追加了光标处的窗口类判据（见下条），而不是返回 `None`。
+- **`LockScreenBackstopFrame` 只在锁屏时出现**：锁屏期 `EnumWindows` 枚举的 300 个窗口里
+  该类命中 0 次 —— 它属于锁屏安全桌面，只能在光标命中时看到。因此「光标处是它」既覆盖
+  `fg=NULL` 阶段，也不会在未锁屏时误伤。
+- 历史那轮锁屏曾出现**后台残留窗口当前台**（`deepseek harness.exe`），那时仅凭前台窗口桌面归属
+  会漏判；现在即使前台窗口判为未锁，也会再用光标窗口类复核一次，命中锁屏背板即改判已锁。
 
 ### 2. WTS 会话标志（权重 3）
+
+> 本路在实测中是唯一全程正确的信号（锁屏期 186/186 判 locked），但规格要求它不单独作为唯一判据，
+> 因此仍需第 1 路提供独立旁证。
 
 ```
 WTSQuerySessionInformationW(NULL, -1, WTSSessionInfoEx /* 25 */, &buf, &bytes)
@@ -76,7 +109,9 @@ typedef struct {
 `GetForegroundWindow` → `GetWindowThreadProcessId` → `QueryFullProcessImageNameW`。
 
 进程为 `LogonUI.exe` 说明前台就是锁屏界面（**强**）；为 `LockApp.exe` 记 `None`
-（**LockApp 常驻，未锁屏时也在运行**，这是最容易被误用的信号）；其它进程 → 未锁。
+（**LockApp 常驻，未锁屏时也在运行**，这是最容易被误用的信号）；**进程名解析失败记 `None`**
+（锁屏期 `OpenProcess` 对锁屏进程会被拒绝，旧实现把这种失败当成「未锁」，等于猜）；
+其它进程 → 未锁。
 
 用 `QueryFullProcessImageNameW` 而非进程枚举，原因见下节。
 
