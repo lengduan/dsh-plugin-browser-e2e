@@ -1,6 +1,6 @@
 {
   "name": "dsh-browser-e2e",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "浏览器端到端验证工具集（browser_*）+ 右侧实时浏览器面板：用系统 Edge 驱动 Playwright，不触发 360 进程防护弹窗；装进 profile 后对所有会话与工作区可用",
   "type": "module",
   "main": "lib/index.js",
@@ -41,7 +41,7 @@
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
     "test:unit": "node tests/invariants.mjs && node tests/pool.mjs && node tests/pool-idle-zero.mjs && node tests/idle-bounds.mjs && node tests/client-bundle.mjs && node tests/screencast.mjs && node tests/gate.mjs",
-    "test:integration": "node tests/panel.mjs && node tests/tools.mjs && node tests/snapshot.mjs && node tests/auth.mjs && node tests/multitab.mjs && node tests/cdp.mjs && node tests/reclaim.mjs && node tests/upload.mjs && node tests/download.mjs && node tests/read.mjs && node tests/dialog.mjs && node tests/session-reset.mjs && node tests/clipboard.mjs && node tests/click-press.mjs && node tests/assert.mjs && node tests/recipe.mjs && node tests/human.mjs && node tests/doctor.mjs && node tests/follow.mjs && node tests/raw-http.mjs && node tests/fetch.mjs && node tests/frames.mjs && node tests/carrier.mjs && node tests/auth-state.mjs && node tests/freeze.mjs && node tests/animation-guard.mjs && node tests/pool-sessions.mjs && node tests/browser-profile.mjs"
+    "test:integration": "node tests/panel.mjs && node tests/tools.mjs && node tests/snapshot.mjs && node tests/auth.mjs && node tests/multitab.mjs && node tests/cdp.mjs && node tests/reclaim.mjs && node tests/upload.mjs && node tests/download.mjs && node tests/read.mjs && node tests/dialog.mjs && node tests/session-reset.mjs && node tests/clipboard.mjs && node tests/click-press.mjs && node tests/assert.mjs && node tests/recipe.mjs && node tests/human.mjs && node tests/doctor.mjs && node tests/follow.mjs && node tests/raw-http.mjs && node tests/fetch.mjs && node tests/frames.mjs && node tests/carrier.mjs && node tests/auth-state.mjs && node tests/freeze.mjs && node tests/animation-guard.mjs && node tests/pool-sessions.mjs && node tests/pool-concurrency.mjs && node tests/browser-profile.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.19.0",
