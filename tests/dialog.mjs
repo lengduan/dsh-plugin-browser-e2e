@@ -16,7 +16,7 @@
  * 运行：node tests/dialog.mjs
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
-import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -88,12 +88,6 @@ async function readWhen(predicate, tabId, timeoutMs = 4000) {
 }
 
 /** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 带三个对话框触发按钮的夹具：记录页面里 observable 的返回值。 */
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>dialog-fixture</title></head><body>
@@ -126,7 +120,7 @@ window.addEventListener('beforeunload', function (event) {
 });
 </script></body></html>`
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 
 // 注册面：用插件自己的 apply 拿带 execute 包装的工具定义（与宿主一致）。
 const definitions = []
@@ -449,9 +443,9 @@ try {
   console.log(`  FAIL  用例执行异常 —— ${error?.stack ?? error}`)
 } finally {
   await closeAll()
-  const settled = await waitUntil(() => edgeRootCount() === baseline, 15000, 250)
+  const settled = await waitUntil(() => countBrowserRoots() === baseline, 15000, 250)
   console.log('')
   console.log(`结果：PASS ${pass} / FAIL ${fail}`)
-  console.log(`收尾检查：剩余 msedge 主进程 ${edgeRootCount()} 个（基线 ${baseline}）${settled ? '' : '（未回落）'}`)
+  console.log(`收尾检查：剩余 msedge 主进程 ${countBrowserRoots()} 个（基线 ${baseline}）${settled ? '' : '（未回落）'}`)
   process.exit(fail === 0 && settled ? 0 : 1)
 }

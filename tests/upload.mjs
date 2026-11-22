@@ -14,11 +14,11 @@
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { countBrowserRoots, waitBrowserRootsAtMost } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -31,25 +31,6 @@ const { snapshot } = await import('../lib/snapshot.js')
 
 const KEY = 'test-upload-key'
 const SID = 'test-upload-session'
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-/** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
-
-/** 轮询直到条件成立；进程退出是异步的，固定 sleep 会偶发失败。 */
-async function waitUntil(fn, timeoutMs = 10000, stepMs = 250) {
-  const started = Date.now()
-  for (;;) {
-    if (await fn()) return true
-    if (Date.now() - started >= timeoutMs) return false
-    await sleep(stepMs)
-  }
-}
 
 let pass = 0
 let fail = 0
@@ -122,7 +103,7 @@ writeFileSync(cFile, 'CCC')
 writeFileSync(bigFile, 'x'.repeat(4096))
 const fixtureUrl = pathToFileURL(fixtureFile).href
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 let session = null
 let firstTabId = null
 
@@ -334,11 +315,11 @@ try {
 }
 
 console.log('')
-// 进程退出是异步的：每 250ms 轮询一次，最多等 10s，条件满足即通过。
-const edgeSettled = await waitUntil(() => edgeRootCount() <= baseline)
-const remaining = edgeRootCount()
-check('msedge 主进程回落到运行前基线', edgeSettled && remaining <= baseline,
-  `baseline=${baseline} remaining=${remaining}`)
+// 进程退出是异步的：在 pwsh 内部每 250ms 采一次样，最多等 10s，全程只起一个进程。
+// remaining 为 -1 表示连进程都数不出来（pwsh 超时或被拦），那同样不是「已回落到基线」。
+const remaining = waitBrowserRootsAtMost(baseline, { timeoutMs: 10000 })
+check('msedge 主进程回落到运行前基线', remaining >= 0 && remaining <= baseline,
+  remaining < 0 ? '无法统计 msedge 进程（pwsh 调用失败或超时）' : `baseline=${baseline} remaining=${remaining}`)
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
 process.exit(fail === 0 ? 0 : 1)

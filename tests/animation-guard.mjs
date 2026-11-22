@@ -20,8 +20,8 @@
  * 真起无头 Edge；进程数断言以「回落到运行前基线」为准，不看绝对值。
  * 运行：node tests/animation-guard.mjs
  */
-import { spawnSync } from 'node:child_process'
 import { createServer as createHttpServer } from 'node:http'
+import { countBrowserRoots } from './_process-count.mjs'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
@@ -133,12 +133,6 @@ function check(label, ok, detail) {
 }
 
 /** msedge 主进程数（与 tests/freeze.mjs 同一口径）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 本地 HTTP 夹具：换文档、CSP 降级、事件环用例都需要真实可重载的源。 */
 let fixtureServer = null
@@ -171,7 +165,7 @@ async function closeFixture() {
   await new Promise((resolve) => server.close(resolve))
 }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 
 try {
   const base = await serveFixture()
@@ -442,7 +436,7 @@ try {
 console.log('\n== 收尾：msedge 主进程回落 ==')
 {
   await sleep(1500)
-  const now = edgeRootCount()
+  const now = countBrowserRoots()
   check('msedge 主进程回落到运行前基线', now <= baseline, `基线 ${baseline}，当前 ${now}`)
 }
 

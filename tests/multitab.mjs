@@ -11,7 +11,7 @@
  * 运行：node tests/multitab.mjs
  */
 import { createServer } from 'node:http'
-import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
@@ -54,14 +54,7 @@ function refOf(info, label) {
   return match ? `@${match[1]}` : null
 }
 
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
-
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 const server = createServer((req, res) => {
   if (req.url === '/a') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -258,5 +251,5 @@ try {
 
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
-console.log(`收尾检查：剩余 msedge 主进程 ${edgeRootCount()} 个（基线 ${baseline}）`)
+console.log(`收尾检查：剩余 msedge 主进程 ${countBrowserRoots()} 个（基线 ${baseline}）`)
 process.exit(fail === 0 ? 0 : 1)

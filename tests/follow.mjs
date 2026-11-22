@@ -12,7 +12,7 @@
  * 运行：node tests/follow.mjs
  */
 import { createServer } from 'node:http'
-import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -48,12 +48,6 @@ async function expectThrow(fn) {
 }
 
 /** msedge 主进程数（与 tests/multitab.mjs 同一口径）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /**
  * 造一个假页面对象，只带 followTab 会读的面。
@@ -100,7 +94,7 @@ function fakeSession(entries, activeTabId) {
   return { pages, activeTabId }
 }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 
 console.log('== 用例 1：无参判定（假页面，不启动浏览器）==')
 {
@@ -327,12 +321,12 @@ try {
 }
 
 // 浏览器进程回收可能滞后：轮询等待回落到运行前基线，超时才判 FAIL。
-let finalRoots = edgeRootCount()
+let finalRoots = countBrowserRoots()
 {
   const started = Date.now()
   while (finalRoots > baseline && Date.now() - started < 15000) {
     await sleep(300)
-    finalRoots = edgeRootCount()
+    finalRoots = countBrowserRoots()
   }
 }
 check('msedge 主进程回落到运行前基线', Number.isFinite(finalRoots) && finalRoots <= baseline,

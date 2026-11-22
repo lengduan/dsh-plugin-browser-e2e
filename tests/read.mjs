@@ -20,8 +20,8 @@
  * 运行：node tests/read.mjs
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
-import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
+import { countBrowserRoots, waitBrowserRootsAtMostOk } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -71,20 +71,8 @@ async function waitUntil(fn, timeoutMs = 10000, stepMs = 250) {
 }
 
 /** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 由 Playwright 临时 profile 启动的 msedge 主进程数。 */
-function playwrightEdgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -match 'playwright_chromiumdev_profile' -and $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 按 selector 找记录；没有记录时返回 undefined（断言里给出实际值）。 */
 function bySelector(list, selector) {
@@ -190,8 +178,8 @@ const BIG_TABLE_HTML = page('read-big-table', '<table id="big-table"><tbody>'
   )).join('')
   + '</tbody></table>')
 
-const baseline = edgeRootCount()
-const playwrightBaseline = playwrightEdgeRootCount()
+const baseline = countBrowserRoots()
+const playwrightBaseline = countBrowserRoots('playwright_chromiumdev_profile')
 const server = createServer((req, res) => {
   const path = String(req.url || '').split('?')[0]
   if (path === '/read-fixture') {
@@ -592,10 +580,10 @@ try {
 
 console.log('')
 // 进程退出是异步的：每 250ms 轮询一次，最多等 10s，条件满足即通过。
-const edgeSettled = await waitUntil(() => edgeRootCount() <= baseline)
-const playwrightSettled = await waitUntil(() => playwrightEdgeRootCount() <= playwrightBaseline)
-const remaining = edgeRootCount()
-const remainingPlaywright = playwrightEdgeRootCount()
+const edgeSettled = waitBrowserRootsAtMostOk(baseline, {})
+const playwrightSettled = waitBrowserRootsAtMostOk(playwrightBaseline, { commandLinePattern: 'playwright_chromiumdev_profile' })
+const remaining = countBrowserRoots()
+const remainingPlaywright = countBrowserRoots('playwright_chromiumdev_profile')
 check('msedge 主进程回落到运行前基线', edgeSettled && remaining <= baseline,
   `baseline=${baseline} remaining=${remaining}`)
 check('本测试未遗留 Playwright Edge 主进程', playwrightSettled && remainingPlaywright <= playwrightBaseline,

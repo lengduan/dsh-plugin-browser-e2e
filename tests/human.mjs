@@ -10,8 +10,8 @@
  * 运行：node tests/human.mjs
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
-import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
+import { countBrowserRoots, waitBrowserRootsAtMostOk } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -27,20 +27,8 @@ let session = null
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 由 Playwright 临时 profile 启动的 msedge 主进程数；正常应归零。 */
-function playwrightEdgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -match 'playwright_chromiumdev_profile' -and $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 let pass = 0
 let fail = 0
@@ -80,9 +68,9 @@ const RECAPTCHA_PAGE = '<!doctype html><html><head><title>recaptcha</title></hea
 const CAPTCHA_SELECTOR_PAGE = '<!doctype html><html><head><title>captcha-selector</title></head><body>'
   + '<div class="g-recaptcha" data-sitekey="site-key"></div><div id="done">已登录</div></body></html>'
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 // 运行前可能已有别的进程用 Playwright 起过 Edge（例如其他工具），只断言本测试没有新增残留。
-const playwrightBaseline = playwrightEdgeRootCount()
+const playwrightBaseline = countBrowserRoots('playwright_chromiumdev_profile')
 const server = createServer((req, res) => {
   const path = new URL(req.url, 'http://127.0.0.1').pathname
   const html = (body, title = path) => `<!doctype html><html><head><title>${title}</title></head><body>${body}</body></html>`
@@ -151,7 +139,7 @@ try {
   const info = await launch(KEY, { headless: true, viewportWidth: 800, viewportHeight: 600 }, 'test-human-session')
   session = requireSession(KEY)
   console.log('== 准备：启动浏览器 ==')
-  check('启动成功', info.reused === false && edgeRootCount() > baseline, JSON.stringify(info))
+  check('启动成功', info.reused === false && countBrowserRoots() > baseline, JSON.stringify(info))
 
   console.log('== 检测组 ==')
   {
@@ -574,10 +562,10 @@ async function waitUntil(fn, timeoutMs = 10000, stepMs = 250) {
     await sleep(stepMs)
   }
 }
-const edgeSettled = await waitUntil(() => edgeRootCount() <= baseline)
-const playwrightSettled = await waitUntil(() => playwrightEdgeRootCount() <= playwrightBaseline)
-const remaining = edgeRootCount()
-const remainingPlaywright = playwrightEdgeRootCount()
+const edgeSettled = waitBrowserRootsAtMostOk(baseline, {})
+const playwrightSettled = waitBrowserRootsAtMostOk(playwrightBaseline, { commandLinePattern: 'playwright_chromiumdev_profile' })
+const remaining = countBrowserRoots()
+const remainingPlaywright = countBrowserRoots('playwright_chromiumdev_profile')
 check('msedge 主进程回落到运行前基线', edgeSettled && remaining <= baseline,
   `baseline=${baseline} remaining=${remaining}`)
 check('本测试未遗留 Playwright Edge 主进程', playwrightSettled && remainingPlaywright <= playwrightBaseline,

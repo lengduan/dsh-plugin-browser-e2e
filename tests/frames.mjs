@@ -8,7 +8,7 @@
  * 运行：node tests/frames.mjs
  */
 import { createServer } from 'node:http'
-import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
@@ -41,20 +41,13 @@ async function expectThrow(fn) {
   }
 }
 
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
-
 /** 等 Edge 主进程回落到基线：进程退出比 closeAll 返回晚，最多等 5 秒。 */
 async function waitProcessExit(baselineCount, timeoutMs = 5000) {
-  let count = edgeRootCount()
+  let count = countBrowserRoots()
   const deadline = Date.now() + timeoutMs
   while (count > baselineCount && Date.now() < deadline) {
     await sleep(200)
-    count = edgeRootCount()
+    count = countBrowserRoots()
   }
   return count
 }
@@ -139,7 +132,7 @@ function childFrame(page, index) {
   return list[index]
 }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 let session = null
 let serverA = null
 let serverB = null

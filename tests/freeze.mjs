@@ -14,12 +14,13 @@
  * 真起无头 Edge；进程数断言以「回落到运行前基线」为准，不看绝对值。
  * 运行：node tests/freeze.mjs
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer as createHttpServer, get } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { countBrowserRoots } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -128,12 +129,6 @@ function checkSkip(label, why) {
 }
 
 /** msedge 主进程数（与 tests/multitab.mjs 同一口径）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 读当前 active 页的冻结状态。 */
 async function freezeState(session) {
@@ -269,7 +264,7 @@ function pickPort() {
   })
 }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 
 try {
   console.log('== 用例 1：不传 freezeAnimations 时不注入 ==')
@@ -457,7 +452,7 @@ try {
 console.log(`\n== 收尾：msedge 主进程回落 ==`)
 {
   await new Promise((resolve) => setTimeout(resolve, 1500))
-  const now = edgeRootCount()
+  const now = countBrowserRoots()
   check('msedge 主进程回落到运行前基线', now <= baseline, `基线 ${baseline}，当前 ${now}`)
 }
 

@@ -11,7 +11,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 
@@ -112,14 +112,7 @@ async function withChromePath(file, run) {
   }
 }
 
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
-
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 
 try {
   console.log('== 用例 1：载体常量与展示名 ==')
@@ -273,5 +266,5 @@ try {
 
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail} / SKIP ${skip}`)
-console.log(`收尾检查：剩余 msedge 主进程 ${edgeRootCount()} 个（基线 ${baseline}；真实 Chrome 进程由本机任务管理器观察）`)
+console.log(`收尾检查：剩余 msedge 主进程 ${countBrowserRoots()} 个（基线 ${baseline}；真实 Chrome 进程由本机任务管理器观察）`)
 process.exit(fail === 0 ? 0 : 1)

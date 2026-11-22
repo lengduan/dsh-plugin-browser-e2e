@@ -8,11 +8,11 @@
  * 运行：node tests/tools.mjs
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
-import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
+import { countBrowserRoots, waitBrowserRootsAtMostOk } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -40,20 +40,8 @@ const SID = 'test-tools-session'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 /** 由 Playwright 临时 profile 启动的 msedge 主进程数；正常应归零。 */
-function playwrightEdgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -match 'playwright_chromiumdev_profile' -and $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 let pass = 0
 let fail = 0
@@ -191,9 +179,9 @@ const BINARY_BODY = Buffer.from(Array.from({ length: 1024 }, (_, index) => index
 /** 网络详情夹具：JSON 响应体，用于校验解析与两空格格式化。 */
 const JSON_FIXTURE = { alpha: 1, beta: { gamma: [1, 2, 3] }, note: '详情夹具' }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 // 运行前可能已有别的进程用 Playwright 起过 Edge（例如其他工具），只断言本测试没有新增残留。
-const playwrightBaseline = playwrightEdgeRootCount()
+const playwrightBaseline = countBrowserRoots('playwright_chromiumdev_profile')
 const server = createServer((req, res) => {
   if (req.url === '/page' || req.url.startsWith('/page?')) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -322,7 +310,7 @@ try {
     check('默认启动仍拉起 msedge（carrier 缺省为 edge）',
       info.carrier === 'edge' && info.channel === 'msedge' && info.summary.startsWith('启动浏览器 系统 Edge'),
       JSON.stringify({ carrier: info.carrier, channel: info.channel, summary: info.summary }))
-    check('Edge 主进程比基线多', edgeRootCount() > baseline, `baseline=${baseline} now=${edgeRootCount()}`)
+    check('Edge 主进程比基线多', countBrowserRoots() > baseline, `baseline=${baseline} now=${countBrowserRoots()}`)
   }
 
   console.log('== 用例 2：console 捕获（log / warn / pageerror）==')
@@ -1900,10 +1888,10 @@ try {
 
 console.log('')
 // 进程退出是异步的：每 250ms 轮询一次，最多等 10s，条件满足即通过。
-const edgeSettled = await waitUntil(() => edgeRootCount() <= baseline)
-const playwrightSettled = await waitUntil(() => playwrightEdgeRootCount() <= playwrightBaseline)
-const remaining = edgeRootCount()
-const remainingPlaywright = playwrightEdgeRootCount()
+const edgeSettled = waitBrowserRootsAtMostOk(baseline, {})
+const playwrightSettled = waitBrowserRootsAtMostOk(playwrightBaseline, { commandLinePattern: 'playwright_chromiumdev_profile' })
+const remaining = countBrowserRoots()
+const remainingPlaywright = countBrowserRoots('playwright_chromiumdev_profile')
 check('msedge 主进程回落到运行前基线', edgeSettled && remaining <= baseline, `baseline=${baseline} remaining=${remaining}`)
 check('本测试未遗留 Playwright Edge 主进程', playwrightSettled && remainingPlaywright <= playwrightBaseline, `playwright 基线=${playwrightBaseline} 残留=${remainingPlaywright}`)
 console.log('')

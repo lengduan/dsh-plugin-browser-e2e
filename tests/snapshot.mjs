@@ -10,8 +10,8 @@
  * 结束时断言 msedge 主进程回落到运行前基线（不看绝对值）。
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
+import { countBrowserRoots, waitBrowserRootsAtMostOk } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -63,12 +63,6 @@ async function waitUntil(fn, timeoutMs = 10000, stepMs = 100) {
 }
 
 /** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 const htmlPage = (title, body) => '<!doctype html><html><head><meta charset="utf-8">'
   + `<title>${title}</title><style>body{margin:0;font:14px sans-serif}</style></head><body>${body}</body></html>`
@@ -155,7 +149,7 @@ async function waitFrames(tabId, count, predicate) {
   }, 8000)
 }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 let t2Id = null
 
 try {
@@ -604,8 +598,8 @@ try {
 }
 
 console.log('')
-const settled = await waitUntil(() => edgeRootCount() <= baseline, 15000)
-const remaining = edgeRootCount()
+const settled = waitBrowserRootsAtMostOk(baseline, { timeoutMs: 15000 })
+const remaining = countBrowserRoots()
 check('msedge 主进程回落到运行前基线', settled && remaining <= baseline, `baseline=${baseline} remaining=${remaining}`)
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)

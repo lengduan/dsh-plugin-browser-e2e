@@ -9,6 +9,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { rmSync, writeFileSync } from 'node:fs'
+import { countBrowserRoots, waitBrowserRootsAtMostOk } from './_process-count.mjs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -27,14 +28,6 @@ const { navigate } = await import('../lib/page.js')
 
 const EDGE_MIN_IDLE = 30
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-/** 当前 msedge 主进程数；零表示浏览器已真正退出。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 let pass = 0
 let fail = 0
@@ -131,7 +124,7 @@ console.log('== 用例 B：session/disposed 钩子回收（同一条 closeBySess
   check('disposed 前租约为 1', leasesBeforeDispose === 1, JSON.stringify({ leasesBeforeDispose }))
   check('disposed 后租约已归还', poolStats().leases === 0, JSON.stringify(poolStats()))
   // 池化：dispose 只回收该会话的 context 并归还租约；共享浏览器由池级空闲回收。
-  // 判据用池状态而不是数进程：edgeRootCount 每次要起一个 pwsh（2~2.7s），20 秒窗口内只能采到几次，
+  // 判据用池状态而不是数进程：countBrowserRoots 每次要起一个 pwsh（2~2.7s），20 秒窗口内只能采到几次，
   // 而进程回落本身还要等操作系统回收，容易假红。进程收尾由文件末尾的统一断言负责。
   const gone = await waitUntil(() => poolStats().hasBrowser === false, 15000)
   check('disposed 后池已关掉共享浏览器', gone, JSON.stringify(poolStats()))
@@ -154,18 +147,18 @@ console.log('== 用例 D：未使用过浏览器的会话，钩子不应报错 =
 
 console.log('== 用例 E：显式 close 仍然生效 ==')
 {
-  const before = edgeRootCount()
+  const before = countBrowserRoots()
   const id = 'test-session-explicit'
   await launch('test-key-explicit', { headless: true }, id)
   const r = await close('test-key-explicit')
   check('显式 close 返回 closed=true', r.closed === true, JSON.stringify(r))
-  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
-  check('显式 close 后 Edge 主进程已回落', gone, `before=${before} now=${edgeRootCount()}`)
+  const gone = waitBrowserRootsAtMostOk(before, { timeoutMs: 15000 })
+  check('显式 close 后 Edge 主进程已回落', gone, `before=${before} now=${countBrowserRoots()}`)
 }
 
 console.log('== 用例 F：小空闲时限不打断 launch（launch 与空闲回收竞态）==')
 {
-  const before = edgeRootCount()
+  const before = countBrowserRoots()
   // session.js 在模块加载时读取 DSH_BROWSER_IDLE_MS，只能用子进程模拟「空闲时限小于启动耗时」。
   const moduleUrl = new URL('../lib/session.js', import.meta.url).href
   const childScript = `
@@ -228,13 +221,13 @@ console.log(JSON.stringify({ elapsed, keysAfterLaunch, reclaimed, version: info.
     run.status === 0 && Array.isArray(child?.keysAfterLaunch) && child.keysAfterLaunch.includes('test-key-tiny-idle'), detail)
   check('启动耗时超过空闲时限（竞态场景确实被覆盖）', typeof child?.elapsed === 'number' && child.elapsed >= 100, detail)
   check('launch 落定后空闲回收仍然生效', child?.reclaimed === true, detail)
-  const gone = await waitUntil(() => edgeRootCount() <= before, 15000)
-  check('子进程结束后 Edge 主进程回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
+  const gone = waitBrowserRootsAtMostOk(before, { timeoutMs: 15000 })
+  check('子进程结束后 Edge 主进程回落到基线', gone, `before=${before} now=${countBrowserRoots()}`)
 }
 
 console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
 {
-  const before = edgeRootCount()
+  const before = countBrowserRoots()
   const launchesBeforeConcurrent = poolStats().launchCount
   const first = launch('test-key-concurrent', { headless: true }, 'test-session-concurrent')
   const second = launch('test-key-concurrent', { headless: true }, 'test-session-concurrent')
@@ -254,7 +247,7 @@ console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
       return Number.MAX_SAFE_INTEGER
     }
     session.touch()
-    const count = edgeRootCount()
+    const count = countBrowserRoots()
     session.touch()
     return count
   }
@@ -276,8 +269,8 @@ console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
   check('关闭返回已关闭本会话上下文', closedConcurrent.closed === true
     && closedConcurrent.summary === '已关闭本会话的浏览器上下文', JSON.stringify(closedConcurrent))
   // close 只归还租约；租约归零后由池在空闲时限内关掉共享浏览器。
-  const gone = await waitUntil(() => edgeRootCount() <= before, 20000)
-  check('租约归零后共享浏览器回落到基线', gone, `before=${before} now=${edgeRootCount()}`)
+  const gone = waitBrowserRootsAtMostOk(before, { timeoutMs: 20000 })
+  check('租约归零后共享浏览器回落到基线', gone, `before=${before} now=${countBrowserRoots()}`)
 }
 
 } finally {
@@ -286,5 +279,5 @@ console.log('== 用例 G：同一 key 并发 launch 只建一个浏览器 ==')
 
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
-console.log(`收尾检查：剩余 msedge 主进程 ${edgeRootCount()} 个（应为 0），sessions ${JSON.stringify(activeSessionKeys())}`)
+console.log(`收尾检查：剩余 msedge 主进程 ${countBrowserRoots()} 个（应为 0），sessions ${JSON.stringify(activeSessionKeys())}`)
 process.exit(fail === 0 ? 0 : 1)

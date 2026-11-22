@@ -12,7 +12,7 @@
  * 运行：node tests/click-press.mjs
  * 结束时断言 msedge 主进程数回落到运行前基线（基线里的进程是本机用户自己的 Edge）。
  */
-import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 // 测试期间不让空闲回收介入（session.js 在导入时读取该环境变量）。
 process.env.DSH_BROWSER_IDLE_MS = '600000'
@@ -26,12 +26,6 @@ let session = null
 const SID = 'test-click-press-session'
 
 /** 当前 msedge 主进程数（排除 --type= 的子进程）。 */
-function edgeRootCount() {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Measure-Object).Count",
-  ], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
 
 let pass = 0
 let fail = 0
@@ -97,7 +91,7 @@ async function refOf(id) {
   return node ? node.ref : null
 }
 
-const baseline = edgeRootCount()
+const baseline = countBrowserRoots()
 
 try {
   console.log('== 用例 1：clickCount 缺省为 1，三条目标路径摘要与事件与旧版一致 ==')
@@ -529,7 +523,7 @@ try {
 }
 
 console.log('')
-const remaining = edgeRootCount()
+const remaining = countBrowserRoots()
 check('msedge 主进程回落到运行前基线', remaining <= baseline, `baseline=${baseline} remaining=${remaining}`)
 console.log('')
 console.log(`结果：PASS ${pass} / FAIL ${fail}`)
