@@ -375,20 +375,17 @@ Playwright 先放默认 15 项、再追加用户 args，是两个独立开关；
 | `tests/session-reset.mjs` | 池化后零池状态断言，close 漏 `release` 完全测不出 | 补 3 条：重置前 2 份租约、close 后回 1、close+start 后回 2（非 3） |
 | `tests/multitab.mjs` | `typeof info.summary === 'string'` 恒真 | 改为「首次不复用 + 只持 1 份租约 + 单槽」 |
 
-**仍未消除的已知局限**：
+**第三轮补强（2026-11-21）**：
 
-- ~~`tests/browser-profile.mjs` 的「池记录了 Local State 已被消费」一条判据仍是「浏览器非空」~~：
-  已修正。`slot.localStateConsumed` 改为 `'written' / 'unchanged' / 'skipped'` 三态，
-  另加 `localStateFlushedAfterClose`（`close()` 之后回读）；断言改成检查三态记账与关闭后回读，
-  并把「哨兵值被改写」的措辞降级为「仅证明字段被消费，不证明跳过探测」
-  （原措辞暗示了已被 4625 实测证伪的等价关系）。
-> **[已过时 2026-11-22]** `freezeAnimations` 拦不住导航后**新造**的动画（见功能规格 0040 的「已知局限」，已实测确认并写成断言）。
->
-> 现在：已由 0040 的「动态守护」收掉——250ms sweep + `Element.prototype.animate` patch 之后，后插 `!important` 样式与后建 WAAPI 动画都会归零，该条已不是局限（见 0040「行为」与「已知局限」整段改写）。
-> 变更原因：一次性 `domcontentloaded` 冻结拦不住之后新造的动画，需求要求任何时刻新出现的动画都不持续耗 CPU。
-- 进程计数类测试互相争抢 profile，`reclaim` 与 `pool-sessions` 并发跑会同时崩溃，必须串行。
-- `page.js` 的 `createTransientPage` 没有直接测试文件（全库 grep 无命中），其跨会话隔离只经 `tests/pool-sessions.mjs` 间接覆盖。
-第二轮复核追加修正（同一批复核员深挖后）：
+| 位置 | 原问题 | 修正 |
+|---|---|---|
+| `tests/browser-profile.mjs` | 「池记录了 Local State 已被消费」判据写成 `got.browser !== null`，恒为真；`slot.localStateConsumed` 无读取方，恒为 `false` 也无人发现 | 改读池的真实记账；`localStateConsumed` 改三态（`written` / `unchanged` / `skipped`），另加 `localStateFlushedAfterClose`（`close()` 之后回读）。「哨兵值被改写」的措辞降级为「仅证明字段被消费，不证明跳过探测」——原措辞暗示的等价关系已被 4625 实测证伪 |
+| `tests/pool-sessions.mjs` | `page.js` 的 `createTransientPage` 无直接测试，跨会话隔离只经 fetch 链路间接覆盖 | 新增用例 4b（6 条断言）：临时页被标记 transient、落在**自己的** context、不出现在另一会话的 context、不计入 `session.pages`、关闭后页面数回基线。该文件 28 → 34 PASS |
+
+> 上面「`localStateConsumed` 无读取方」这条值得记一笔：一个字段没有任何读取方，它写错了也没人会发现。
+> 这正是「恒真断言」掩盖问题的典型形态——把断言改成读真实字段，问题当场就暴露了（当时立刻 FAIL）。
+
+**第二轮复核追加修正（同一批复核员深挖后）**：
 
 | 问题 | 位置 | 修正 |
 |---|---|---|
@@ -397,3 +394,11 @@ Playwright 先放默认 15 项、再追加用户 args，是两个独立开关；
 | `launching` 期间被 `shutdown` 摘槽，launch 落定后浏览器无人持有（直到进程退出） | `lib/pool.js:217-224` | 落定后检查槽是否还在 Map 里，不在就当场 close 并让本次 acquire 报错 |
 
 新增用例覆盖上述分支：`tests/pool.mjs` 用例 14（启动中途 shutdown 不留孤儿 + 池内为空）、用例 15（关闭失败 closed 如实为 false），共 44 PASS。
+
+**仍未消除的已知局限**：
+
+> **[已过时 2026-11-22]** `freezeAnimations` 拦不住导航后**新造**的动画（见功能规格 0040 的「已知局限」，已实测确认并写成断言）。
+>
+> 现在：已由 0040 的「动态守护」收掉——250ms sweep + `Element.prototype.animate` patch 之后，后插 `!important` 样式与后建 WAAPI 动画都会归零，该条已不是局限（见 0040「行为」与「已知局限」整段改写）。
+> 变更原因：一次性 `domcontentloaded` 冻结拦不住之后新造的动画，需求要求任何时刻新出现的动画都不持续耗 CPU。
+- 进程计数类测试互相争抢 profile，`reclaim` 与 `pool-sessions` 并发跑会同时崩溃，必须串行。

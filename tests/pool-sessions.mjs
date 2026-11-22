@@ -125,6 +125,33 @@ try {
       sessionA.browser === requireSession(KEY_B).browser && sessionA.context !== requireSession(KEY_B).context)
   }
 
+  console.log('== 用例 4b：临时页只落在自己的 context 里，用完即关不影响他人 ==')
+  {
+    // createTransientPage 此前没有直接测试（只有 fetch 链路间接覆盖），
+    // 这里直接断它在本仓最要紧的那条性质：临时页归属**自己的** context，
+    // 不泄漏到同浏览器的另一会话，且用完从页面计数里消失。
+    const { createTransientPage, isTransientPage } = await import('../lib/page.js')
+    const sessionA = requireSession(KEY_A)
+    const sessionB = requireSession(KEY_B)
+    const beforeA = sessionA.context.pages().length
+    const beforeB = sessionB.context.pages().length
+    const transient = await createTransientPage(sessionA)
+    check('临时页被标记为 transient', isTransientPage(transient) === true, String(isTransientPage(transient)))
+    check('临时页落在会话 A 自己的 context 里',
+      sessionA.context.pages().includes(transient), `pages=${sessionA.context.pages().length}`)
+    check('临时页不属于会话 B 的 context（跨会话隔离）',
+      !sessionB.context.pages().includes(transient), `B pages=${sessionB.context.pages().length}`)
+    check('临时页不计入 session.pages（面板与 tabs 不会多一页）',
+      ![...sessionA.pages.values()].some((entry) => entry.page === transient),
+      `sessionA.pages=${sessionA.pages.size}`)
+    check('B 的页面数不受影响', sessionB.context.pages().length === beforeB,
+      `before=${beforeB} after=${sessionB.context.pages().length}`)
+    await transient.close()
+    await sleep(200)
+    // 临时页关掉后回到基线：不累积、不泄漏（WeakSet 里残留也不影响计数）
+    check('临时页关闭后 A 的页面数回到基线', sessionA.context.pages().length === beforeA,
+      `before=${beforeA} after=${sessionA.context.pages().length}`)
+  }
   console.log('== 用例 5：全部 close 后租约归零，共享浏览器由池回收 ==')
   {
     await close(KEY_A)
