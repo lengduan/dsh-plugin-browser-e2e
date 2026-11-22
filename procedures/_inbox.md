@@ -30,3 +30,5 @@
   不能命名时看光标类名。
 - 现象：`page.addInitScript({ content })` 里的脚本在文档创建后、页面脚本前执行，那时 `document.documentElement` 与 `document.head` **都是 null**（实测 readyState=loading，三者皆 false），任何 `(document.head || document.documentElement).appendChild(style)` 都会抛 `Cannot read properties of null`，整段脚本中断——既不注入也不留哨兵，表现为「init script 静默无效」而 `evaluate` 同一份脚本却正常。解法：`ensureStyle` 里 `const root = document.head || document.documentElement; if (!root) return false`，并挂 `DOMContentLoaded` 一次性补挂 + 交给周期 sweep 自愈；不要假设 init 阶段 DOM 就绪。
 - 现象：给会话层某个同步写字段的路径改成 `await applyFreezeSwitch(...)`（为了让函数变 async），`tests/reclaim.mjs` 用例 G 立刻报「非法会话状态转移：launching --launch-->」。原因：该 await 位于 `session.state = nextSessionState(state, 'launch')` **之前**，并发 launch 在那次让出事件循环的窗口里看到状态仍是 idle，抢先走转移表。解法：状态转移必须先于**任何** await；此处没有页面操作，改成同步写字段即可，不要为了统一风格给同步路径套 async。
+
+- 现象：批量迁移脚本按「函数名白名单」匹配（只认 `edgeRootCount` / `playwrightEdgeRootCount`），漏掉了同类的 `edgeRoots`——它同样是无 timeout 的 spawnSync 数进程实现，且是唯一用池槽前缀过滤的那份；脚本对未匹配的文件静默跳过、不报错，导致「23 个全部迁移完成」的声称实际应为 24 个。独立复核会话抓到。解法：批量迁移前先用「反模式特征」而非「函数名」全仓取清单（如 `grep -l 'Measure-Object' tests/`），迁移后再用同一特征复查，要求残留数归零（新建的共享模块除外）；「剩下的都对」这种声称必须用命令列出剩余项验证，不能靠白名单遍历的完整性推断。

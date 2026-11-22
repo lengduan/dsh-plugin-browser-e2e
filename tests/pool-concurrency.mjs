@@ -9,6 +9,7 @@
  */
 import { createServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
+import { countBrowserRoots } from './_process-count.mjs'
 
 process.env.DSH_BROWSER_IDLE_MS = '600000'
 process.env.DSH_BROWSER_POOL_IDLE_MS = '0'
@@ -58,13 +59,6 @@ function check(label, ok, detail) {
   }
 }
 
-function edgeRoots(match) {
-  const ps = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-    "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type='"
-    + (match ? " -and $_.CommandLine -match '" + match + "'" : '') + " } | Measure-Object).Count"], { encoding: 'utf8' })
-  return Number.parseInt(ps.stdout.trim(), 10)
-}
-
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1')
   const slow = Number(url.searchParams.get('slow') ?? 0)
@@ -81,7 +75,7 @@ const base = 'http://127.0.0.1:' + server.address().port
 
 const execOf = (id) => ({ agent: { id } })
 const KEYS = ['ms-a', 'ms-b', 'ms-c', 'ms-d']
-const baseline = edgeRoots(null)
+const baseline = countBrowserRoots(null)
 console.log('运行前 msedge 主进程基线：' + baseline)
 const t0 = Date.now()
 
@@ -214,7 +208,7 @@ try {
   console.log('== 场景 6：池资源口径（1 次初始拉起 + 1 次回收后冷启）==')
   {
     const stats = poolStats()
-    const roots = edgeRoots('headless-edge')
+    const roots = countBrowserRoots('headless-edge')
     check('累计只拉起 2 次浏览器（初始 1 + 回收后 1），6 个会话没有各自起浏览器',
       stats.launchCount === 2, 'launchCount=' + stats.launchCount)
     check('池启动的 msedge 主进程数为 1', roots === 1, 'roots=' + roots)
@@ -287,6 +281,9 @@ try {
       encoding: 'utf8',
       env: { ...process.env, DSH_BROWSER_POOL_IDLE_MS: '5000' },
       cwd: process.cwd(),
+      // 子进程正常约 8s（内含 6.5s 空闲等待）；不设 timeout 时子进程卡住会永久阻塞父测试。
+      timeout: 120000,
+      windowsHide: true,
     })
     const out = (child.stdout ?? '') + (child.stderr ?? '')
     for (const line of out.split(/\r?\n/)) {
@@ -304,7 +301,8 @@ try {
     check('崩溃前 3 个会话都在注册表', live.every((k) => activeSessionKeys().includes(k)), JSON.stringify(activeSessionKeys()))
     // 模拟浏览器崩溃：直接杀池启动的那个 msedge 主进程
     const killed = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-      "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' -and $_.CommandLine -match 'headless-edge' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }"], { encoding: 'utf8' })
+      "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' -and $_.CommandLine -match 'headless-edge' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }"],
+    { encoding: 'utf8', timeout: 30000, windowsHide: true })
     console.log('  已终止浏览器进程：' + killed.stdout.trim().split(/\s+/).filter(Boolean).join(','))
     await sleep(1500)
     const stranded = live.filter((k) => peekSession(k) !== null)
@@ -345,7 +343,7 @@ try {
   await closeAll().catch(() => {})
   await sleep(1500)
   server.close()
-  const roots = edgeRoots('headless-edge')
+  const roots = countBrowserRoots('headless-edge')
   check('收尾后池启动的浏览器进程归零', roots === 0, 'roots=' + roots)
   console.log('\n合计：' + pass + ' PASS / ' + fail + ' FAIL，用时 ' + (Date.now() - t0) + 'ms')
   if (fail > 0) { console.log('失败项：'); for (const f of failures) console.log('  - ' + f) }
