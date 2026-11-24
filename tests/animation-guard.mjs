@@ -172,7 +172,8 @@ try {
 
   console.log('== 用例 0：未守护的阴性对照（三路都留下 running 动画）==')
   {
-    await launch(KEY, { headless: true }, SID)
+    // 默认已开启动画冻结：本用例要的是「未守护」基线，必须显式关闭（规格 0040「默认 true」）。
+    await launch(KEY, { headless: true, freezeAnimations: false }, SID)
     const entry = activeEntry()
     await navigate(liveSession(), `${base}/`)
     const waapi = await entry.page.evaluate(WAAPI_SCRIPT)

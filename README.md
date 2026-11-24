@@ -67,13 +67,19 @@ dsh plugin --profile desktop remove dsh-browser-e2e
 无限 CSS 动画会让整页每帧重绘。节点多、内联样式大、带整屏 canvas 的页面上（实测 DSH GUI 1557 个节点 + 约 1MB 内联 CSS + 1320×860 canvas），
 会话行一个小小的「进行中」旋转点就能把空闲占用拉高一个量级；Playwright 又默认带 `--disable-renderer-backgrounding` / `--disable-backgrounding-occluded-windows`，headless 下动画永不节流。
 
-不需要复现或验证动画时，给 `browser_e2e_start` 传 `freezeAnimations: true`：
+该开关**默认开启**（不传即冻结），因为 headless Chromium 不会把页面判为后台（实测 `visibilityState` 恒为 `visible`），
+节流参数没有触发点，一个旋转点就能让整套浏览器进程持续满负荷。实测（2026-11-24，隔离进程族测量）：
+空白页 0–6%，真实 DSH GUI 空闲 207.4% 单核，冻结后 8.6%。
+
+默认用法不需要传参：
 
 ```
-browser_e2e_start { headless: true, freezeAnimations: true }
+browser_e2e_start { headless: true }
 browser_e2e_navigate  http://127.0.0.1:<port>/     # 每次换文档后自动重装守护
 browser_e2e_close
 ```
+
+**要复现或验证动画本身（spinner 行为、动画时长、transition 效果）时必须显式传 `freezeAnimations: false`**，否则守护会让这些断言恒假。
 
 开关开着时，页面上的动画**任何时刻**都持续被收掉，不只是 `domcontentloaded` 那一刻。页内四件套（`lib/animation-guard.js`）：
 
@@ -85,7 +91,7 @@ browser_e2e_close
 - 每次换文档（navigate、reload、CDP 接管页、recipe 内的 goto）后守护自动重装：`addInitScript` 保证无空窗，`domcontentloaded` 钩子兜底自愈，CDP 接管页由 `installAdoptedGuards` 补装。
 - 已启动的会话再传该参数**就地切换**，不必重开浏览器；关闭是**真正撤守**，不只是改标志位。已暂停的动画保持暂停、新造的动画恢复运行。
 - DSH GUI 实测（4 个与 `_dsh-state-dot-spin` 同构的 CSS 无限动画，20 秒采样）：不开 14.9% 单核，开启 1.3% 单核，动画数 4 → 0。
-- 边界：只覆盖主文档（子 frame 与跨源 iframe 不覆盖）；严格 CSP 下样式守卫可能不生效，但拦截 + 复查仍生效；patch 可被页面的 `toString()` 检测出来；页面持续 `play()` 与 250ms 复查会拉锯。**要验证动画本身时不要开这个开关**，否则相关断言恒假。
+- 边界：只覆盖主文档（子 frame 与跨源 iframe 不覆盖）；严格 CSP 下样式守卫可能不生效，但拦截 + 复查仍生效；patch 可被页面的 `toString()` 检测出来；页面持续 `play()` 与 250ms 复查会拉锯。**要验证动画本身时必须显式传 `freezeAnimations: false`**（默认已开启），否则相关断言恒假。
 
 同一会话复用同一实例，`browser_e2e_start` 可重复调用。未显式传 `mode` / `cdpEndpoint` / `carrier` 时，首次启动使用插件配置里的默认值，工具参数优先。已启动后要切换 `mode`（isolated ↔ cdp）、改 `cdpEndpoint` 或换载体，必须先 `browser_e2e_close` 再重新启动；已启动时传入与当前不一致的值会直接报错，不会静默复用。同一会话同时只允许一次 launch，后到的调用等前一次落定后按复用返回同一实例。
 

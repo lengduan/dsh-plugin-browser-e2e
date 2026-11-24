@@ -267,17 +267,20 @@ function pickPort() {
 const baseline = countBrowserRoots()
 
 try {
-  console.log('== 用例 1：不传 freezeAnimations 时不注入 ==')
+  console.log('== 用例 1：不传 freezeAnimations 时按新默认（开启）注入 ==')
   {
     const info = await launch(KEY, { headless: true }, SID)
     const state = await freezeState(liveSession())
-    check('未传参数时页面没有 #dsh-e2e-freeze', state.stylePresent === false, JSON.stringify(state))
-    // 阴性对照的**唯一正确位置**：会话开关为 false 时跑同一段造动画脚本。
-    // 不能像旧版那样「在冻结会话里换个页」当对照——守护的 addInitScript 会随换文档无条件重装，
+    check('未传参数时默认已注入 #dsh-e2e-freeze（默认 true）', state.stylePresent === true, JSON.stringify(state))
+    check('未传参数时会话标志为 true', liveSession().freezeAnimations === true, JSON.stringify(info))
+    // 阴性对照必须用**显式关闭**的会话跑：默认已开启，不传参数不再构成阴性对照。
+    // 也不能用「在冻结会话里换个页」当对照——守护的 addInitScript 会随换文档无条件重装，
     // 那样造出来的动画仍被 pause，「对照」就成了假对照。
+    const offInfo = await launch(KEY, { freezeAnimations: false }, SID)
+    check('显式传 false 后会话标志为 false', liveSession().freezeAnimations === false, JSON.stringify(offInfo))
     const entry = liveSession().pages.get(liveSession().activeTabId)
     negativeControl = await entry.page.evaluate(LOAD_SCRIPT)
-    check('阴性对照（未开守护）：同一段造动画脚本留下 running >= 1',
+    check('阴性对照（显式关闭守护）：同一段造动画脚本留下 running >= 1',
       negativeControl.running >= 1, JSON.stringify(negativeControl) + ' ' + JSON.stringify(info.summary))
   }
 

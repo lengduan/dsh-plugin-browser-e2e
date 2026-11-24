@@ -19,7 +19,13 @@
 
 ## 行为
 
-- **入口与参数**：`browser_e2e_start` 的 `freezeAnimations`（boolean，默认 false）。
+- **入口与参数**：`browser_e2e_start` 的 `freezeAnimations`（boolean，**默认 true**——不传即开启）。
+  - 默认开启的理由：headless Chromium 不会把页面判为后台（实测 `visibilityState` 恒为 `visible`），
+    `--disable-renderer-backgrounding` 等节流参数因此没有触发点；一个无限 CSS 动画就足以让整套浏览器进程持续
+    满负荷重绘（2026-11-24 隔离测量：空白页 0–6%，真实 DSH GUI 空闲 207.4%，冻结后 8.6%）。
+  - 代价与提醒：需要复现或验证动画本身时必须显式传 `false`，否则守护会让相关断言恒假（见「边界」末条）。
+  - 显式传 `true` / `false` 与不传的区别只体现在**首次启动**的初始值；已启动会话只在**传了该参数**时就地切换，
+    不传则保持当前开关状态。
   - 首次启动时写入会话字段 `session.freezeAnimations`，并立即对刚登记的首屏页装机守护（`installAnimationGuard`）。
   - 已启动（复用）时传该参数**就地切换**，不必重开浏览器：开启时对全部已登记标签页装机，返回
     「已开启动画冻结，并对当前 installed/tabs 个标签页装机动画守护（禁用样式 + 拦截 element.animate + 每 250ms 复查）」；
@@ -84,7 +90,8 @@
 - 守护失败（页面正在关闭、正在换文档、`evaluate` 失败、`dispose` 失败）一律吞掉：`installAnimationGuard` / `uninstallAnimationGuard`
   返回 `{ ok: false, error }`，不抛给导航、页登记与开关本身。`page` 为空是单次入参问题，能力函数返回 `{ ok: false }` 而不抛。
 - `about:blank` 等无 `document.head` 的文档：样式回落到 `document.documentElement`，不会因缺 head 报错。
-- 不处理：需要复现动画本身（验证 spinner 行为、量动画时长、测 transition 效果）的场景必须传 false——守护会让这些断言恒假。
+- 不处理：需要复现动画本身（验证 spinner 行为、量动画时长、测 transition 效果）的场景**必须显式传 `freezeAnimations: false`**——
+  守护默认已开启，不传会让这些断言恒假。这是默认值反转后唯一的强制注意事项。
 - 不影响事件环、ref 表、快照基线：只往 DOM 塞一个不可见 `<style>` 并停动画，不触碰页面其它状态。
 - **已知局限（2026-11-22 重写，旧说法保留在此前版本的「已知局限」段）**：
   - 后插 `!important` 样式与后建 WAAPI 动画**已被守护收掉**（250ms sweep + `animate` patch），不再是局限。

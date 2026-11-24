@@ -1,6 +1,7 @@
 # 待整理（inbox）
 
 <!-- 一行一条：现象 + 一句话解法。够格的按 _模板.md 升成卡后删掉这条。 -->
+- 现象：headless 浏览器停在 DSH GUI 上时吃 200%+ 单核（2026-11-24 隔离进程族实测：空白页 0–6%，真实 GUI 空闲 207.4%，冻结动画后 8.6%）。**归因必须先按 profile 目录名/进程树锁定「本次浏览器自己的进程族」再采样**：用全局 `msedge` 汇总会把别的会话、用户自己开的 Edge 全算进来，实测因此两次得出相反结论（一次误判「连 about:blank 都占 149%」，一次误判「close 后进程不退出是个 bug」——隔离测量下回收是干净的，进程数归 0）。坑：DSH 自带 inspector（127.0.0.1:9230）只暴露主进程 isolate（`Schema.getDomains` 只有 Runtime/Debugger/Profiler/HeapProfiler），抓不到渲染进程 CPU profile。另实测：动画 1/2/3/6 个的占用都是 10–15%，彼此无差别；0 个才回落到 0.9%——「少开几个动画」没有收益，「开或不开」才是分水岭。
 
 - 现象：headless 停在带无限 CSS 动画的大页面上时 CPU 异常高（DSH GUI 实测 167.8% 单核、空白页仅 1.3%），且 Playwright 默认 `--disable-renderer-backgrounding` 让它永不节流。解法：`browser_e2e_start { freezeAnimations: true }`（本插件 0040），每次换文档自动注入 `animation:none` + `pause()`，实测 14.9% → 1.3%。坑：只插 CSS 无效（WAAPI 动画不受约束，175.4% 仍高），两句缺一不可；Playwright 的 `reducedMotion: 'reduce'` 不能替代——它只声明媒体偏好，纯 CSS keyframes 照样 running。
 - 现象：用 junction 路径（EdgeCDP-Link）当 `--user-data-dir` 启动过真实 Edge profile 后，再用默认路径启动同一 profile，用户扩展目录被回收、`Secure Preferences` 里扩展条目被丢弃（2026-11-09 复现：5 个刚装好的扩展目录在 10:16 被清空，prefs 条目残留；11/7 22:21 junction 启动 + 11/8 10:18 默认启动的那次丢失与之同形）。解法：要接真实 profile 就别开调试端口，或另用一次性 profile；别在同一个 profile 上混用两种路径启动。（2026-11-09 10:47 补证：同一 profile 的 cookie 库只剩 97 条 / 33 个 host，无 11-08 条目、11-07 仅剩 9 条，即 cookie 与扩展在 junction 启动的同一时间被清空。）
